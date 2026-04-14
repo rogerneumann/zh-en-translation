@@ -116,11 +116,13 @@ class TranslatorPopup(QWidget):
         )
 
         # Drop shadow effect
+        from PyQt6.QtGui import QColor
+
         shadow = QGraphicsDropShadowEffect()
         shadow.setBlurRadius(15)
-        shadow.setColor(Qt.GlobalColor.black)
+        # Set color with alpha (30% opacity = 76/255)
+        shadow.setColor(QColor(0, 0, 0, 76))
         shadow.setOffset(2, 2)
-        shadow.setOpacity(0.3)
         self.setGraphicsEffect(shadow)
 
     def _position_near_cursor(self):
