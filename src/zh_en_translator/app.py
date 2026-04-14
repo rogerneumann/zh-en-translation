@@ -1,7 +1,9 @@
 """Main application: system tray app with global hotkey and popup translator."""
 
 import sys
+from pathlib import Path
 
+import platformdirs
 from PyQt6.QtCore import Qt
 from PyQt6.QtGui import QIcon, QColor
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
@@ -9,6 +11,7 @@ from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from zh_en_translator.hotkey import HotKeyManager
 from zh_en_translator.capture import TextCapture
 from zh_en_translator.ui.popup import TranslatorPopup
+from zh_en_translator.engines.dictionary import Dictionary
 
 
 class TranslatorApp:
@@ -23,8 +26,38 @@ class TranslatorApp:
 
         self.hotkey_manager = HotKeyManager()
         self.text_capture = TextCapture()
+        self.dictionary = self._setup_dictionary()
 
         self._setup_tray()
+
+    def _setup_dictionary(self) -> Dictionary | None:
+        """
+        Load or build the dictionary database.
+
+        Returns:
+            Dictionary instance or None if setup fails.
+        """
+        try:
+            # Determine DB path
+            data_dir = platformdirs.user_data_dir("zh-en-translator", ensure_exists=True)
+            db_path = Path(data_dir) / "cedict.sqlite"
+
+            # If DB doesn't exist, build from sample
+            if not db_path.exists():
+                # Get path to bundled sample
+                resource_dir = Path(__file__).parent / "resources"
+                cedict_sample = resource_dir / "cedict_sample.txt"
+                if cedict_sample.exists():
+                    Dictionary.build_from_cedict(cedict_sample, db_path)
+                else:
+                    print(f"Warning: sample dictionary not found at {cedict_sample}")
+                    return None
+
+            # Open dictionary
+            return Dictionary(db_path)
+        except Exception as e:
+            print(f"Warning: failed to setup dictionary: {e}")
+            return None
 
     def _setup_tray(self):
         """Setup the system tray icon and menu."""
@@ -41,6 +74,12 @@ class TranslatorApp:
 
         self.action_pause = menu.addAction("Pause")
         self.action_pause.triggered.connect(self._on_pause_resume)
+
+        menu.addSeparator()
+
+        # Rebuild dictionary action
+        action_rebuild = menu.addAction("Rebuild Dictionary")
+        action_rebuild.triggered.connect(self._on_rebuild_dictionary)
 
         menu.addSeparator()
         action_quit = menu.addAction("Quit")
@@ -89,7 +128,7 @@ class TranslatorApp:
             return
 
         # Show popup
-        self.popup = TranslatorPopup(captured_text, original_clipboard)
+        self.popup = TranslatorPopup(captured_text, original_clipboard, self.dictionary)
         self.popup.show()
         self.popup.setFocus()
 
@@ -98,6 +137,29 @@ class TranslatorApp:
         self.paused = not self.paused
         if self.action_pause:
             self.action_pause.setText("Resume" if self.paused else "Pause")
+
+    def _on_rebuild_dictionary(self):
+        """Rebuild the dictionary from sample."""
+        try:
+            data_dir = platformdirs.user_data_dir("zh-en-translator", ensure_exists=True)
+            db_path = Path(data_dir) / "cedict.sqlite"
+
+            # Close existing dictionary
+            if self.dictionary:
+                self.dictionary.close()
+
+            # Remove existing DB
+            if db_path.exists():
+                db_path.unlink()
+
+            # Rebuild from sample
+            resource_dir = Path(__file__).parent / "resources"
+            cedict_sample = resource_dir / "cedict_sample.txt"
+            if cedict_sample.exists():
+                self.dictionary = Dictionary.build_from_cedict(cedict_sample, db_path)
+                print("Dictionary rebuilt successfully")
+        except Exception as e:
+            print(f"Error rebuilding dictionary: {e}")
 
     def start(self):
         """Start the application with hotkey listener."""
@@ -114,6 +176,8 @@ class TranslatorApp:
         self.hotkey_manager.stop()
         if self.popup:
             self.popup.close()
+        if self.dictionary:
+            self.dictionary.close()
         self.app.quit()
 
 

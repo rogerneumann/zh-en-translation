@@ -64,9 +64,9 @@ def test_popup_long_text_sizing():
     long_text = "这是一段很长的中文文本。" * 20
     popup = TranslatorPopup(long_text, original_clipboard="")
 
-    # Popup should not exceed max bounds
-    assert popup.width() <= 600
-    assert popup.height() <= 400
+    # Popup should not exceed max bounds (widened in M2 for word-by-word table)
+    assert popup.width() <= 700
+    assert popup.height() <= 600
 
 
 def test_hotkey_manager_import():
