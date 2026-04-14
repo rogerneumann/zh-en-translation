@@ -1,8 +1,8 @@
-"""Frameless popup widget for displaying captured text."""
+"""Frameless popup widget for displaying captured text and word-by-word translations."""
 
 import pyperclip
 from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QCursor
+from PyQt6.QtGui import QCursor, QColor
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -10,31 +10,40 @@ from PyQt6.QtWidgets import (
     QTextEdit,
     QApplication,
     QGraphicsDropShadowEffect,
+    QTableWidget,
+    QTableWidgetItem,
 )
+
+from zh_en_translator.engines.dictionary import Dictionary
 
 
 class TranslatorPopup(QWidget):
     """
-    Frameless popup that displays captured text.
+    Frameless popup that displays captured text and word-by-word translations.
 
     Features:
     - Frameless, rounded corners, drop shadow.
     - Positioned near cursor, auto-repositions to stay on-screen.
     - Dismiss on Esc, click-outside, or focus loss.
     - Restores original clipboard on dismiss.
+    - Optional word-by-word table if dictionary is provided.
     """
 
-    def __init__(self, text: str, original_clipboard: str = ""):
+    def __init__(
+        self, text: str, original_clipboard: str = "", dictionary: Dictionary | None = None
+    ):
         """
         Initialize the popup.
 
         Args:
             text: The text to display (captured selection).
             original_clipboard: The clipboard contents to restore on dismiss.
+            dictionary: Optional Dictionary instance for word-by-word lookup.
         """
         super().__init__()
         self.captured_text = text
         self.original_clipboard = original_clipboard
+        self.dictionary = dictionary
         self._dismissed = False
 
         self._setup_ui()
@@ -42,7 +51,7 @@ class TranslatorPopup(QWidget):
         self._position_near_cursor()
 
     def _setup_ui(self):
-        """Build the UI: title + text display."""
+        """Build the UI: title + text display + optional word-by-word table."""
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.Tool
@@ -55,7 +64,8 @@ class TranslatorPopup(QWidget):
         layout.setSpacing(8)
 
         # Title label
-        title = QLabel("M1 — captured text (no translation yet)")
+        title_text = "M2 — dictionary lookup" if self.dictionary else "M1 — captured text"
+        title = QLabel(title_text)
         title_font = title.font()
         title_font.setPointSize(10)
         title_font.setBold(True)
@@ -66,7 +76,8 @@ class TranslatorPopup(QWidget):
         self.text_display = QTextEdit()
         self.text_display.setPlainText(self.captured_text)
         self.text_display.setReadOnly(True)
-        self.text_display.setMaximumSize(600, 400)
+        self.text_display.setMaximumSize(600, 150)
+        self.text_display.setMaximumHeight(100)
         # Allow text selection
         self.text_display.setTextInteractionFlags(
             self.text_display.textInteractionFlags()
@@ -74,24 +85,107 @@ class TranslatorPopup(QWidget):
         )
         layout.addWidget(self.text_display)
 
+        # Word-by-word table if dictionary provided
+        if self.dictionary:
+            self._setup_word_table(layout)
+
         # Auto-size the popup based on content
         self._resize_to_fit()
 
         self.setLayout(layout)
 
+    def _setup_word_table(self, parent_layout: QVBoxLayout):
+        """Create and populate the word-by-word translation table."""
+        from zh_en_translator.engines.pipeline import translate
+
+        # Create table
+        self.word_table = QTableWidget()
+        self.word_table.setColumnCount(3)
+        self.word_table.setHorizontalHeaderLabels(["Token", "Pinyin", "English"])
+        self.word_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        self.word_table.setMaximumHeight(400)
+
+        # Translate and populate
+        results = translate(self.captured_text, self.dictionary)
+        self.word_table.setRowCount(len(results))
+
+        for row, result in enumerate(results):
+            # Token column
+            token_item = QTableWidgetItem(result.token)
+            token_item.setFlags(
+                token_item.flags()
+                | Qt.ItemFlag.ItemIsSelectable
+                | Qt.ItemFlag.ItemIsEnabled
+            )
+            self.word_table.setItem(row, 0, token_item)
+
+            # Pinyin column
+            pinyin_text = result.pinyin if result.pinyin else ""
+            pinyin_item = QTableWidgetItem(pinyin_text)
+            pinyin_item.setFlags(
+                pinyin_item.flags()
+                | Qt.ItemFlag.ItemIsSelectable
+                | Qt.ItemFlag.ItemIsEnabled
+            )
+            self.word_table.setItem(row, 1, pinyin_item)
+
+            # English column
+            if not result.is_chinese:
+                # Non-Chinese token
+                english_item = QTableWidgetItem("")
+                english_item.setFlags(
+                    english_item.flags()
+                    | Qt.ItemFlag.ItemIsSelectable
+                    | Qt.ItemFlag.ItemIsEnabled
+                )
+            elif result.glosses:
+                # Known Chinese token
+                english_text = "; ".join(result.glosses)
+                english_item = QTableWidgetItem(english_text)
+                english_item.setFlags(
+                    english_item.flags()
+                    | Qt.ItemFlag.ItemIsSelectable
+                    | Qt.ItemFlag.ItemIsEnabled
+                )
+            else:
+                # Unknown Chinese token
+                english_item = QTableWidgetItem("unknown")
+                english_item.setFlags(
+                    english_item.flags()
+                    | Qt.ItemFlag.ItemIsSelectable
+                    | Qt.ItemFlag.ItemIsEnabled
+                )
+                # Highlight with yellow background
+                english_item.setBackground(QColor(255, 255, 200))
+
+            self.word_table.setItem(row, 2, english_item)
+
+        # Resize columns to content
+        self.word_table.resizeColumnsToContents()
+
+        parent_layout.addWidget(self.word_table)
+
     def _resize_to_fit(self):
         """Resize popup to fit content, with reasonable bounds."""
         # Start with default size
         min_width, _min_height = 400, 200
-        max_width, max_height = 600, 400
+        max_width, max_height = 700, 600
 
-        # Adjust height based on text length
-        line_count = self.captured_text.count('\n') + 1
-        estimated_height = min(max_height, 60 + line_count * 15)
+        # Estimate height: title + text + optional table
+        estimated_height = 40  # Title
+        estimated_height += 100  # Text display
+
+        if self.dictionary:
+            # Add height for word table (capped at 400px)
+            num_rows = len(self.word_table) if hasattr(self, "word_table") else 0
+            table_height = min(400, 30 + num_rows * 25)
+            estimated_height += table_height + 10
+
+        estimated_height = min(max_height, estimated_height)
 
         # Adjust width based on longest line
         longest_line = max(
-            (len(line) for line in self.captured_text.split('\n')),
+            (len(line) for line in self.captured_text.split("\n")),
             default=0,
         )
         estimated_width = min(max_width, max(min_width, longest_line * 8))

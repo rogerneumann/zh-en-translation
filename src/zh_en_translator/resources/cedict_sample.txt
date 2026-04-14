@@ -1,0 +1,53 @@
+# CC-CEDICT sample dictionary for zh-en-translator
+# Format: traditional simplified [pinyin] /gloss1/gloss2/.../
+你好 你好 [ni3 hao3] /hello/hi/
+世界 世界 [shi4 jie4] /world/
+电脑 电脑 [dian4 nao3] /computer/
+苹果 苹果 [ping2 guo3] /apple/
+谢谢 谢谢 [xie4 xie5] /thanks/thank you/
+中国 中国 [zhong1 guo2] /China/
+北京 北京 [bei3 jing1] /Beijing/
+上海 上海 [shang4 hai3] /Shanghai/
+老师 老师 [lao3 shi1] /teacher/
+学生 学生 [xue2 sheng1] /student/
+今天 今天 [jin1 tian1] /today/
+明天 明天 [ming2 tian1] /tomorrow/
+早上 早上 [zao3 shang5] /morning/
+晚上 晚上 [wan3 shang5] /evening/night/
+吃 吃 [chi1] /eat/
+喝 喝 [he1] /drink/
+看 看 [kan4] /look/see/watch/
+听 听 [ting1] /listen/hear/
+想 想 [xiang3] /want/think/
+要 要 [yao4] /need/want/require/
+有 有 [you3] /have/
+没有 没有 [mei2 you3] /not have/without/
+是 是 [shi4] /is/are/yes/
+不是 不是 [bu4 shi4] /is not/not/
+好 好 [hao3] /good/fine/nice/well/
+不好 不好 [bu4 hao3] /bad/not good/not well/
+大 大 [da4] /big/large/
+小 小 [xiao3] /small/
+多 多 [duo1] /much/many/more/
+少 少 [shao3] /few/less/
+高 高 [gao1] /high/tall/
+低 低 [di1] /low/
+天气 天气 [tian1 qi4] /weather/
+时间 时间 [shi2 jian1] /time/
+喜欢 喜欢 [xi3 huan5] /like/enjoy/
+爱 爱 [ai4] /love/like/
+工作 工作 [gong1 zuo4] /work/job/
+家 家 [jia1] /home/family/
+学校 学校 [xue2 xiao4] /school/
+朋友 朋友 [peng2 you5] /friend/
+人 人 [ren2] /person/human/
+东西 东西 [dong1 xi5] /thing/stuff/object/
+饭 饭 [fan4] /rice/meal/food/
+水 水 [shui3] /water/
+茶 茶 [cha2] /tea/
+车 车 [che1] /car/vehicle/
+书 书 [shu1] /book/
+手机 手机 [shou3 ji1] /mobile phone/cellphone/
+电话 电话 [dian4 hua4] /telephone/phone/
+房子 房子 [fang2 zi5] /house/room/
+傳統 传统 [chuan2 tong3] /tradition/traditional/convention/
