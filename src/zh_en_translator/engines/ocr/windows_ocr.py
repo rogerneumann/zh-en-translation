@@ -1,13 +1,50 @@
-"""Windows.Media.Ocr engine via winsdk."""
+"""Windows.Media.Ocr engine — tries winrt namespace packages first, then winsdk."""
 
 from __future__ import annotations
 
 
-def is_available() -> bool:
-    """Return True if winsdk is installed and Windows OCR is accessible."""
+def _imports():
+    """
+    Return (OcrEngine, Language, SoftwareBitmap, BitmapPixelFormat,
+            BitmapAlphaMode, BitmapDecoder, DataWriter, InMemoryRandomAccessStream)
+    trying winrt namespace packages (pywinrt, pre-built wheels) first,
+    then winsdk (requires C compiler to build from source).
+
+    Raises ImportError if neither is available.
+    """
     try:
-        from winsdk.windows.media.ocr import OcrEngine  # noqa: F401
-        from winsdk.windows.globalization import Language  # noqa: F401
+        from winrt.windows.media.ocr import OcrEngine
+        from winrt.windows.globalization import Language
+        from winrt.windows.graphics.imaging import (
+            SoftwareBitmap,
+            BitmapPixelFormat,
+            BitmapAlphaMode,
+            BitmapDecoder,
+        )
+        from winrt.windows.storage.streams import DataWriter, InMemoryRandomAccessStream
+        return (OcrEngine, Language, SoftwareBitmap, BitmapPixelFormat,
+                BitmapAlphaMode, BitmapDecoder, DataWriter, InMemoryRandomAccessStream)
+    except ImportError:
+        pass
+
+    # Fallback: winsdk (older, requires build from source on Python 3.14)
+    from winsdk.windows.media.ocr import OcrEngine
+    from winsdk.windows.globalization import Language
+    from winsdk.windows.graphics.imaging import (
+        SoftwareBitmap,
+        BitmapPixelFormat,
+        BitmapAlphaMode,
+        BitmapDecoder,
+    )
+    from winsdk.windows.storage.streams import DataWriter, InMemoryRandomAccessStream
+    return (OcrEngine, Language, SoftwareBitmap, BitmapPixelFormat,
+            BitmapAlphaMode, BitmapDecoder, DataWriter, InMemoryRandomAccessStream)
+
+
+def is_available() -> bool:
+    """Return True if winrt or winsdk is installed and Windows OCR is accessible."""
+    try:
+        _imports()
         return True
     except ImportError:
         return False
@@ -23,21 +60,10 @@ def ocr_image(image_bytes: bytes, lang: str = "zh") -> str | None:
     """
     try:
         import asyncio
-        from winsdk.windows.media.ocr import OcrEngine
-        from winsdk.windows.globalization import Language
-        from winsdk.windows.graphics.imaging import (
-            SoftwareBitmap,
-            BitmapPixelFormat,
-            BitmapAlphaMode,
-            BitmapDecoder,
-        )
-        from winsdk.windows.storage.streams import (
-            DataWriter,
-            InMemoryRandomAccessStream,
-        )
+        (OcrEngine, Language, SoftwareBitmap, BitmapPixelFormat,
+         BitmapAlphaMode, BitmapDecoder, DataWriter, InMemoryRandomAccessStream) = _imports()
 
         async def _run_ocr() -> str | None:
-            # Determine language
             engine = None
             if lang == "zh":
                 for lang_tag in ("zh-Hans-CN", "zh-Hant-TW"):
@@ -48,7 +74,6 @@ def ocr_image(image_bytes: bytes, lang: str = "zh") -> str | None:
                             break
 
                 if engine is None:
-                    # Try any available zh-* language
                     for avail_lang in OcrEngine.get_available_recognizer_languages():
                         if avail_lang.language_tag.startswith("zh"):
                             engine = OcrEngine.try_create_from_language(avail_lang)
@@ -62,7 +87,6 @@ def ocr_image(image_bytes: bytes, lang: str = "zh") -> str | None:
             if engine is None:
                 return None
 
-            # Load image bytes into an InMemoryRandomAccessStream
             stream = InMemoryRandomAccessStream()
             writer = DataWriter(stream)
             writer.write_bytes(image_bytes)
@@ -70,14 +94,12 @@ def ocr_image(image_bytes: bytes, lang: str = "zh") -> str | None:
             await writer.flush_async()
             stream.seek(0)
 
-            # Decode to SoftwareBitmap
             decoder = await BitmapDecoder.create_async(stream)
             software_bitmap = await decoder.get_software_bitmap_async(
                 BitmapPixelFormat.BGRA8,
                 BitmapAlphaMode.PREMULTIPLIED,
             )
 
-            # Run OCR
             result = await engine.recognize_async(software_bitmap)
             if result is None:
                 return None

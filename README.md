@@ -14,11 +14,18 @@ python -m venv .venv
 .\scripts\install-windows.ps1
 ```
 
-To also install Windows OCR support:
+To also install Windows OCR support (pre-built `winrt-*` wheels, no compiler needed):
 
 ```powershell
-.\scripts\install-windows.ps1 -Extras "dev,ocr-windows"
-pip install winsdk
+.\scripts\install-windows.ps1 -OCR
+```
+
+If `winrt-*` wheels aren't yet available for your Python version, install
+[Tesseract](https://github.com/UB-Mannheim/tesseract/wiki) (standalone binary,
+no compiler required) and then:
+
+```powershell
+pip install pytesseract Pillow
 ```
 
 **Linux / macOS:**
