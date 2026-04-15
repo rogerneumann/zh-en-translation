@@ -104,6 +104,11 @@ class TranslatorPopup(QWidget):
             | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        # WA_TranslucentBackground can corrupt the per-widget palette on Windows
+        # (DWM sets the window-role color to transparent/black). Reset it from
+        # the application palette so palette(text), palette(mid) etc. resolve
+        # correctly in child-widget stylesheets.
+        self.setPalette(QApplication.palette())
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
         layout = QVBoxLayout()
@@ -188,32 +193,42 @@ class TranslatorPopup(QWidget):
         self.resize(420, 190)
 
     def _apply_styling(self):
+        # Determine readable text/muted colours that work on both light and dark
+        # backgrounds, regardless of what WA_TranslucentBackground did to the
+        # per-widget palette on Windows.
+        bg = self._effective_bg()
+        is_dark = bg.lightness() < 128
+        text_color   = "#e8e8e8" if is_dark else "#111111"
+        muted_color  = "#aaaaaa" if is_dark else "#666666"
+        btn_border   = "rgba(255,255,255,0.15)" if is_dark else "rgba(0,0,0,0.15)"
+        btn_hover    = "rgba(255,255,255,0.08)" if is_dark else "rgba(0,0,0,0.06)"
+        btn_pressed  = "rgba(255,255,255,0.14)" if is_dark else "rgba(0,0,0,0.12)"
         self.setStyleSheet(
-            """
-            QTextEdit {
+            f"""
+            QTextEdit {{
                 border: none;
                 background: transparent;
                 font-size: 11pt;
-                color: palette(mid);
-            }
-            QLabel {
+                color: {muted_color};
+            }}
+            QLabel {{
                 border: none;
                 background: transparent;
-                color: palette(text);
+                color: {text_color};
                 padding: 4px 0;
-            }
-            QFrame { background: transparent; }
-            QPushButton {
+            }}
+            QFrame {{ background: transparent; }}
+            QPushButton {{
                 background: transparent;
-                border: 1px solid rgba(0,0,0,0.15);
+                border: 1px solid {btn_border};
                 border-radius: 4px;
                 padding: 3px 10px;
                 font-size: 10pt;
-                color: palette(text);
-            }
-            QPushButton:hover  { background: rgba(0,0,0,0.06); }
-            QPushButton:pressed { background: rgba(0,0,0,0.12); }
-            QPushButton:disabled { color: palette(mid); border-color: rgba(0,0,0,0.07); }
+                color: {text_color};
+            }}
+            QPushButton:hover  {{ background: {btn_hover}; }}
+            QPushButton:pressed {{ background: {btn_pressed}; }}
+            QPushButton:disabled {{ color: {muted_color}; border-color: {btn_border}; }}
             """
         )
 
@@ -242,24 +257,29 @@ class TranslatorPopup(QWidget):
             palette.setColor(QPalette.ColorRole.Window, QColor(config.bg_color))
             self.setPalette(palette)
 
+    def _effective_bg(self) -> QColor:
+        """Safe background colour for both light and dark mode on Windows."""
+        if self._config and self._config.bg_color:
+            return QColor(self._config.bg_color)
+        app_bg = QApplication.palette().color(self.backgroundRole())
+        # Near-pure-black (lightness < 10) almost certainly indicates the
+        # WA_TranslucentBackground palette corruption rather than intentional
+        # dark mode (Windows dark mode gives ~#202020, lightness ≈ 12).
+        if app_bg.lightness() < 10:
+            return QColor(248, 248, 248)
+        return app_bg
+
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
         path = QPainterPath()
         path.addRoundedRect(rect, 10, 10)
-
-        # Use config override first; fall back to the APPLICATION palette (not
-        # self.palette()) — on Windows, WA_TranslucentBackground on frameless
-        # Tool windows causes self.palette().color(backgroundRole()) to return
-        # black (the DWM composite color), making text invisible.
-        if self._config and self._config.bg_color:
-            bg = QColor(self._config.bg_color)
-        else:
-            bg = QApplication.palette().color(self.backgroundRole())
-
+        bg = self._effective_bg()
+        is_dark = bg.lightness() < 128
         painter.fillPath(path, bg)
-        painter.setPen(QPen(QColor(0, 0, 0, 40), 1))
+        border = QColor(255, 255, 255, 30) if is_dark else QColor(0, 0, 0, 40)
+        painter.setPen(QPen(border, 1))
         painter.drawPath(path)
         painter.end()
 
