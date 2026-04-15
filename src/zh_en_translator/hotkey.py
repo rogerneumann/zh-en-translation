@@ -3,7 +3,7 @@
 from pynput.keyboard import GlobalHotKeys
 
 # M1: hardcoded constant for default hotkey. Config file (M7) will override.
-DEFAULT_HOTKEY_STRING = "<ctrl>+<cmd>+t"
+DEFAULT_HOTKEY_STRING = "<ctrl>+<alt>+t"
 
 
 class HotKeyManager:
