@@ -173,6 +173,15 @@ class TranslatorPopup(QWidget):
         self.btn_pin.clicked.connect(self._pin_to_sidebar)
         btn_row.addWidget(self.btn_pin)
 
+        # Hidden button — shown only when OCR reports a missing language pack
+        self.btn_lang_settings = QPushButton("Open Language Settings")
+        self.btn_lang_settings.setToolTip(
+            "Open Windows Language Settings to install the Chinese language pack"
+        )
+        self.btn_lang_settings.setVisible(False)
+        self.btn_lang_settings.clicked.connect(self._open_language_settings)
+        btn_row.addWidget(self.btn_lang_settings)
+
         layout.addLayout(btn_row)
 
         self.setLayout(layout)
@@ -286,9 +295,19 @@ class TranslatorPopup(QWidget):
         self._worker.start()
 
     def set_ocr_result(self, text: str):
-        """Called by app after OCR completes — set source text and start translation."""
+        """Called by app after OCR completes — either start translation or show error."""
         if self._dismissed:
             return
+
+        if text.startswith("⚠"):
+            # OCR error — display in translation area, do NOT try to translate it
+            self.translation_label.setText(text)
+            self.translation_label.adjustSize()
+            if "language pack" in text.lower():
+                self.btn_lang_settings.setVisible(True)
+            return
+
+        # Normal OCR success — set as source text and translate
         self.captured_text = text
         self.text_display.setPlainText(text)
         self.translation_label.setText("Translating…")
@@ -386,6 +405,10 @@ class TranslatorPopup(QWidget):
             url_template = "https://www.mdbg.net/chinese/dictionary?wdqb={query}"
         url_str = url_template.replace("{query}", encoded)
         QDesktopServices.openUrl(QUrl(url_str))
+
+    def _open_language_settings(self):
+        """Open Windows Language Settings to install the Chinese OCR language pack."""
+        QDesktopServices.openUrl(QUrl("ms-settings:regionlanguage"))
 
     # ------------------------------------------------------------------
     # Dismiss behaviour

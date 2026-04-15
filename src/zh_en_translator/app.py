@@ -37,9 +37,12 @@ class _OCRWorker(QThread):
                     )
                     if win_available() and not has_chinese_language():
                         self.result_ready.emit(
-                            "⚠ No Chinese OCR language pack found.\n"
-                            "Install it: Windows Settings → Time & Language\n"
-                            "→ Language → Add a language → 'Chinese (Simplified, China)'"
+                            "⚠ No Chinese OCR language pack found.\n\n"
+                            "Install either:\n"
+                            "  Chinese (Simplified, China)\n"
+                            "  Chinese (Simplified, Singapore)\n\n"
+                            "Click 'Open Language Settings' below, then\n"
+                            "Add a language and pick either option above."
                         )
                         return
                 except Exception:
