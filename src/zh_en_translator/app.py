@@ -137,14 +137,25 @@ class TranslatorApp(QObject):
         if self.paused:
             return
 
+        # Snapshot clipboard image BEFORE text capture.
+        # capture_selection() does Ctrl+C and restores clipboard via pyperclip
+        # (text only), which wipes any image that was in the clipboard.
+        clipboard = QApplication.instance().clipboard()
+        pre_capture_image = None
+        if clipboard.mimeData().hasImage():
+            pre_capture_image = clipboard.image()
+
         # In sidebar mode — capture text, or if none, just expand sidebar
         if self.sidebar_mode:
             captured_text = self.text_capture.capture_selection()
             if not captured_text:
-                clipboard = QApplication.instance().clipboard()
+                # Re-check clipboard after Ctrl+C
                 mime = clipboard.mimeData()
                 if mime.hasImage():
-                    self._run_ocr_from_clipboard(clipboard)
+                    self._run_ocr_from_qimage(clipboard.image())
+                    return
+                elif pre_capture_image is not None and not pre_capture_image.isNull():
+                    self._run_ocr_from_qimage(pre_capture_image)
                     return
                 elif mime.hasText():
                     captured_text = mime.text().strip()
@@ -168,12 +179,14 @@ class TranslatorApp(QObject):
         captured_text = self.text_capture.capture_selection()
 
         if not captured_text:
-            # No selection — check clipboard
-            clipboard = QApplication.instance().clipboard()
+            # Re-check clipboard after Ctrl+C
             mime = clipboard.mimeData()
             if mime.hasImage():
-                # Image in clipboard → OCR route
-                self._run_ocr_from_clipboard(clipboard)
+                self._run_ocr_from_qimage(clipboard.image())
+                return
+            elif pre_capture_image is not None and not pre_capture_image.isNull():
+                # Ctrl+C clobbered the clipboard image; use the pre-captured one
+                self._run_ocr_from_qimage(pre_capture_image)
                 return
             elif mime.hasText():
                 captured_text = mime.text().strip()
@@ -186,12 +199,17 @@ class TranslatorApp(QObject):
         self.popup.show()
 
     def _run_ocr_from_clipboard(self, clipboard):
-        """Extract image from clipboard, run OCR in background, then open popup."""
+        """Extract image from clipboard and run OCR (convenience wrapper)."""
+        qimage = clipboard.image()
+        if not qimage.isNull():
+            self._run_ocr_from_qimage(qimage)
+
+    def _run_ocr_from_qimage(self, qimage):
+        """Convert a QImage to PNG bytes and run OCR in a background worker."""
         from zh_en_translator.engines.ocr.engine import is_any_engine_available
         if not is_any_engine_available():
-            # Show a minimal popup with an error message
             self.popup = TranslatorPopup(
-                "⚠ No OCR engine available.\nInstall winsdk, tesseract, or paddleocr.",
+                "⚠ No OCR engine available.\nInstall winrt-*, tesseract, or paddleocr.",
                 "",
                 on_pin=self._pin_to_sidebar,
                 config=self.config,
@@ -199,8 +217,6 @@ class TranslatorApp(QObject):
             self.popup.show()
             return
 
-        # Convert QImage from clipboard to PNG bytes
-        qimage = clipboard.image()
         from PyQt6.QtCore import QBuffer, QIODevice
         buf = QBuffer()
         buf.open(QIODevice.OpenModeFlag.WriteOnly)
@@ -211,7 +227,6 @@ class TranslatorApp(QObject):
         if not image_bytes:
             return
 
-        # Open popup with placeholder, run OCR in background worker
         self.popup = TranslatorPopup(
             "🔍 Running OCR…",
             "",
@@ -221,7 +236,6 @@ class TranslatorApp(QObject):
         )
         self.popup.show()
 
-        # Start OCR worker
         from zh_en_translator.engines.ocr.engine import ocr_image
         self._ocr_worker = _OCRWorker(image_bytes, ocr_image)
         self._ocr_worker.result_ready.connect(self._on_ocr_result)
@@ -237,6 +251,7 @@ class TranslatorApp(QObject):
         self.sidebar.set_translation(source, translation)
         if not self.sidebar_mode:
             self.sidebar_mode = True
+            self.config.mode = "sidebar"
             self._update_tray_sidebar_label()
         if not self.sidebar.isVisible():
             self.sidebar.show()
@@ -253,10 +268,12 @@ class TranslatorApp(QObject):
 
     def _on_sidebar_closed(self) -> None:
         self.sidebar_mode = False
+        self.config.mode = "popup"
         self._update_tray_sidebar_label()
 
     def _on_toggle_sidebar_mode(self, checked: bool) -> None:
         self.sidebar_mode = checked
+        self.config.mode = "sidebar" if checked else "popup"
         if checked and not self.sidebar.isVisible():
             self.sidebar.show()
         elif not checked:
@@ -280,7 +297,23 @@ class TranslatorApp(QObject):
 
     def _open_preferences(self):
         from zh_en_translator.ui.preferences import PreferencesDialog
-        dialog = PreferencesDialog(self.config)
+        from zh_en_translator.config import Config as _Config
+        # Build a snapshot that reflects current RUNTIME state (sidebar_mode may
+        # have been toggled via the tray menu without being saved to config yet).
+        current = _Config(
+            hotkey=self.config.hotkey,
+            mode="sidebar" if self.sidebar_mode else "popup",
+            font_family=self.config.font_family,
+            font_size=self.config.font_size,
+            bg_color=self.config.bg_color,
+            side=self.config.side,
+            sidebar_y=self.config.sidebar_y,
+            color_fresh=self.config.color_fresh,
+            color_idle=self.config.color_idle,
+            external_lookup_url=self.config.external_lookup_url,
+            ocr_engine=self.config.ocr_engine,
+        )
+        dialog = PreferencesDialog(current)
         dialog.settings_applied.connect(self._on_settings_applied)
         dialog.exec()
 
