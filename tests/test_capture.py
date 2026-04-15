@@ -147,7 +147,7 @@ def test_hotkey_string_parseable():
 
     # This tests that the string is in valid format
     manager = HotKeyManager(DEFAULT_HOTKEY_STRING)
-    assert manager.hotkey_string == "ctrl+shift+t"
+    assert manager.hotkey_string == "<ctrl>+<shift>+t"
 
 
 def test_hotkey_manager_lifecycle(monkeypatch):

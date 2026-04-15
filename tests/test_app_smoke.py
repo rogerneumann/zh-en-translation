@@ -97,7 +97,7 @@ def test_hotkey_manager_import():
     from zh_en_translator.hotkey import HotKeyManager, DEFAULT_HOTKEY_STRING
 
     assert HotKeyManager is not None
-    assert DEFAULT_HOTKEY_STRING == "ctrl+shift+t"
+    assert DEFAULT_HOTKEY_STRING == "<ctrl>+<shift>+t"
 
 
 def test_hotkey_manager_instantiation():
@@ -105,7 +105,7 @@ def test_hotkey_manager_instantiation():
     from zh_en_translator.hotkey import HotKeyManager
 
     manager = HotKeyManager()
-    assert manager.hotkey_string == "ctrl+shift+t"
+    assert manager.hotkey_string == "<ctrl>+<shift>+t"
     assert manager.listener is None
 
 
