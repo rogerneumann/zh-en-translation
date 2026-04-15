@@ -55,18 +55,23 @@ def translate_sentence(text: str) -> str | None:
     """
     if not text.strip():
         return None
-    try:
-        import argostranslate.translate
 
-        langs = argostranslate.translate.get_installed_languages()
-        zh = next((l for l in langs if l.code == "zh"), None)
-        en = next((l for l in langs if l.code == "en"), None)
-        if not zh or not en:
-            return None
-        translation = zh.get_translation(en)
-        if not translation:
-            return None
-        result = translation.translate(text)
-        return result if result and result.strip() else None
-    except Exception:
+    import argostranslate.translate
+
+    langs = argostranslate.translate.get_installed_languages()
+    print(f"[argos] installed language codes: {[l.code for l in langs]}")
+
+    zh = next((l for l in langs if l.code == "zh"), None)
+    en = next((l for l in langs if l.code == "en"), None)
+    if not zh or not en:
+        print(f"[argos] zh={zh}, en={en} — language pack missing")
         return None
+
+    translation = zh.get_translation(en)
+    if not translation:
+        print("[argos] get_translation(en) returned None")
+        return None
+
+    result = translation.translate(text)
+    print(f"[argos] raw result: {result!r}")
+    return result if result and result.strip() else None
