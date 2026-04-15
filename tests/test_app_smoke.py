@@ -126,3 +126,25 @@ def test_capture_instantiation():
 
     capture = TextCapture()
     assert capture.keyboard is not None
+
+
+def test_popup_copy_button_exists():
+    """Copy button is present on the popup."""
+    from PyQt6.QtWidgets import QAbstractButton
+
+    _ = QApplication.instance() or QApplication(sys.argv)
+
+    popup = TranslatorPopup("你好", original_clipboard="")
+    assert hasattr(popup, "btn_copy")
+    assert isinstance(popup.btn_copy, QAbstractButton)
+
+
+def test_popup_lookup_button_exists():
+    """Look up button is present on the popup."""
+    from PyQt6.QtWidgets import QAbstractButton
+
+    _ = QApplication.instance() or QApplication(sys.argv)
+
+    popup = TranslatorPopup("你好", original_clipboard="")
+    assert hasattr(popup, "btn_lookup")
+    assert isinstance(popup.btn_lookup, QAbstractButton)
