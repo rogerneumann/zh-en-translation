@@ -148,3 +148,37 @@ def test_popup_lookup_button_exists():
     popup = TranslatorPopup("你好", original_clipboard="")
     assert hasattr(popup, "btn_lookup")
     assert isinstance(popup.btn_lookup, QAbstractButton)
+
+
+def test_sidebar_instantiation():
+    """TranslatorSidebar can be instantiated without crashing."""
+    from zh_en_translator.ui.sidebar import TranslatorSidebar
+    _ = QApplication.instance() or QApplication(sys.argv)
+    sidebar = TranslatorSidebar()
+    assert not sidebar.isVisible()
+
+
+def test_sidebar_set_translation():
+    """set_translation updates content without crashing."""
+    from zh_en_translator.ui.sidebar import TranslatorSidebar
+    _ = QApplication.instance() or QApplication(sys.argv)
+    sidebar = TranslatorSidebar()
+    sidebar.set_translation("你好", "Hello")
+    assert "Hello" in sidebar.translation_label.text()
+
+
+def test_sidebar_set_side():
+    """set_side does not crash for left or right."""
+    from zh_en_translator.ui.sidebar import TranslatorSidebar
+    _ = QApplication.instance() or QApplication(sys.argv)
+    sidebar = TranslatorSidebar()
+    sidebar.set_side("left")
+    sidebar.set_side("right")
+
+
+def test_sidebar_signals():
+    """closed signal exists on TranslatorSidebar."""
+    from zh_en_translator.ui.sidebar import TranslatorSidebar
+    _ = QApplication.instance() or QApplication(sys.argv)
+    sidebar = TranslatorSidebar()
+    assert hasattr(sidebar, "closed")
