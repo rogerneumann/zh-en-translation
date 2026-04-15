@@ -63,6 +63,10 @@ class TranslatorSidebar(QWidget):
             | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        # Reset widget palette from app palette — WA_TranslucentBackground
+        # corrupts the per-widget palette on Windows (DWM sets Window role to
+        # black), making text invisible in child widgets.
+        self.setPalette(QApplication.palette())
 
         # Apply config-driven color overrides before using them
         if config is not None:
@@ -390,15 +394,15 @@ class TranslatorSidebar(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
 
-        # Rounded-rect background.
-        # Use the APPLICATION palette, not self.palette() — on Windows,
-        # WA_TranslucentBackground on frameless Tool windows causes
-        # self.palette().color(backgroundRole()) to return black.
         path = QPainterPath()
         path.addRoundedRect(rect, 10, 10)
         bg = QApplication.palette().color(self.backgroundRole())
+        if bg.lightness() < 10:   # WA_TranslucentBackground palette corruption
+            bg = QColor(248, 248, 248)
         painter.fillPath(path, bg)
-        painter.setPen(QPen(QColor(0, 0, 0, 40), 1))
+        is_dark = bg.lightness() < 128
+        border = QColor(255, 255, 255, 30) if is_dark else QColor(0, 0, 0, 40)
+        painter.setPen(QPen(border, 1))
         painter.drawPath(path)
 
         # Indicator strip — position depends on which edge is actually visible.
