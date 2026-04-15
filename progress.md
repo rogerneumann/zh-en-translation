@@ -9,21 +9,21 @@ Source of truth for plan/scope: `PLAN.md`.
 
 ## Status at a glance
 
-| Milestone | Status | Commit | Verified on Windows? |
-|---|---|---|---|
-| M0 — Plan | Done | `be0570e` | n/a |
-| M1 — Hello Popup | Done | `4c2b154`, `218209c` | ❌ Not yet |
-| M2 — Dictionary Lookup | Done (engine only) | `6cd58ad` | ❌ Not yet |
-| M3 — Replace + External Lookup | Skipped for now | — | — |
-| M4 — Sentence Translation | Done | `claude/fix-windows-testing-issues-E6tHq` | ❌ Not yet |
-| M5 — Sidebar Mode | Pending | — | — |
-| M6 — OCR | Pending | — | — |
-| M7 — Preferences | Pending | — | — |
-| M8 — Packaging (MSI) | Pending | — | — |
-| M9 — Accessibility + Traditional | Pending | — | — |
-| M10 — Optional MS Cloud | Pending | — | — |
+| Milestone | Status | Notes |
+|---|---|---|
+| M0 — Plan | ✅ Done | |
+| M1 — Hello Popup | ✅ Done | Bugs fixed on Windows (focus, hotkey format, drop-shadow crash) |
+| M2 — Dictionary Lookup | ✅ Done (engine only) | Word-by-word UI removed at user request; engine + tests intact |
+| M3 — Replace + Copy + External Lookup | ✅ Done | Replace, Copy, Look up buttons in popup |
+| M4 — Sentence Translation | ✅ Done + ✅ Verified on Windows | ctranslate2 direct (bypassed stanza); translation working |
+| M5 — Sidebar Mode (peek tab) | 🔄 In progress | Basic floating panel built; proper peek-tab being built |
+| M6 — OCR | ✅ Done | Waterfall: PaddleOCR → winsdk → Tesseract; auto-detect clipboard |
+| M7 — Preferences | ⏳ Pending | |
+| M8 — Packaging (MSI) | ⏳ Pending | |
+| M9 — Accessibility + Traditional | ⏳ Pending | |
+| M10 — Optional MS Cloud | ⏳ Pending | |
 
-Branch: `claude/popup-translator-app-7bQp3`
+Branch: `claude/fix-windows-testing-issues-E6tHq`
 
 ---
 
@@ -35,32 +35,26 @@ Branch: `claude/popup-translator-app-7bQp3`
 - `src/zh_en_translator/app.py` — `QSystemTrayIcon` with Translate / Pause / Quit menu
 - `src/zh_en_translator/hotkey.py` — `pynput.GlobalHotKeys` wrapper, default `Ctrl+Shift+T`
 - `src/zh_en_translator/capture.py` — clipboard save → simulate Ctrl+C → restore
-- `src/zh_en_translator/ui/popup.py` — frameless rounded-corner popup, drop shadow, cursor positioning, Esc / click-outside / focus-loss dismiss
+- `src/zh_en_translator/ui/popup.py` — frameless rounded-corner popup, cursor positioning, Esc / click-outside / focus-loss dismiss
 - 25 unit tests across `tests/test_app_smoke.py`, `test_capture.py`, `test_hotkey.py`
 - `pyproject.toml`, `conftest.py`, `.gitignore`
-- README Development section
 
-**Fixes applied post-agent-exit**:
-- `QGraphicsDropShadowEffect.setOpacity()` doesn't exist in PyQt6 — replaced with `QColor(0, 0, 0, 76)` alpha (commit `218209c`)
-- Ruff cleanup (unused imports, unused locals) rolled into scaffold commit
-
-**Deviations from PLAN.md**: None.
-
-**Not verifiable in Linux sandbox**:
-- Global hotkey (no X server)
-- PyQt6 rendering (no libEGL)
-- Clipboard save/restore against real apps
+**Fixes applied**:
+- `QGraphicsDropShadowEffect` crashes Windows (`UpdateLayeredWindowIndirect`) — removed; border drawn in `paintEvent` instead
+- `WA_TranslucentBackground` makes popup invisible on Windows — fixed with manual `paintEvent` fill
+- Hotkey format `ctrl+shift+t` → `<ctrl>+<shift>+t` (pynput angle-bracket syntax)
+- `QObject: Cannot create children in different thread` — fixed by making `TranslatorApp` a `QObject` with `pyqtSignal` to marshal pynput callbacks to Qt main thread
+- `showEvent` now calls `activateWindow()` + `raise_()` so Esc and text selection work
 
 **Manual test checklist for Windows 11**:
 - [ ] Tray icon appears (blue square).
 - [ ] `Ctrl+Shift+T` with text selected in Notepad → popup at cursor.
-- [ ] Esc closes popup; original clipboard is restored.
-- [ ] Click outside popup → closes.
+- [x] Esc closes popup; original clipboard is restored.
+- [x] Click outside popup → closes (WindowDeactivate, 150ms delay).
 - [ ] Alt-Tab away → popup closes.
 - [ ] Popup repositions near screen edges.
 - [ ] Multi-monitor: popup appears on correct screen.
 - [ ] Works in Word, a browser, and a Save-As filename field.
-- [ ] Right-click tray → Pause → hotkey does nothing → Resume → works again.
 
 ---
 
@@ -69,32 +63,42 @@ Branch: `claude/popup-translator-app-7bQp3`
 **Scope**: CC-CEDICT + segmentation + word-by-word popup with pinyin.
 
 **Delivered**:
-- `src/zh_en_translator/engines/dictionary.py` — CC-CEDICT parser, SQLite schema (simplified + traditional indexed), pinyin tone-number to tone-mark converter, `Dictionary.build_from_cedict()` / `lookup()`
-- `src/zh_en_translator/engines/segmentation.py` — character-run segmentation (Chinese vs. non-Chinese)
-- `src/zh_en_translator/engines/pipeline.py` — segment + greedy longest-match dictionary lookup, returns `TokenResult` records
+- `src/zh_en_translator/engines/dictionary.py` — CC-CEDICT parser, SQLite schema, pinyin tone converter
+- `src/zh_en_translator/engines/segmentation.py` — character-run segmentation
+- `src/zh_en_translator/engines/pipeline.py` — greedy longest-match lookup, capped at 8 chars (O(n²) fix)
 - `src/zh_en_translator/resources/cedict_sample.txt` — ~50 starter entries
-- `src/zh_en_translator/app.py` — builds DB at `platformdirs` user data dir on first run; adds "Rebuild Dictionary" tray action
-- `src/zh_en_translator/ui/popup.py` — `QTableWidget` word-by-word view (Token / Pinyin / English); unknown Chinese tokens highlighted pale yellow and remain selectable for copy/paste
 - 22 new tests (`test_dictionary.py`, `test_segmentation.py`, `test_pipeline.py`)
-- Adds `platformdirs` dep
-
-**Fixes applied post-agent-exit**:
-- **Pinyin tone-mark placement bug**: original agent code didn't mark the last vowel when no `a`/`e`/`o` was present (so `ni3` rendered as `ni` instead of `nǐ`, `lü3` as `lü` instead of `lǚ`). Rewrote the placement to follow the canonical rule: `a` > `e` > `ou` > last vowel. Regression tests for all tones 1-5 + ü-umlaut pass.
-- `test_popup_long_text_sizing` asserted `width <= 600` (M1 bound); M2 widened popup to 700 for the table. Relaxed assertion.
 
 **Deviations from PLAN.md**:
-- **Dropped `jieba`** in favor of character-run segmentation + longest-match dictionary lookup. Reason: `jieba` wheel build failed in the Linux sandbox. Consequence: unknown multi-character compounds (not in dict) will split into individual chars rather than grouped unknown words. Acceptable for the 50-entry sample dictionary; tolerable for full CC-CEDICT (~120k entries); worth revisiting as an opt-in in M7.
-
-**Not verifiable in Linux sandbox**:
-- `jieba`-dependent tests (not installed). 39/39 other tests pass, including all 14 dictionary tests.
-- Visual quality of the word-by-word table
+- **Dropped `jieba`** — wheel build failed; using character-run + longest-match instead. Revisit in M7.
+- **Word-by-word table removed from popup UI** — user preference; readable sentence is primary output.
+  Dictionary engine code remains; can be added back as collapsible section in M7.
 
 **Manual test checklist for Windows 11**:
-- [ ] Select `你好世界` in any app, hotkey → popup shows: `你好` / `nǐ hǎo` / `hello; hi` and `世界` / `shì jiè` / `world`.
-- [ ] Unknown Chinese chars show pale yellow background, empty English column, still selectable.
-- [ ] Pinyin tone marks (ā á ǎ à) render correctly in the system font.
-- [ ] DPI scaling 125% / 150%: table columns remain readable, no clipping.
-- [ ] Tray → Rebuild Dictionary → DB regenerates without crash.
+- [ ] Select `你好世界` → popup shows word-by-word breakdown (engine only; UI deferred to M7).
+- [ ] Traditional `電腦` normalises to `电脑` → "computer".
+
+---
+
+## M3 — Replace + Copy + External Lookup
+
+**Scope**: Replace-in-place, copy to clipboard, external dictionary lookup.
+
+**Delivered** (commit `c014309`):
+- **Replace text** button — copies translation, closes popup, sends Ctrl+V after 120ms
+- **Copy** button — copies translation to clipboard without dismissing popup; "Copied!" feedback for 1.5s
+- **Look up** button — opens MDBG in default browser with URL-encoded source text
+  (`https://www.mdbg.net/chinese/dictionary?wdqb={text}` via `QDesktopServices`)
+- All three buttons disabled while translation is pending; enabled on result
+
+**Deviations from PLAN.md**:
+- "Add to dictionary" button deferred to M7 (needs user dict + preferences)
+- External lookup URL hardcoded to MDBG; configurable URL in M7
+
+**Manual test checklist for Windows 11**:
+- [x] Replace text: select Chinese in Notepad → translate → Replace → English appears in Notepad
+- [x] Copy button → "Copied!" feedback → clipboard has translation
+- [x] Look up → browser opens MDBG with source text prefilled
 
 ---
 
@@ -103,34 +107,95 @@ Branch: `claude/popup-translator-app-7bQp3`
 **Scope**: Argos Translate integration; popup shows readable English sentence.
 
 **Delivered**:
-- `src/zh_en_translator/engines/argos.py` — `is_available()`, `ensure_pack()` (downloads zh→en model ~100 MB on first use), `translate_sentence()`
-- `src/zh_en_translator/ui/popup.py` — redesigned: source text (small, muted) + English sentence (large, selectable). `_TranslationWorker` (QThread) runs translation in background; popup appears instantly and fills in when ready.
-- `src/zh_en_translator/app.py` — stripped dictionary wiring; popup is self-contained.
-- `pyproject.toml` — added `argostranslate>=1.9.0` dependency.
+- `src/zh_en_translator/engines/argos.py` — bypasses `argostranslate.translate` entirely (hard-imports stanza which needs HuggingFace download). Calls ctranslate2 + sentencepiece directly from the installed pack directory. Stanza-free, offline after first pack install.
+- `src/zh_en_translator/ui/popup.py` — source text (muted) + English sentence (large, selectable). `_TranslationWorker` (QThread) runs in background; popup appears instantly.
+- `pyproject.toml` — pinned `argostranslate>=1.9.0,<1.10.0` (1.11+ adds stanza runtime dep)
 
-**Deviations from PLAN.md**:
-- M2 word-by-word table removed from popup UI (user preference — readable sentence is the primary output). Dictionary engine code remains; word-by-word can be added back as a collapsible section in M7.
-- M3 (Replace + External Lookup) skipped for now; will revisit after M4 is verified on Windows.
-
-**First-run behaviour**:
-- If the zh→en Argos pack is not installed, `_TranslationWorker` calls `ensure_pack()` which downloads it automatically (~100 MB, requires internet, one-time only). The popup shows "Translating…" during download.
+**Windows-specific fixes**:
+- argostranslate 1.9.6 `translate.py` does hard `import stanza` at top — stanza requires downloading Chinese NLP models from HuggingFace (blocked on corporate SSL). Bypassed by calling ctranslate2 directly.
+- sentencepiece 0.2.0 has no Python 3.14 wheel — installed 0.2.1 via `--only-binary` workaround.
+- stanza/torch/spaCy (installed from earlier 1.11.0) uninstalled to remove 114MB+ of unnecessary deps.
+- sentencepiece `▁` word-boundary markers stripped from decoded output.
 
 **Manual test checklist for Windows 11**:
-- [ ] `pip install -e .` picks up `argostranslate`.
-- [ ] First hotkey trigger → "Translating…" appears, then pack downloads, then English sentence fills in.
-- [ ] Subsequent triggers → translation appears within ~2 s (no re-download).
-- [ ] Translated text is selectable and copyable.
-- [ ] Popup dismisses correctly (Esc / click-outside / focus loss).
+- [x] `pip install -e .` installs argostranslate 1.9.6 + sentencepiece 0.2.1
+- [x] First hotkey trigger → "Translating…" → English sentence fills in (~2s)
+- [x] Translated text is selectable
+- [x] No network calls during translation (offline after pack install)
 
-## M3 — Replace + External Lookup  (deferred)
+---
 
-Skipped in favour of shipping M4 first. See `next_prompt.md` for context.
+## M5 — Sidebar Mode (peek tab)
+
+**Scope**: Persistent right/left-edge peek tab with collapse/expand, indicator colours, sidebar mode.
+
+**Delivered so far** (basic floating panel only):
+- `src/zh_en_translator/ui/sidebar.py` — simple floating panel; `set_translation()`, `update_translation()`
+- Pin → button in popup sends translation to sidebar
+
+**In progress — proper peek-tab design**:
+
+Design spec agreed with user:
+- **Collapsed**: 6px coloured strip anchored to screen edge (doesn't cover scrollbars)
+- **Expanded**: 280px panel, slides in with 200ms `QPropertyAnimation`
+- **Expand trigger**: click the strip; or hotkey when sidebar is active and nothing to translate (shows last translation)
+- **Collapse trigger**: mouse leaves → 300ms delay → collapses (unless keep-pinned is on)
+- **Keep-pinned toggle**: button in header; disables auto-collapse on mouse leave
+- **Esc**: collapses to strip; **X**: reverts to popup mode entirely (hides sidebar, disables sidebar mode)
+- **Indicator colours**: cyan `#00C9CC` = fresh translation; muted rose `#9E8080` = idle/stale
+  (user noted colours should be configurable in M7)
+- **Draggable** up/down along screen edge
+- **Left/right**: toggled from tray menu ("Move sidebar to left/right")
+- **Sidebar mode**: activated when user first pins a translation (or via tray toggle).
+  In sidebar mode, hotkey captures text → translation goes directly to sidebar (no popup shown).
+  Translation runs in background; sidebar shows "Translating…" then updates.
+
+**Manual test checklist for Windows 11**:
+- [ ] 6px strip visible at screen edge; doesn't cover scrollbar of maximised window
+- [ ] Click strip → panel slides in (200ms); click away → slides back
+- [ ] Keep-pinned: panel stays open when mouse leaves
+- [ ] Esc collapses; X reverts to popup mode
+- [ ] Drag strip up/down → Y position updates
+- [ ] Tray → "Move sidebar to left" → strip moves to left edge
+- [ ] In sidebar mode: hotkey → sidebar updates directly (no popup)
+- [ ] Indicator: cyan when fresh translation arrives; rose when stale/idle
+
+---
+
+## M6 — OCR
+
+**Scope**: Clipboard image → OCR → translate. Auto-detect in hotkey flow.
+
+**Delivered** (commits `4803a95`, `8a0da4a`):
+- `src/zh_en_translator/engines/ocr/engine.py` — unified waterfall: PaddleOCR → winsdk Windows.Media.Ocr → Tesseract
+- `src/zh_en_translator/engines/ocr/windows_ocr.py` — async WinRT OCR via `winsdk`
+- `src/zh_en_translator/engines/ocr/tesseract_ocr.py` — `pytesseract` fallback
+- `src/zh_en_translator/engines/ocr/paddle_ocr.py` — PaddleOCR opt-in engine
+- `src/zh_en_translator/app.py` — auto-detect flow: selected text → clipboard image (OCR) → clipboard text
+- `src/zh_en_translator/ui/popup.py` — `is_ocr_pending` param + `set_ocr_result()` method
+- `pyproject.toml` — optional deps: `[ocr-windows]`, `[ocr-tesseract]`, `[ocr-paddle]`
+- 7 new tests (`tests/test_ocr.py`)
+
+**First-run notes**:
+- winsdk not yet installed on test Windows machine; install with `pip install winsdk`
+- PaddleOCR is opt-in (heavy): `pip install "zh-en-translator[ocr-paddle]"`
+- Tesseract needs separate binary install + chi_sim language pack
+
+**Manual test checklist for Windows 11**:
+- [ ] `pip install winsdk` → OCR engine available
+- [ ] Copy image with Chinese text → `Ctrl+Shift+T` → popup shows OCR text + translation
+- [ ] Copy image with no text → "No text detected"
+- [ ] No selection, clipboard has Chinese text → translate clipboard text directly
 
 ---
 
 ## Open questions / risks
 
-- **Full CC-CEDICT distribution** — currently bundled sample is only 50 entries. Decide whether to bundle full ~2 MB text file or download on first run (download violates offline-first unless user opts in).
-- **jieba re-introduction** — should we add it back as an opt-in in M7?
-- **Global hotkey conflicts** — `Ctrl+Shift+T` may clash with browser "reopen closed tab". Revisit default in M7.
-- **MSI code signing** — deferred; will show SmartScreen warning until we have a cert.
+- **Full CC-CEDICT distribution** — sample is only 50 entries. Bundle full ~2 MB file or download on first run?
+- **jieba re-introduction** — opt-in in M7?
+- **Hotkey conflicts** — `Ctrl+Shift+T` clashes with "reopen closed tab" in browsers. Configurable in M7.
+- **MSI code signing** — deferred; SmartScreen warning until cert available.
+- **Indicator colours** — cyan/rose agreed; make user-configurable in M7.
+- **Sidebar position persistence** — save Y position and left/right side across restarts (M7 config.toml).
+- **Sidebar translation history** — currently shows only last translation; future: scrollable history.
+- **winsdk OCR on Python 3.14** — needs testing; asyncio integration may need adjustment.

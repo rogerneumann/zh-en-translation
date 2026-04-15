@@ -118,12 +118,26 @@ separate Python process.
 
 ### Sidebar Mode
 
-- Thin vertical **peek tab** anchored to screen edge.
-- Indicator color: **red** (idle / no current selection) / **green** (fresh
-  translation ready).
-- Hover/click expands the panel to ~30-char width.
-- Auto-refreshes when user hits hotkey on new selection.
-- Close with `X` button or `Shift+Esc` — hotkey alone only toggles expand/collapse.
+- Thin vertical **peek tab** anchored to left or right screen edge (user-configurable; default right).
+- **Collapsed state**: 6px coloured strip — visible hint without covering app scrollbars.
+- **Expanded state**: 280px panel, slides in with animated transition (200ms ease-out).
+- **Expand trigger**: click the strip; or hotkey press when sidebar mode is active and
+  nothing is selected/in clipboard (shows last translation).
+- **Collapse trigger**: mouse leaves the panel → 300ms delay → slides back to strip.
+  Suppressed when **Keep Pinned** is toggled on.
+- **Keep Pinned** toggle button in panel header — panel stays expanded until manually collapsed.
+- **Esc**: collapses panel to strip (sidebar mode stays active).
+- **X button**: reverts entirely to popup mode (sidebar hides, sidebar mode off).
+- **Indicator colours** (configurable in M7):
+  - Cyan `#00C9CC` — fresh translation ready (not yet viewed).
+  - Muted rose `#9E8080` — idle / no translation / stale.
+- **Draggable** up/down along the screen edge; position persists via config.
+- **Left/right**: toggled from tray menu or preferences.
+- **Sidebar mode** (activated on first Pin, or via tray toggle):
+  hotkey captures text → translation goes directly to sidebar in background
+  (no popup shown). Sidebar shows "Translating…" then updates.
+- Auto-refreshes when user presses hotkey on a new selection (sidebar mode).
+- Translation history: shows most recent translation (scrollable history deferred post-v1).
 
 ### Popup Content
 
