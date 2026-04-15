@@ -1,8 +1,8 @@
 """Frameless popup widget — shows source text and English sentence translation."""
 
 import pyperclip
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt6.QtGui import QCursor, QFont
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QRectF
+from PyQt6.QtGui import QCursor, QFont, QPainter, QPainterPath, QPen, QColor
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -125,23 +125,39 @@ class TranslatorPopup(QWidget):
         self.resize(420, 160)
 
     def _apply_styling(self):
+        # Child widgets only — root background is painted in paintEvent.
         self.setStyleSheet(
             """
-            QWidget {
-                border-radius: 10px;
-                background-color: palette(window);
-                border: 1px solid palette(mid);
-            }
-            QTextEdit {
-                border: none;
-                background: transparent;
-            }
-            QLabel {
-                border: none;
-                background: transparent;
-            }
+            QTextEdit { border: none; background: transparent; font-size: 11pt; color: palette(mid); }
+            QLabel    { border: none; background: transparent; }
+            QFrame    { background: transparent; }
             """
         )
+
+    def paintEvent(self, event):
+        """
+        Manually paint the rounded-rect background.
+
+        With WA_TranslucentBackground the OS does not fill the window, so
+        stylesheet background-color on the root QWidget is a no-op on Windows.
+        We must draw the fill ourselves.
+        """
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        path = QPainterPath()
+        path.addRoundedRect(rect, 10, 10)
+
+        # Fill with window background colour
+        bg = self.palette().color(self.backgroundRole())
+        painter.fillPath(path, bg)
+
+        # 1 px border
+        painter.setPen(QPen(QColor(0, 0, 0, 40), 1))
+        painter.drawPath(path)
+
+        painter.end()
 
     def _position_near_cursor(self):
         cursor_pos = QCursor.pos()
