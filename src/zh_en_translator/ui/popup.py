@@ -27,18 +27,22 @@ class _TranslationWorker(QThread):
     def run(self):
         from zh_en_translator.engines.argos import ensure_pack, translate_sentence
 
+        print(f"[translate] input ({len(self.text)} chars): {self.text[:80]!r}")
+
         if not ensure_pack():
-            self.result_ready.emit(
-                "⚠ Could not download the translation model.\n"
-                "Check your internet connection and try again."
-            )
+            msg = "⚠ Could not download the translation model. Check your internet connection."
+            print(f"[translate] ensure_pack() failed")
+            self.result_ready.emit(msg)
             return
 
-        result = translate_sentence(self.text)
-        if result:
-            self.result_ready.emit(result)
-        else:
-            self.result_ready.emit("(no translation returned)")
+        try:
+            result = translate_sentence(self.text)
+            print(f"[translate] result: {result!r}")
+        except Exception as e:
+            print(f"[translate] exception: {e}")
+            result = None
+
+        self.result_ready.emit(result if result else f"(no translation — input was: {self.text[:60]!r})")
 
 
 class TranslatorPopup(QWidget):
