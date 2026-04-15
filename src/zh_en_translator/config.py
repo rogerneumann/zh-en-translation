@@ -1,0 +1,128 @@
+"""TOML-backed configuration system for zh-en-translator.
+
+Reads/writes ~/.config/zh-en-translator/config.toml (Linux/Mac)
+or %APPDATA%/zh-en-translator/config.toml (Windows).
+"""
+
+from __future__ import annotations
+
+import sys
+import tomllib
+from dataclasses import dataclass, field
+from pathlib import Path
+
+
+def get_config_path() -> Path:
+    """Return the path to the config file (does not guarantee it exists)."""
+    try:
+        from platformdirs import user_config_dir
+        config_dir = Path(user_config_dir("zh-en-translator"))
+    except ImportError:
+        # Fallback if platformdirs not available
+        if sys.platform == "win32":
+            import os
+            config_dir = Path(os.environ.get("APPDATA", Path.home())) / "zh-en-translator"
+        else:
+            config_dir = Path.home() / ".config" / "zh-en-translator"
+    return config_dir / "config.toml"
+
+
+@dataclass
+class Config:
+    # [general]
+    hotkey: str = "<ctrl>+<shift>+t"
+    mode: str = "popup"           # "popup" | "sidebar"
+
+    # [display]
+    font_family: str = ""         # empty = system default
+    font_size: int = 13
+    bg_color: str = ""            # empty = system palette; hex like "#FFFFFF"
+
+    # [sidebar]
+    side: str = "right"           # "left" | "right"
+    sidebar_y: int = 200
+    color_fresh: str = "#00C9CC"
+    color_idle: str = "#9E8080"
+
+    # [lookup]
+    external_lookup_url: str = "https://www.mdbg.net/chinese/dictionary?wdqb={query}"
+
+    # [ocr]
+    ocr_engine: str = "auto"      # "auto" | "windows" | "tesseract" | "paddle"
+
+
+def load_config(config_path: Path | None = None) -> Config:
+    """Read config from TOML file and return a Config instance.
+
+    Missing keys fall back to defaults. Parse errors log a warning and
+    return all defaults. Never raises.
+    """
+    if config_path is None:
+        config_path = get_config_path()
+
+    if not config_path.exists():
+        return Config()
+
+    try:
+        with open(config_path, "rb") as f:
+            data = tomllib.load(f)
+    except Exception as e:
+        print(f"Warning: Failed to parse config file {config_path}: {e}", file=sys.stderr)
+        return Config()
+
+    defaults = Config()
+
+    def _get(section: str, key: str, default):
+        return data.get(section, {}).get(key, default)
+
+    return Config(
+        hotkey=_get("general", "hotkey", defaults.hotkey),
+        mode=_get("general", "mode", defaults.mode),
+        font_family=_get("display", "font_family", defaults.font_family),
+        font_size=_get("display", "font_size", defaults.font_size),
+        bg_color=_get("display", "bg_color", defaults.bg_color),
+        side=_get("sidebar", "side", defaults.side),
+        sidebar_y=_get("sidebar", "sidebar_y", defaults.sidebar_y),
+        color_fresh=_get("sidebar", "color_fresh", defaults.color_fresh),
+        color_idle=_get("sidebar", "color_idle", defaults.color_idle),
+        external_lookup_url=_get("lookup", "external_lookup_url", defaults.external_lookup_url),
+        ocr_engine=_get("ocr", "ocr_engine", defaults.ocr_engine),
+    )
+
+
+def save_config(cfg: Config, config_path: Path | None = None) -> None:
+    """Write the full Config to the TOML file (creating dirs as needed)."""
+    if config_path is None:
+        config_path = get_config_path()
+
+    config_path.parent.mkdir(parents=True, exist_ok=True)
+
+    toml_content = f"""\
+[general]
+hotkey = {_toml_str(cfg.hotkey)}
+mode = {_toml_str(cfg.mode)}
+
+[display]
+font_family = {_toml_str(cfg.font_family)}
+font_size = {cfg.font_size}
+bg_color = {_toml_str(cfg.bg_color)}
+
+[sidebar]
+side = {_toml_str(cfg.side)}
+sidebar_y = {cfg.sidebar_y}
+color_fresh = {_toml_str(cfg.color_fresh)}
+color_idle = {_toml_str(cfg.color_idle)}
+
+[lookup]
+external_lookup_url = {_toml_str(cfg.external_lookup_url)}
+
+[ocr]
+ocr_engine = {_toml_str(cfg.ocr_engine)}
+"""
+    config_path.write_text(toml_content, encoding="utf-8")
+
+
+def _toml_str(value: str) -> str:
+    """Format a Python string as a TOML string literal (double-quoted, escaped)."""
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
+    return f'"{escaped}"'
