@@ -87,6 +87,12 @@ def test_popup_with_dictionary():
 
         assert popup.captured_text == "你好世界"
         assert popup.translation_label.text() == "Translating…"
+
+        # Stop the background worker before the test exits to avoid QThread crash
+        if popup._worker and popup._worker.isRunning():
+            popup._worker.quit()
+            popup._worker.wait(2000)
+
         dictionary.close()
 
 
