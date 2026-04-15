@@ -19,11 +19,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = [
-    "pytest>=7.0.0",
-    "pytest-qt>=4.0.0",
-    "ruff>=0.2.0",
-]
+dev = ["pytest>=7.0.0", "pytest-qt>=4.0.0", "ruff>=0.2.0"]
+ocr-windows = ["winsdk"]
+ocr-tesseract = ["pytesseract", "Pillow"]
+ocr-paddle = ["paddleocr", "Pillow"]
 
 [project.scripts]
 zh-en-translator = "zh_en_translator.app:main"
