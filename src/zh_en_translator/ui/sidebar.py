@@ -68,6 +68,8 @@ class TranslatorSidebar(QWidget):
         # black), making text invisible in child widgets.
         self.setPalette(QApplication.palette())
 
+        self._config = config
+
         # Apply config-driven color overrides before using them
         if config is not None:
             if config.color_fresh:
@@ -99,6 +101,7 @@ class TranslatorSidebar(QWidget):
         self._animation.setEasingCurve(QEasingCurve.Type.OutCubic)
 
         self._setup_ui()
+        self._apply_styling()
         self._reposition()
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -114,12 +117,11 @@ class TranslatorSidebar(QWidget):
         header = QHBoxLayout()
         header.setSpacing(4)
 
-        title = QLabel("Translation")
+        self._title_label = QLabel("Translation")
         title_font = QFont()
         title_font.setPointSize(9)
-        title.setFont(title_font)
-        title.setStyleSheet("color: palette(mid); background: transparent;")
-        header.addWidget(title)
+        self._title_label.setFont(title_font)
+        header.addWidget(self._title_label)
         header.addStretch()
 
         # Pin button
@@ -128,27 +130,15 @@ class TranslatorSidebar(QWidget):
         self.btn_pin.setCheckable(True)
         self.btn_pin.setChecked(False)
         self.btn_pin.setToolTip("Keep pinned (don't auto-collapse on mouse leave)")
-        self.btn_pin.setStyleSheet(
-            "QPushButton { background: transparent; border: 1px solid transparent;"
-            " border-radius: 4px; font-size: 11pt; color: palette(mid); }"
-            "QPushButton:checked { background: rgba(0,160,255,0.15);"
-            " border: 1px solid rgba(0,160,255,0.5); color: palette(text); }"
-            "QPushButton:hover { background: rgba(0,0,0,0.06); }"
-        )
         self.btn_pin.toggled.connect(self._on_pin_toggled)
         header.addWidget(self.btn_pin)
 
         # Close button
-        close_btn = QPushButton("✕")
-        close_btn.setFixedSize(22, 22)
-        close_btn.setToolTip("Revert to popup mode")
-        close_btn.setStyleSheet(
-            "QPushButton { background: transparent; border: none;"
-            " color: palette(mid); font-size: 11pt; }"
-            "QPushButton:hover { color: palette(text); }"
-        )
-        close_btn.clicked.connect(self._on_close_clicked)
-        header.addWidget(close_btn)
+        self._close_btn = QPushButton("✕")
+        self._close_btn.setFixedSize(22, 22)
+        self._close_btn.setToolTip("Revert to popup mode")
+        self._close_btn.clicked.connect(self._on_close_clicked)
+        header.addWidget(self._close_btn)
 
         outer.addLayout(header)
 
@@ -171,9 +161,7 @@ class TranslatorSidebar(QWidget):
         src_font = QFont()
         src_font.setPointSize(10)
         self.source_label.setFont(src_font)
-        self.source_label.setStyleSheet(
-            "QLabel { font-size: 10pt; color: palette(mid); background: transparent; }"
-        )
+        self.source_label.setStyleSheet("background: transparent;")
         scroll_layout.addWidget(self.source_label)
 
         # Translation (main content, selectable)
@@ -189,9 +177,7 @@ class TranslatorSidebar(QWidget):
         trans_font = QFont()
         trans_font.setPointSize(12)
         self.translation_label.setFont(trans_font)
-        self.translation_label.setStyleSheet(
-            "QLabel { background: transparent; color: palette(text); padding: 2px 0; }"
-        )
+        self.translation_label.setStyleSheet("background: transparent;")
         scroll_layout.addWidget(self.translation_label)
         scroll_layout.addStretch()
 
@@ -206,6 +192,53 @@ class TranslatorSidebar(QWidget):
         self.setLayout(outer)
         self.setFixedWidth(self.WIDTH)
         self.setMinimumHeight(160)
+
+    def _effective_bg(self) -> QColor:
+        """Safe background colour — immune to WA_TranslucentBackground palette corruption."""
+        if self._config and getattr(self._config, "bg_color", None):
+            return QColor(self._config.bg_color)
+        app_bg = QApplication.palette().color(self.backgroundRole())
+        # Lightness < 10 almost certainly means the palette was corrupted to
+        # transparent-black by DWM after WA_TranslucentBackground was set.
+        if app_bg.lightness() < 10:
+            return QColor(248, 248, 248)
+        return app_bg
+
+    def _apply_styling(self) -> None:
+        """Set child-widget stylesheets using explicit colours (no palette() tokens).
+
+        palette(text) / palette(mid) resolve from the per-widget palette which
+        WA_TranslucentBackground can corrupt on Windows — making all text
+        invisible.  Computing colours once from _effective_bg() and baking
+        them as hex strings avoids the problem.
+        """
+        bg = self._effective_bg()
+        is_dark = bg.lightness() < 128
+        text_color  = "#e8e8e8" if is_dark else "#111111"
+        muted_color = "#aaaaaa" if is_dark else "#666666"
+        btn_hover   = "rgba(255,255,255,0.08)" if is_dark else "rgba(0,0,0,0.06)"
+
+        self._title_label.setStyleSheet(
+            f"color: {muted_color}; background: transparent;"
+        )
+        self.source_label.setStyleSheet(
+            f"QLabel {{ font-size: 10pt; color: {muted_color}; background: transparent; }}"
+        )
+        self.translation_label.setStyleSheet(
+            f"QLabel {{ background: transparent; color: {text_color}; padding: 2px 0; }}"
+        )
+        self.btn_pin.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: 1px solid transparent;"
+            f" border-radius: 4px; font-size: 11pt; color: {muted_color}; }}"
+            f"QPushButton:checked {{ background: rgba(0,160,255,0.15);"
+            f" border: 1px solid rgba(0,160,255,0.5); color: {text_color}; }}"
+            f"QPushButton:hover {{ background: {btn_hover}; }}"
+        )
+        self._close_btn.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none;"
+            f" color: {muted_color}; font-size: 11pt; }}"
+            f"QPushButton:hover {{ color: {text_color}; }}"
+        )
 
     # ──────────────────────────────────────────────────────────────────────────
     # Public API
@@ -242,6 +275,9 @@ class TranslatorSidebar(QWidget):
 
     def apply_config(self, config) -> None:
         """Apply a Config object: update colors, side, and Y position."""
+        old_bg = getattr(self._config, "bg_color", None) if self._config else None
+        self._config = config
+
         # Compare against OLD colors before updating, then re-point indicator
         was_fresh = (self._indicator_colour == self.COLOUR_FRESH)
         was_idle = (self._indicator_colour == self.COLOUR_IDLE)
@@ -258,6 +294,11 @@ class TranslatorSidebar(QWidget):
 
         self._pos_y = config.sidebar_y
         self.set_side(config.side)
+
+        # Re-apply text colours if bg changed (or on first apply)
+        if getattr(config, "bg_color", None) != old_bg:
+            self._apply_styling()
+
         self.update()
 
     def expand(self) -> None:
@@ -396,9 +437,7 @@ class TranslatorSidebar(QWidget):
 
         path = QPainterPath()
         path.addRoundedRect(rect, 10, 10)
-        bg = QApplication.palette().color(self.backgroundRole())
-        if bg.lightness() < 10:   # WA_TranslucentBackground palette corruption
-            bg = QColor(248, 248, 248)
+        bg = self._effective_bg()
         painter.fillPath(path, bg)
         is_dark = bg.lightness() < 128
         border = QColor(255, 255, 255, 30) if is_dark else QColor(0, 0, 0, 40)
