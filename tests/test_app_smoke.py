@@ -69,6 +69,29 @@ def test_popup_long_text_sizing():
     assert popup.height() <= 600
 
 
+def test_popup_with_dictionary():
+    """Smoke test: popup instantiation with a real Dictionary exercises the dict code path."""
+    import tempfile
+    from pathlib import Path
+    from zh_en_translator.engines.dictionary import Dictionary
+
+    _ = QApplication.instance() or QApplication(sys.argv)
+
+    cedict_content = "你好 你好 [ni3 hao3] /hello/hi/\n世界 世界 [shi4 jie4] /world/\n"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cedict_file = Path(tmpdir) / "cedict.txt"
+        cedict_file.write_text(cedict_content, encoding="utf-8")
+        db_file = Path(tmpdir) / "test.db"
+        dictionary = Dictionary.build_from_cedict(cedict_file, db_file)
+
+        popup = TranslatorPopup("你好世界", original_clipboard="", dictionary=dictionary)
+
+        assert popup.captured_text == "你好世界"
+        assert hasattr(popup, "word_table")
+        assert popup.word_table.rowCount() > 0
+        dictionary.close()
+
+
 def test_hotkey_manager_import():
     """Test that hotkey manager can be imported."""
     from zh_en_translator.hotkey import HotKeyManager, DEFAULT_HOTKEY_STRING

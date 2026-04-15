@@ -2,7 +2,7 @@
 # Format: traditional simplified [pinyin] /gloss1/gloss2/.../
 你好 你好 [ni3 hao3] /hello/hi/
 世界 世界 [shi4 jie4] /world/
-电脑 电脑 [dian4 nao3] /computer/
+電腦 电脑 [dian4 nao3] /computer/
 苹果 苹果 [ping2 guo3] /apple/
 谢谢 谢谢 [xie4 xie5] /thanks/thank you/
 中国 中国 [zhong1 guo2] /China/
