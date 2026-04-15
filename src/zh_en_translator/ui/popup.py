@@ -177,7 +177,7 @@ class TranslatorPopup(QWidget):
 
         if self.dictionary:
             # Add height for word table (capped at 400px)
-            num_rows = len(self.word_table) if hasattr(self, "word_table") else 0
+            num_rows = self.word_table.rowCount() if hasattr(self, "word_table") else 0
             table_height = min(400, 30 + num_rows * 25)
             estimated_height += table_height + 10
 
