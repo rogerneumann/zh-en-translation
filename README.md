@@ -6,6 +6,23 @@ A lightweight, offline-first Chinese→English popup translator for Windows 11 (
 
 ### Install
 
+**Windows (Python 3.14+) — use the helper script** (works around a sentencepiece wheel issue):
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+.\scripts\install-windows.ps1
+```
+
+To also install Windows OCR support:
+
+```powershell
+.\scripts\install-windows.ps1 -Extras "dev,ocr-windows"
+pip install winsdk
+```
+
+**Linux / macOS:**
+
 ```bash
 # Clone the repository
 git clone https://github.com/yourusername/zh-en-translation.git
@@ -14,6 +31,11 @@ cd zh-en-translation
 # Install in development mode with dependencies
 pip install -e ".[dev]"
 ```
+
+> **Why the Windows script?** `argostranslate 1.9.6` pins `sentencepiece==0.2.0` which
+> has no pre-built wheel for Python 3.14. The script installs `sentencepiece>=0.2.0`
+> binary-only first (picks up 0.2.1 which ships a 3.14 wheel), then installs
+> argostranslate with `--no-deps` to avoid the locked constraint being re-applied.
 
 ### Run
 
