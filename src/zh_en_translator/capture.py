@@ -7,7 +7,7 @@ from pynput.keyboard import Controller as KeyboardController
 from pynput.keyboard import Key
 
 # Time to wait for clipboard to populate after Ctrl+C
-CLIPBOARD_WAIT_MS = 0.08
+CLIPBOARD_WAIT_MS = 0.12
 
 
 class TextCapture:
