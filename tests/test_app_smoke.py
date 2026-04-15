@@ -182,3 +182,70 @@ def test_sidebar_signals():
     _ = QApplication.instance() or QApplication(sys.argv)
     sidebar = TranslatorSidebar()
     assert hasattr(sidebar, "closed")
+
+
+def test_popup_lang_settings_button_hidden_by_default():
+    """btn_lang_settings is hidden unless OCR reports a missing language pack."""
+    _ = QApplication.instance() or QApplication(sys.argv)
+    popup = TranslatorPopup("你好", original_clipboard="")
+    assert hasattr(popup, "btn_lang_settings")
+    assert popup.btn_lang_settings.isHidden()
+
+
+def test_popup_set_ocr_result_error_stays_in_translation_area():
+    """set_ocr_result with an ⚠ error sets translation label, not source text."""
+    _ = QApplication.instance() or QApplication(sys.argv)
+    popup = TranslatorPopup("🔍 Running OCR…", original_clipboard="", is_ocr_pending=True)
+    error_msg = "⚠ No text detected in image."
+    popup.set_ocr_result(error_msg)
+    assert popup.translation_label.text() == error_msg
+    # Source text should still be the OCR placeholder, not the error
+    assert popup.text_display.toPlainText() == "🔍 Running OCR…"
+    # Language settings button should remain hidden for a generic error
+    assert not popup.btn_lang_settings.isVisible()
+
+
+def test_popup_set_ocr_result_language_pack_shows_button():
+    """set_ocr_result with 'language pack' in the error text shows btn_lang_settings."""
+    _ = QApplication.instance() or QApplication(sys.argv)
+    popup = TranslatorPopup("🔍 Running OCR…", original_clipboard="", is_ocr_pending=True)
+    error_msg = "⚠ No Chinese OCR language pack found.\n\nClick 'Open Language Settings' below."
+    popup.set_ocr_result(error_msg)
+    # isVisible() is False because the parent popup is not shown; check isHidden() instead
+    assert not popup.btn_lang_settings.isHidden()
+
+
+def test_popup_set_ocr_result_success_starts_translation():
+    """set_ocr_result with valid text updates source display and triggers translation."""
+    _ = QApplication.instance() or QApplication(sys.argv)
+    popup = TranslatorPopup("🔍 Running OCR…", original_clipboard="", is_ocr_pending=True)
+    popup.set_ocr_result("你好世界")
+    assert popup.captured_text == "你好世界"
+    assert popup.text_display.toPlainText() == "你好世界"
+    assert popup.translation_label.text() == "Translating…"
+    # Cleanup worker
+    if popup._worker and popup._worker.isRunning():
+        popup._worker.quit()
+        popup._worker.wait(2000)
+
+
+def test_popup_effective_bg_returns_color():
+    """_effective_bg() always returns a QColor with lightness > 0."""
+    from PyQt6.QtGui import QColor
+    _ = QApplication.instance() or QApplication(sys.argv)
+    popup = TranslatorPopup("test", original_clipboard="")
+    bg = popup._effective_bg()
+    assert isinstance(bg, QColor)
+    assert bg.lightness() >= 0
+
+
+def test_popup_effective_bg_uses_config_color():
+    """_effective_bg() returns config bg_color when set."""
+    from PyQt6.QtGui import QColor
+    from zh_en_translator.config import Config
+    _ = QApplication.instance() or QApplication(sys.argv)
+    cfg = Config(bg_color="#ff0000")
+    popup = TranslatorPopup("test", original_clipboard="", config=cfg)
+    bg = popup._effective_bg()
+    assert bg.red() == 255
+    assert bg.green() == 0

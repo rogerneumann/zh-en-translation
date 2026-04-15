@@ -159,20 +159,69 @@ def test_ocr_engine_none_available(monkeypatch):
 # ---------------------------------------------------------------------------
 
 def test_windows_ocr_not_available_without_winsdk(monkeypatch):
-    """is_available() returns False when winsdk is not installed."""
-    # Ensure winsdk does not appear importable
-    monkeypatch.setitem(sys.modules, "winsdk", None)
-    monkeypatch.setitem(sys.modules, "winsdk.windows", None)
-    monkeypatch.setitem(sys.modules, "winsdk.windows.media", None)
-    monkeypatch.setitem(sys.modules, "winsdk.windows.media.ocr", None)
-    monkeypatch.setitem(sys.modules, "winsdk.windows.globalization", None)
+    """is_available() returns False when neither winrt nor winsdk is installed."""
+    # Block both winrt-* and winsdk so _imports() raises ImportError for both
+    for key in list(sys.modules.keys()):
+        if key.startswith("winrt") or key.startswith("winsdk"):
+            monkeypatch.setitem(sys.modules, key, None)
+    for stub in (
+        "winrt", "winrt.windows", "winrt.windows.media", "winrt.windows.media.ocr",
+        "winrt.windows.globalization", "winrt.windows.graphics",
+        "winrt.windows.graphics.imaging", "winrt.windows.storage",
+        "winrt.windows.storage.streams",
+        "winsdk", "winsdk.windows", "winsdk.windows.media",
+        "winsdk.windows.media.ocr", "winsdk.windows.globalization",
+        "winsdk.windows.graphics", "winsdk.windows.graphics.imaging",
+        "winsdk.windows.storage", "winsdk.windows.storage.streams",
+    ):
+        monkeypatch.setitem(sys.modules, stub, None)
 
-    # Reload module so the patched sys.modules takes effect
     import importlib
     import zh_en_translator.engines.ocr.windows_ocr as win_mod
     importlib.reload(win_mod)
 
     assert win_mod.is_available() is False
+
+
+def test_has_chinese_language_returns_false_on_exception(monkeypatch):
+    """has_chinese_language() returns False when _imports() raises."""
+    import importlib
+    import zh_en_translator.engines.ocr.windows_ocr as win_mod
+
+    # Make _imports raise so has_chinese_language returns False gracefully
+    monkeypatch.setattr(win_mod, "_imports", lambda: (_ for _ in ()).throw(ImportError("no winrt")))
+    assert win_mod.has_chinese_language() is False
+
+
+def test_has_chinese_language_true_when_zh_available(monkeypatch):
+    """has_chinese_language() returns True when OcrEngine lists a zh-* language."""
+    import importlib
+    import zh_en_translator.engines.ocr.windows_ocr as win_mod
+
+    fake_lang = MagicMock()
+    fake_lang.language_tag = "zh-Hans-CN"
+    fake_engine_cls = MagicMock()
+    fake_engine_cls.get_available_recognizer_languages.return_value = [fake_lang]
+
+    monkeypatch.setattr(win_mod, "_imports", lambda: (
+        fake_engine_cls, MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock()
+    ))
+    assert win_mod.has_chinese_language() is True
+
+
+def test_has_chinese_language_false_when_no_zh(monkeypatch):
+    """has_chinese_language() returns False when no zh-* language is in the list."""
+    import zh_en_translator.engines.ocr.windows_ocr as win_mod
+
+    fake_lang = MagicMock()
+    fake_lang.language_tag = "en-US"
+    fake_engine_cls = MagicMock()
+    fake_engine_cls.get_available_recognizer_languages.return_value = [fake_lang]
+
+    monkeypatch.setattr(win_mod, "_imports", lambda: (
+        fake_engine_cls, MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock()
+    ))
+    assert win_mod.has_chinese_language() is False
 
 
 # ---------------------------------------------------------------------------
