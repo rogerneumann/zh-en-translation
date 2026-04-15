@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import urllib.parse
 import pyperclip
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QRectF
-from PyQt6.QtGui import QCursor, QFont, QPainter, QPainterPath, QPen, QColor
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QRectF, QUrl
+from PyQt6.QtGui import QCursor, QFont, QPainter, QPainterPath, QPen, QColor, QDesktopServices
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -139,6 +140,18 @@ class TranslatorPopup(QWidget):
         btn_row.setSpacing(8)
         btn_row.addStretch()
 
+        self.btn_copy = QPushButton("Copy")
+        self.btn_copy.setEnabled(False)
+        self.btn_copy.setToolTip("Copy translation to clipboard")
+        self.btn_copy.clicked.connect(self._copy_translation)
+        btn_row.addWidget(self.btn_copy)
+
+        self.btn_lookup = QPushButton("Look up")
+        self.btn_lookup.setEnabled(False)
+        self.btn_lookup.setToolTip("Look up source text on MDBG")
+        self.btn_lookup.clicked.connect(self._lookup_external)
+        btn_row.addWidget(self.btn_lookup)
+
         self.btn_replace = QPushButton("Replace text")
         self.btn_replace.setEnabled(False)
         self.btn_replace.setToolTip("Paste translation over the selected text")
@@ -257,6 +270,8 @@ class TranslatorPopup(QWidget):
 
         # Enable action buttons now that we have a real translation
         is_real = not text.startswith("⚠") and text != "Translating…"
+        self.btn_copy.setEnabled(is_real)
+        self.btn_lookup.setEnabled(is_real)
         self.btn_replace.setEnabled(is_real)
         if self._on_pin is not None:
             self.btn_pin.setEnabled(is_real)
@@ -306,6 +321,25 @@ class TranslatorPopup(QWidget):
             return
         self._on_pin(self.captured_text, translation)
         self._dismiss()
+
+    def _copy_translation(self):
+        """Copy the translation text to the system clipboard without dismissing."""
+        translation = self.translation_label.text()
+        if not translation or translation == "Translating…":
+            return
+        try:
+            QApplication.clipboard().setText(translation)
+        except Exception:
+            return
+        # Brief visual feedback
+        self.btn_copy.setText("Copied!")
+        QTimer.singleShot(1500, lambda: self.btn_copy.setText("Copy"))
+
+    def _lookup_external(self):
+        """Open MDBG in the default browser with the source Chinese text as query."""
+        encoded = urllib.parse.quote(self.captured_text)
+        url = QUrl(f"https://www.mdbg.net/chinese/dictionary?wdqb={encoded}")
+        QDesktopServices.openUrl(url)
 
     # ------------------------------------------------------------------
     # Dismiss behaviour
