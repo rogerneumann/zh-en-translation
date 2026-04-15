@@ -64,13 +64,12 @@ def test_popup_long_text_sizing():
     long_text = "这是一段很长的中文文本。" * 20
     popup = TranslatorPopup(long_text, original_clipboard="")
 
-    # Popup should not exceed max bounds (widened in M2 for word-by-word table)
     assert popup.width() <= 700
     assert popup.height() <= 600
 
 
 def test_popup_with_dictionary():
-    """Smoke test: popup instantiation with a real Dictionary exercises the dict code path."""
+    """Popup accepts dictionary kwarg without crashing (reserved for future word-lookup)."""
     import tempfile
     from pathlib import Path
     from zh_en_translator.engines.dictionary import Dictionary
@@ -87,7 +86,7 @@ def test_popup_with_dictionary():
         popup = TranslatorPopup("你好世界", original_clipboard="", dictionary=dictionary)
 
         assert popup.captured_text == "你好世界"
-        assert popup._word_count > 0
+        assert popup.translation_label.text() == "Translating…"
         dictionary.close()
 
 

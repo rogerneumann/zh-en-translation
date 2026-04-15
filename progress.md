@@ -13,9 +13,9 @@ Source of truth for plan/scope: `PLAN.md`.
 |---|---|---|---|
 | M0 — Plan | Done | `be0570e` | n/a |
 | M1 — Hello Popup | Done | `4c2b154`, `218209c` | ❌ Not yet |
-| M2 — Dictionary Lookup | Done | `6cd58ad` | ❌ Not yet |
-| M3 — Replace + External Lookup | Pending | — | — |
-| M4 — Sentence Translation | Pending | — | — |
+| M2 — Dictionary Lookup | Done (engine only) | `6cd58ad` | ❌ Not yet |
+| M3 — Replace + External Lookup | Skipped for now | — | — |
+| M4 — Sentence Translation | Done | `claude/fix-windows-testing-issues-E6tHq` | ❌ Not yet |
 | M5 — Sidebar Mode | Pending | — | — |
 | M6 — OCR | Pending | — | — |
 | M7 — Preferences | Pending | — | — |
@@ -98,9 +98,33 @@ Branch: `claude/popup-translator-app-7bQp3`
 
 ---
 
-## M3 — Replace + External Lookup  (next)
+## M4 — Sentence Translation
 
-See `next_prompt.md` for the prompt to hand to the next agent.
+**Scope**: Argos Translate integration; popup shows readable English sentence.
+
+**Delivered**:
+- `src/zh_en_translator/engines/argos.py` — `is_available()`, `ensure_pack()` (downloads zh→en model ~100 MB on first use), `translate_sentence()`
+- `src/zh_en_translator/ui/popup.py` — redesigned: source text (small, muted) + English sentence (large, selectable). `_TranslationWorker` (QThread) runs translation in background; popup appears instantly and fills in when ready.
+- `src/zh_en_translator/app.py` — stripped dictionary wiring; popup is self-contained.
+- `pyproject.toml` — added `argostranslate>=1.9.0` dependency.
+
+**Deviations from PLAN.md**:
+- M2 word-by-word table removed from popup UI (user preference — readable sentence is the primary output). Dictionary engine code remains; word-by-word can be added back as a collapsible section in M7.
+- M3 (Replace + External Lookup) skipped for now; will revisit after M4 is verified on Windows.
+
+**First-run behaviour**:
+- If the zh→en Argos pack is not installed, `_TranslationWorker` calls `ensure_pack()` which downloads it automatically (~100 MB, requires internet, one-time only). The popup shows "Translating…" during download.
+
+**Manual test checklist for Windows 11**:
+- [ ] `pip install -e .` picks up `argostranslate`.
+- [ ] First hotkey trigger → "Translating…" appears, then pack downloads, then English sentence fills in.
+- [ ] Subsequent triggers → translation appears within ~2 s (no re-download).
+- [ ] Translated text is selectable and copyable.
+- [ ] Popup dismisses correctly (Esc / click-outside / focus loss).
+
+## M3 — Replace + External Lookup  (deferred)
+
+Skipped in favour of shipping M4 first. See `next_prompt.md` for context.
 
 ---
 
