@@ -9,7 +9,7 @@ from zh_en_translator.hotkey import HotKeyManager, DEFAULT_HOTKEY_STRING
 
 def test_hotkey_default_string():
     """Test that default hotkey is set correctly."""
-    assert DEFAULT_HOTKEY_STRING == "ctrl+shift+t"
+    assert DEFAULT_HOTKEY_STRING == "<ctrl>+<shift>+t"
 
 
 def test_hotkey_manager_init():
@@ -22,7 +22,7 @@ def test_hotkey_manager_init():
 
 def test_hotkey_manager_custom_hotkey():
     """Test HotKeyManager with custom hotkey string."""
-    custom_hotkey = "ctrl+alt+x"
+    custom_hotkey = "<ctrl>+<alt>+x"
     manager = HotKeyManager(custom_hotkey)
     assert manager.hotkey_string == custom_hotkey
 
