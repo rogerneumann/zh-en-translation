@@ -10,6 +10,7 @@ from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 from zh_en_translator.hotkey import HotKeyManager
 from zh_en_translator.capture import TextCapture
 from zh_en_translator.ui.popup import TranslatorPopup
+from zh_en_translator.ui.sidebar import TranslatorSidebar
 
 
 class TranslatorApp(QObject):
@@ -25,6 +26,7 @@ class TranslatorApp(QObject):
 
         self.tray_icon = None
         self.popup = None
+        self.sidebar = TranslatorSidebar()
         self.paused = False
 
         self._hotkey_signal.connect(self._on_hotkey_pressed)
@@ -41,6 +43,9 @@ class TranslatorApp(QObject):
 
         action_translate = menu.addAction("Translate Selection")
         action_translate.triggered.connect(self._on_hotkey_pressed)
+
+        action_sidebar = menu.addAction("Show Sidebar")
+        action_sidebar.triggered.connect(self.sidebar.show)
 
         self.action_pause = menu.addAction("Pause")
         self.action_pause.triggered.connect(self._on_pause_resume)
@@ -78,9 +83,16 @@ class TranslatorApp(QObject):
         if not captured_text:
             return
 
-        self.popup = TranslatorPopup(captured_text, original_clipboard)
+        self.popup = TranslatorPopup(
+            captured_text,
+            original_clipboard,
+            on_pin=self._pin_to_sidebar,
+        )
         self.popup.show()
-        self.popup.setFocus()
+
+    def _pin_to_sidebar(self, source: str, translation: str) -> None:
+        """Called by the popup's Pin button — show translation in the sidebar."""
+        self.sidebar.set_translation(source, translation)
 
     def _on_pause_resume(self):
         self.paused = not self.paused
