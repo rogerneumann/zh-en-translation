@@ -71,6 +71,7 @@ class TranslatorPopup(QWidget):
         original_clipboard: str = "",
         dictionary: Dictionary | None = None,   # reserved for future word-lookup
         on_pin=None,                             # Callable[[str, str], None] | None
+        is_ocr_pending: bool = False,
     ):
         super().__init__()
         self.captured_text = text
@@ -79,11 +80,15 @@ class TranslatorPopup(QWidget):
         self._on_pin = on_pin
         self._dismissed = False
         self._worker: _TranslationWorker | None = None
+        self._is_ocr_pending = is_ocr_pending
 
         self._setup_ui()
         self._apply_styling()
         self._position_near_cursor()
-        self._start_translation()
+        if not is_ocr_pending:
+            self._start_translation()
+        else:
+            self.translation_label.setText("Waiting for OCR…")
 
     # ------------------------------------------------------------------
     # UI construction
@@ -251,6 +256,15 @@ class TranslatorPopup(QWidget):
         self._worker = _TranslationWorker(self.captured_text)
         self._worker.result_ready.connect(self._on_translation_ready)
         self._worker.start()
+
+    def set_ocr_result(self, text: str):
+        """Called by app after OCR completes — set source text and start translation."""
+        if self._dismissed:
+            return
+        self.captured_text = text
+        self.text_display.setPlainText(text)
+        self.translation_label.setText("Translating…")
+        self._start_translation()
 
     def _on_translation_ready(self, text: str):
         if self._dismissed:
