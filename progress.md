@@ -16,9 +16,9 @@ Source of truth for plan/scope: `PLAN.md`.
 | M2 — Dictionary Lookup | ✅ Done (engine only) | Word-by-word UI removed at user request; engine + tests intact |
 | M3 — Replace + Copy + External Lookup | ✅ Done | Replace, Copy, Look up buttons in popup |
 | M4 — Sentence Translation | ✅ Done + ✅ Verified on Windows | ctranslate2 direct (bypassed stanza); translation working |
-| M5 — Sidebar Mode (peek tab) | 🔄 In progress | Basic floating panel built; proper peek-tab being built |
+| M5 — Sidebar Mode (peek tab) | ✅ Done | Peek-tab with 6px strip, slide animation, drag, keep-pinned, indicator colours |
 | M6 — OCR | ✅ Done | Waterfall: PaddleOCR → winsdk → Tesseract; auto-detect clipboard |
-| M7 — Preferences | ⏳ Pending | |
+| M7 — Preferences | ✅ Done | In-app dialog + TOML config; font, colors, sidebar, hotkey, OCR engine |
 | M8 — Packaging (MSI) | ⏳ Pending | |
 | M9 — Accessibility + Traditional | ⏳ Pending | |
 | M10 — Optional MS Cloud | ⏳ Pending | |
@@ -189,13 +189,54 @@ Design spec agreed with user:
 
 ---
 
+## M7 — Preferences
+
+**Scope**: In-app preferences dialog + TOML config system.
+
+**Delivered**:
+- `src/zh_en_translator/config.py` — `Config` dataclass with typed defaults; `load_config()` / `save_config()` using stdlib `tomllib` (read) + manual TOML formatting (write); config path via `platformdirs.user_config_dir("zh-en-translator")` → `config.toml`
+- `src/zh_en_translator/ui/preferences.py` — `PreferencesDialog(QDialog)` with four tabs:
+  - **General**: hotkey `QLineEdit` (pynput syntax hint), mode radio (Popup / Sidebar)
+  - **Display**: `QFontComboBox` font family, `QSpinBox` font size (8–36 pt), background color swatch → `QColorDialog` with "Reset to default"
+  - **Sidebar**: Left/Right radio, Y position spinbox (0–2000), fresh + idle indicator color swatches
+  - **Lookup & OCR**: external lookup URL `QLineEdit`, OCR engine `QComboBox` (Auto / Windows / Tesseract / PaddleOCR)
+  - Standard OK / Cancel / Apply buttons; `settings_applied = pyqtSignal(Config)` on Apply/OK
+- `src/zh_en_translator/app.py` updates:
+  - Loads config at startup; applies hotkey, sidebar side/Y, mode
+  - "Preferences…" tray menu item (before Pause)
+  - `_on_settings_applied(cfg)`: re-registers hotkey if changed, calls `sidebar.apply_config()`, updates tray labels
+  - Passes `config=self.config` to all `TranslatorPopup` instances
+- `src/zh_en_translator/ui/popup.py` — `config=None` parameter; applies font family, font size, bg color override
+- `src/zh_en_translator/ui/sidebar.py` — `config=None` constructor parameter; `apply_config(cfg)` method for live updates
+- `tests/test_config.py` — 8 tests: defaults, save/load, missing file, partial TOML, invalid TOML, dir creation, `get_config_path`, special chars roundtrip
+
+**Config fields**:
+```
+[general]  hotkey, mode
+[display]  font_family, font_size, bg_color
+[sidebar]  side, sidebar_y, color_fresh, color_idle
+[lookup]   external_lookup_url
+[ocr]      ocr_engine
+```
+
+**Deviations from PLAN.md**:
+- `theme` (system/dark/light/sepia) deferred — requires stylesheet overhaul; design TBD in M9
+
+**Manual test checklist for Windows 11**:
+- [ ] Right-click tray → "Preferences…" opens dialog
+- [ ] Change font size → Apply → popup uses new font size
+- [ ] Change hotkey → Apply → new hotkey works; old does not
+- [ ] Change sidebar colors → Apply → strip color updates
+- [ ] Change mode to Sidebar → Apply → sidebar shows; no popup on hotkey
+- [ ] Config persists across restarts (config.toml written to %APPDATA%\zh-en-translator\)
+
+---
+
 ## Open questions / risks
 
 - **Full CC-CEDICT distribution** — sample is only 50 entries. Bundle full ~2 MB file or download on first run?
-- **jieba re-introduction** — opt-in in M7?
-- **Hotkey conflicts** — `Ctrl+Shift+T` clashes with "reopen closed tab" in browsers. Configurable in M7.
+- **jieba re-introduction** — opt-in in future milestone?
 - **MSI code signing** — deferred; SmartScreen warning until cert available.
-- **Indicator colours** — cyan/rose agreed; make user-configurable in M7.
-- **Sidebar position persistence** — save Y position and left/right side across restarts (M7 config.toml).
 - **Sidebar translation history** — currently shows only last translation; future: scrollable history.
 - **winsdk OCR on Python 3.14** — needs testing; asyncio integration may need adjustment.
+- **Theme support** (system/dark/light/sepia) — deferred to M9 alongside accessibility work.
