@@ -50,7 +50,7 @@ def translate(text: str, dictionary: Dictionary) -> list[TokenResult]:
         best_entries = None
         best_match = None
 
-        for end_pos in range(len(token), 0, -1):
+        for end_pos in range(min(len(token), 8), 0, -1):
             candidate = token[:end_pos]
             entries = dictionary.lookup(candidate)
             if entries:

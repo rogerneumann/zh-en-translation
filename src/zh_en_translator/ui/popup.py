@@ -1,232 +1,298 @@
-"""Frameless popup widget for displaying captured text and word-by-word translations."""
+"""Frameless popup widget — shows source text and English sentence translation."""
 
+from __future__ import annotations
+
+import urllib.parse
 import pyperclip
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QCursor, QColor
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QRectF, QUrl
+from PyQt6.QtGui import QCursor, QFont, QPainter, QPainterPath, QPen, QColor, QDesktopServices
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
+    QHBoxLayout,
     QLabel,
     QTextEdit,
+    QPushButton,
     QApplication,
-    QGraphicsDropShadowEffect,
-    QTableWidget,
-    QTableWidgetItem,
+    QFrame,
 )
 
 from zh_en_translator.engines.dictionary import Dictionary
 
 
+class _TranslationWorker(QThread):
+    """Background thread: runs translation and emits the result."""
+
+    result_ready = pyqtSignal(str)
+
+    def __init__(self, text: str):
+        super().__init__()
+        self.text = text
+
+    def run(self):
+        from zh_en_translator.engines.argos import ensure_pack, translate_sentence
+
+        print(f"[translate] input ({len(self.text)} chars): {self.text[:80]!r}")
+
+        if not ensure_pack():
+            print("[translate] ensure_pack() failed")
+            self.result_ready.emit("⚠ Translation model not available.")
+            return
+
+        try:
+            result = translate_sentence(self.text)
+            print(f"[translate] result: {result!r}")
+        except Exception as e:
+            print(f"[translate] exception: {e}")
+            result = None
+
+        self.result_ready.emit(
+            result if result else f"(no translation — input: {self.text[:60]!r})"
+        )
+
+
 class TranslatorPopup(QWidget):
     """
-    Frameless popup that displays captured text and word-by-word translations.
+    Frameless popup: source text at top, English sentence translation below.
 
-    Features:
-    - Frameless, rounded corners, drop shadow.
-    - Positioned near cursor, auto-repositions to stay on-screen.
-    - Dismiss on Esc, click-outside, or focus loss.
-    - Restores original clipboard on dismiss.
-    - Optional word-by-word table if dictionary is provided.
+    Translation runs in a background thread — the popup appears immediately
+    with a 'Translating…' placeholder that is replaced when the result arrives.
+
+    Buttons (enabled once translation is ready):
+      • Replace text — pastes the translation over the original selection
+      • Pin →        — sends the translation to the persistent sidebar
+
+    Dismiss: Esc key or clicking outside the popup.
     """
 
     def __init__(
-        self, text: str, original_clipboard: str = "", dictionary: Dictionary | None = None
+        self,
+        text: str,
+        original_clipboard: str = "",
+        dictionary: Dictionary | None = None,   # reserved for future word-lookup
+        on_pin=None,                             # Callable[[str, str], None] | None
+        is_ocr_pending: bool = False,
+        config=None,                             # Config | None
     ):
-        """
-        Initialize the popup.
-
-        Args:
-            text: The text to display (captured selection).
-            original_clipboard: The clipboard contents to restore on dismiss.
-            dictionary: Optional Dictionary instance for word-by-word lookup.
-        """
         super().__init__()
         self.captured_text = text
         self.original_clipboard = original_clipboard
         self.dictionary = dictionary
+        self._on_pin = on_pin
         self._dismissed = False
+        self._worker: _TranslationWorker | None = None
+        self._is_ocr_pending = is_ocr_pending
+        self._config = config
 
         self._setup_ui()
         self._apply_styling()
+        self._apply_config(config)
         self._position_near_cursor()
+        if not is_ocr_pending:
+            self._start_translation()
+        else:
+            self.translation_label.setText("Waiting for OCR…")
+
+    # ------------------------------------------------------------------
+    # UI construction
+    # ------------------------------------------------------------------
 
     def _setup_ui(self):
-        """Build the UI: title + text display + optional word-by-word table."""
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.Tool
             | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        # WA_TranslucentBackground can corrupt the per-widget palette on Windows
+        # (DWM sets the window-role color to transparent/black). Reset it from
+        # the application palette so palette(text), palette(mid) etc. resolve
+        # correctly in child-widget stylesheets.
+        self.setPalette(QApplication.palette())
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
         layout = QVBoxLayout()
-        layout.setContentsMargins(12, 12, 12, 12)
-        layout.setSpacing(8)
+        layout.setContentsMargins(18, 14, 18, 14)
+        layout.setSpacing(10)
 
-        # Title label
-        title_text = "M2 — dictionary lookup" if self.dictionary else "M1 — captured text"
-        title = QLabel(title_text)
-        title_font = title.font()
-        title_font.setPointSize(10)
-        title_font.setBold(True)
-        title.setFont(title_font)
-        layout.addWidget(title)
-
-        # Text display (read-only, selectable)
+        # ── Source text (small, muted, selectable) ──────────────────────
         self.text_display = QTextEdit()
         self.text_display.setPlainText(self.captured_text)
         self.text_display.setReadOnly(True)
-        self.text_display.setMaximumSize(600, 150)
-        self.text_display.setMaximumHeight(100)
-        # Allow text selection
+        self.text_display.setFrameShape(QFrame.Shape.NoFrame)
+        self.text_display.setMaximumHeight(60)
         self.text_display.setTextInteractionFlags(
-            self.text_display.textInteractionFlags()
-            | Qt.TextInteractionFlag.TextSelectableByMouse
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
         )
         layout.addWidget(self.text_display)
 
-        # Word-by-word table if dictionary provided
-        if self.dictionary:
-            self._setup_word_table(layout)
+        # ── Divider ─────────────────────────────────────────────────────
+        sep = QFrame()
+        sep.setFrameShape(QFrame.Shape.HLine)
+        sep.setStyleSheet("border: none; border-top: 1px solid rgba(0,0,0,0.10);")
+        layout.addWidget(sep)
 
-        # Auto-size the popup based on content
-        self._resize_to_fit()
+        # ── English translation (main content, selectable) ──────────────
+        self.translation_label = QLabel("Translating…")
+        self.translation_label.setWordWrap(True)
+        self.translation_label.setAlignment(
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+        )
+        self.translation_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
+        )
+        font = QFont()
+        font.setPointSize(13)
+        self.translation_label.setFont(font)
+        layout.addWidget(self.translation_label)
+
+        # ── Action buttons ───────────────────────────────────────────────
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+        btn_row.addStretch()
+
+        self.btn_copy = QPushButton("Copy")
+        self.btn_copy.setEnabled(False)
+        self.btn_copy.setToolTip("Copy translation to clipboard")
+        self.btn_copy.clicked.connect(self._copy_translation)
+        btn_row.addWidget(self.btn_copy)
+
+        self.btn_lookup = QPushButton("Look up")
+        self.btn_lookup.setEnabled(False)
+        self.btn_lookup.setToolTip("Look up source text on MDBG")
+        self.btn_lookup.clicked.connect(self._lookup_external)
+        btn_row.addWidget(self.btn_lookup)
+
+        self.btn_replace = QPushButton("Replace text")
+        self.btn_replace.setEnabled(False)
+        self.btn_replace.setToolTip("Paste translation over the selected text")
+        self.btn_replace.clicked.connect(self._replace_text)
+        btn_row.addWidget(self.btn_replace)
+
+        self.btn_pin = QPushButton("Pin →")
+        self.btn_pin.setEnabled(False)
+        self.btn_pin.setToolTip("Pin translation to the sidebar")
+        self.btn_pin.setVisible(self._on_pin is not None)
+        self.btn_pin.clicked.connect(self._pin_to_sidebar)
+        btn_row.addWidget(self.btn_pin)
+
+        # Hidden button — shown only when OCR reports a missing language pack
+        self.btn_lang_settings = QPushButton("Open Language Settings")
+        self.btn_lang_settings.setToolTip(
+            "Open Windows Language Settings to install the Chinese language pack"
+        )
+        self.btn_lang_settings.setVisible(False)
+        self.btn_lang_settings.clicked.connect(self._open_language_settings)
+        btn_row.addWidget(self.btn_lang_settings)
+
+        layout.addLayout(btn_row)
 
         self.setLayout(layout)
-
-    def _setup_word_table(self, parent_layout: QVBoxLayout):
-        """Create and populate the word-by-word translation table."""
-        from zh_en_translator.engines.pipeline import translate
-
-        # Create table
-        self.word_table = QTableWidget()
-        self.word_table.setColumnCount(3)
-        self.word_table.setHorizontalHeaderLabels(["Token", "Pinyin", "English"])
-        self.word_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        self.word_table.setMaximumHeight(400)
-
-        # Translate and populate
-        results = translate(self.captured_text, self.dictionary)
-        self.word_table.setRowCount(len(results))
-
-        for row, result in enumerate(results):
-            # Token column
-            token_item = QTableWidgetItem(result.token)
-            token_item.setFlags(
-                token_item.flags()
-                | Qt.ItemFlag.ItemIsSelectable
-                | Qt.ItemFlag.ItemIsEnabled
-            )
-            self.word_table.setItem(row, 0, token_item)
-
-            # Pinyin column
-            pinyin_text = result.pinyin if result.pinyin else ""
-            pinyin_item = QTableWidgetItem(pinyin_text)
-            pinyin_item.setFlags(
-                pinyin_item.flags()
-                | Qt.ItemFlag.ItemIsSelectable
-                | Qt.ItemFlag.ItemIsEnabled
-            )
-            self.word_table.setItem(row, 1, pinyin_item)
-
-            # English column
-            if not result.is_chinese:
-                # Non-Chinese token
-                english_item = QTableWidgetItem("")
-                english_item.setFlags(
-                    english_item.flags()
-                    | Qt.ItemFlag.ItemIsSelectable
-                    | Qt.ItemFlag.ItemIsEnabled
-                )
-            elif result.glosses:
-                # Known Chinese token
-                english_text = "; ".join(result.glosses)
-                english_item = QTableWidgetItem(english_text)
-                english_item.setFlags(
-                    english_item.flags()
-                    | Qt.ItemFlag.ItemIsSelectable
-                    | Qt.ItemFlag.ItemIsEnabled
-                )
-            else:
-                # Unknown Chinese token
-                english_item = QTableWidgetItem("unknown")
-                english_item.setFlags(
-                    english_item.flags()
-                    | Qt.ItemFlag.ItemIsSelectable
-                    | Qt.ItemFlag.ItemIsEnabled
-                )
-                # Highlight with yellow background
-                english_item.setBackground(QColor(255, 255, 200))
-
-            self.word_table.setItem(row, 2, english_item)
-
-        # Resize columns to content
-        self.word_table.resizeColumnsToContents()
-
-        parent_layout.addWidget(self.word_table)
-
-    def _resize_to_fit(self):
-        """Resize popup to fit content, with reasonable bounds."""
-        # Start with default size
-        min_width, _min_height = 400, 200
-        max_width, max_height = 700, 600
-
-        # Estimate height: title + text + optional table
-        estimated_height = 40  # Title
-        estimated_height += 100  # Text display
-
-        if self.dictionary:
-            # Add height for word table (capped at 400px)
-            num_rows = len(self.word_table) if hasattr(self, "word_table") else 0
-            table_height = min(400, 30 + num_rows * 25)
-            estimated_height += table_height + 10
-
-        estimated_height = min(max_height, estimated_height)
-
-        # Adjust width based on longest line
-        longest_line = max(
-            (len(line) for line in self.captured_text.split("\n")),
-            default=0,
-        )
-        estimated_width = min(max_width, max(min_width, longest_line * 8))
-
-        self.resize(int(estimated_width), int(estimated_height))
+        self.resize(420, 190)
 
     def _apply_styling(self):
-        """Apply rounded corners and drop shadow."""
-        # Stylesheet for rounded corners and background
+        # Determine readable text/muted colours that work on both light and dark
+        # backgrounds, regardless of what WA_TranslucentBackground did to the
+        # per-widget palette on Windows.
+        bg = self._effective_bg()
+        is_dark = bg.lightness() < 128
+        text_color   = "#e8e8e8" if is_dark else "#111111"
+        muted_color  = "#aaaaaa" if is_dark else "#666666"
+        btn_border   = "rgba(255,255,255,0.15)" if is_dark else "rgba(0,0,0,0.15)"
+        btn_hover    = "rgba(255,255,255,0.08)" if is_dark else "rgba(0,0,0,0.06)"
+        btn_pressed  = "rgba(255,255,255,0.14)" if is_dark else "rgba(0,0,0,0.12)"
         self.setStyleSheet(
-            """
-            QWidget {
-                border-radius: 10px;
-                background-color: palette(window);
-            }
-            QTextEdit {
+            f"""
+            QTextEdit {{
                 border: none;
-                border-radius: 8px;
-                padding: 4px;
-            }
-        """
+                background: transparent;
+                font-size: 11pt;
+                color: {muted_color};
+            }}
+            QLabel {{
+                border: none;
+                background: transparent;
+                color: {text_color};
+                padding: 4px 0;
+            }}
+            QFrame {{ background: transparent; }}
+            QPushButton {{
+                background: transparent;
+                border: 1px solid {btn_border};
+                border-radius: 4px;
+                padding: 3px 10px;
+                font-size: 10pt;
+                color: {text_color};
+            }}
+            QPushButton:hover  {{ background: {btn_hover}; }}
+            QPushButton:pressed {{ background: {btn_pressed}; }}
+            QPushButton:disabled {{ color: {muted_color}; border-color: {btn_border}; }}
+            """
         )
 
-        # Drop shadow effect
-        from PyQt6.QtGui import QColor
+    def _apply_config(self, config):
+        """Apply config settings to font and background color."""
+        if config is None:
+            return
 
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(15)
-        # Set color with alpha (30% opacity = 76/255)
-        shadow.setColor(QColor(0, 0, 0, 76))
-        shadow.setOffset(2, 2)
-        self.setGraphicsEffect(shadow)
+        font = self.translation_label.font()
+        changed = False
+
+        if config.font_family:
+            font.setFamily(config.font_family)
+            changed = True
+
+        if config.font_size != 13:
+            font.setPointSize(config.font_size)
+            changed = True
+
+        if changed:
+            self.translation_label.setFont(font)
+
+        if config.bg_color:
+            from PyQt6.QtGui import QPalette
+            palette = self.palette()
+            palette.setColor(QPalette.ColorRole.Window, QColor(config.bg_color))
+            self.setPalette(palette)
+
+    def _effective_bg(self) -> QColor:
+        """Safe background colour for both light and dark mode on Windows."""
+        if self._config and self._config.bg_color:
+            return QColor(self._config.bg_color)
+        app_bg = QApplication.palette().color(self.backgroundRole())
+        # Near-pure-black (lightness < 10) almost certainly indicates the
+        # WA_TranslucentBackground palette corruption rather than intentional
+        # dark mode (Windows dark mode gives ~#202020, lightness ≈ 12).
+        if app_bg.lightness() < 10:
+            return QColor(248, 248, 248)
+        return app_bg
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
+        path = QPainterPath()
+        path.addRoundedRect(rect, 10, 10)
+        bg = self._effective_bg()
+        is_dark = bg.lightness() < 128
+        painter.fillPath(path, bg)
+        border = QColor(255, 255, 255, 30) if is_dark else QColor(0, 0, 0, 40)
+        painter.setPen(QPen(border, 1))
+        painter.drawPath(path)
+        painter.end()
+
+    def showEvent(self, event):
+        """Grab keyboard focus so Esc works immediately."""
+        super().showEvent(event)
+        self.activateWindow()
+        self.raise_()
 
     def _position_near_cursor(self):
-        """Position popup near the cursor, staying on-screen."""
         cursor_pos = QCursor.pos()
-        popup_rect = self.rect()
-        popup_width = popup_rect.width()
-        popup_height = popup_rect.height()
+        w, h = self.width(), self.height()
 
-        # Get the screen containing the cursor
         app = QApplication.instance()
         if not app:
             return
@@ -234,64 +300,175 @@ class TranslatorPopup(QWidget):
         if not screen:
             return
 
-        available_geometry = screen.availableGeometry()
+        avail = screen.availableGeometry()
+        x = cursor_pos.x() + 14
+        y = cursor_pos.y() + 14
 
-        # Start slightly offset from cursor
-        x = cursor_pos.x() + 10
-        y = cursor_pos.y() + 10
+        if x + w > avail.right():
+            x = avail.right() - w - 14
+        if y + h > avail.bottom():
+            y = avail.bottom() - h - 14
 
-        # Adjust if popup goes off the right edge
-        if x + popup_width > available_geometry.right():
-            x = available_geometry.right() - popup_width - 10
-
-        # Adjust if popup goes off the bottom edge
-        if y + popup_height > available_geometry.bottom():
-            y = available_geometry.bottom() - popup_height - 10
-
-        # Ensure popup doesn't go off the left or top
-        x = max(x, available_geometry.left() + 10)
-        y = max(y, available_geometry.top() + 10)
+        x = max(x, avail.left() + 14)
+        y = max(y, avail.top() + 14)
 
         self.move(int(x), int(y))
 
+    # ------------------------------------------------------------------
+    # Translation
+    # ------------------------------------------------------------------
+
+    def _start_translation(self):
+        self._worker = _TranslationWorker(self.captured_text)
+        self._worker.result_ready.connect(self._on_translation_ready)
+        self._worker.start()
+
+    def set_ocr_result(self, text: str):
+        """Called by app after OCR completes — either start translation or show error."""
+        if self._dismissed:
+            return
+
+        if text.startswith("⚠"):
+            # OCR error — display in translation area, do NOT try to translate it
+            self.translation_label.setText(text)
+            self.translation_label.adjustSize()
+            if "language pack" in text.lower():
+                self.btn_lang_settings.setVisible(True)
+            return
+
+        # Normal OCR success — set as source text and translate
+        self.captured_text = text
+        self.text_display.setPlainText(text)
+        self.translation_label.setText("Translating…")
+        self._start_translation()
+
+    def _on_translation_ready(self, text: str):
+        if self._dismissed:
+            return
+        self.translation_label.setText(text)
+        self.translation_label.adjustSize()
+
+        needed_h = (
+            self.text_display.height()
+            + 10 + 1 + 10                           # spacing + sep + spacing
+            + self.translation_label.sizeHint().height()
+            + 40                                    # button row
+            + 14 + 14                               # top + bottom margins
+        )
+        self.resize(self.width(), min(540, max(190, needed_h)))
+        self._position_near_cursor()
+
+        # Enable action buttons now that we have a real translation
+        is_real = not text.startswith("⚠") and text != "Translating…"
+        self.btn_copy.setEnabled(is_real)
+        self.btn_lookup.setEnabled(is_real)
+        self.btn_replace.setEnabled(is_real)
+        if self._on_pin is not None:
+            self.btn_pin.setEnabled(is_real)
+
+    # ------------------------------------------------------------------
+    # Action buttons
+    # ------------------------------------------------------------------
+
+    def _replace_text(self):
+        """Copy the translation to clipboard and paste it over the selection."""
+        translation = self.translation_label.text()
+        if not translation or translation == "Translating…":
+            return
+
+        try:
+            pyperclip.copy(translation)
+        except Exception:
+            return
+
+        # Close without restoring original clipboard (translation stays in clipboard).
+        self._dismissed = True
+        if self._worker and self._worker.isRunning():
+            self._worker.quit()
+            self._worker.wait(500)
+        self.close()
+
+        # Give the source app ~120 ms to regain focus before we paste.
+        QTimer.singleShot(120, self._do_paste)
+
+    def _do_paste(self):
+        try:
+            from pynput.keyboard import Controller as KeyboardController, Key
+            kb = KeyboardController()
+            kb.press(Key.ctrl)
+            kb.press("v")
+            kb.release("v")
+            kb.release(Key.ctrl)
+        except Exception as e:
+            print(f"[replace] paste failed: {e}")
+
+    def _pin_to_sidebar(self):
+        """Send the current translation to the sidebar and dismiss."""
+        if self._on_pin is None:
+            return
+        translation = self.translation_label.text()
+        if not translation or translation == "Translating…":
+            return
+        self._on_pin(self.captured_text, translation)
+        self._dismiss()
+
+    def _copy_translation(self):
+        """Copy the translation text to the system clipboard without dismissing."""
+        translation = self.translation_label.text()
+        if not translation or translation == "Translating…":
+            return
+        try:
+            QApplication.clipboard().setText(translation)
+        except Exception:
+            return
+        # Brief visual feedback
+        self.btn_copy.setText("Copied!")
+        QTimer.singleShot(1500, lambda: self.btn_copy.setText("Copy"))
+
+    def _lookup_external(self):
+        """Open the configured lookup URL in the default browser."""
+        encoded = urllib.parse.quote(self.captured_text)
+        if self._config and self._config.external_lookup_url:
+            url_template = self._config.external_lookup_url
+        else:
+            url_template = "https://www.mdbg.net/chinese/dictionary?wdqb={query}"
+        url_str = url_template.replace("{query}", encoded)
+        QDesktopServices.openUrl(QUrl(url_str))
+
+    def _open_language_settings(self):
+        """Open Windows Language Settings to install the Chinese OCR language pack."""
+        QDesktopServices.openUrl(QUrl("ms-settings:regionlanguage"))
+
+    # ------------------------------------------------------------------
+    # Dismiss behaviour
+    # ------------------------------------------------------------------
+
     def keyPressEvent(self, event):
-        """Handle Esc key to dismiss."""
         if event.key() == Qt.Key.Key_Escape:
             self._dismiss()
         else:
             super().keyPressEvent(event)
 
-    def focusOutEvent(self, event):
-        """Handle focus loss to dismiss."""
-        super().focusOutEvent(event)
-        # Use a timer to allow the widget to process the focus loss first
-        QTimer.singleShot(10, self._dismiss)
-
     def changeEvent(self, event):
-        """Handle window deactivation to dismiss."""
         from PyQt6.QtCore import QEvent
 
         if event.type() == QEvent.Type.WindowDeactivate:
-            QTimer.singleShot(10, self._dismiss)
+            # Delay slightly so button-click signals fire before we close.
+            QTimer.singleShot(150, self._dismiss)
         super().changeEvent(event)
 
     def _dismiss(self):
-        """Dismiss the popup and restore clipboard."""
         if self._dismissed:
             return
         self._dismissed = True
-
-        # Restore original clipboard
         try:
             pyperclip.copy(self.original_clipboard)
         except Exception:
             pass
-
+        if self._worker and self._worker.isRunning():
+            self._worker.quit()
+            self._worker.wait(500)
         self.close()
 
     def mousePressEvent(self, event):
-        """Handle click-outside detection."""
-        # Clicks inside the widget are handled normally.
-        # For click-outside, we rely on focusOutEvent which fires when
-        # another window gains focus. PyQt will emit focusOutEvent.
         super().mousePressEvent(event)

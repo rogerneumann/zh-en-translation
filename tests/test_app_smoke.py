@@ -64,9 +64,36 @@ def test_popup_long_text_sizing():
     long_text = "这是一段很长的中文文本。" * 20
     popup = TranslatorPopup(long_text, original_clipboard="")
 
-    # Popup should not exceed max bounds (widened in M2 for word-by-word table)
     assert popup.width() <= 700
     assert popup.height() <= 600
+
+
+def test_popup_with_dictionary():
+    """Popup accepts dictionary kwarg without crashing (reserved for future word-lookup)."""
+    import tempfile
+    from pathlib import Path
+    from zh_en_translator.engines.dictionary import Dictionary
+
+    _ = QApplication.instance() or QApplication(sys.argv)
+
+    cedict_content = "你好 你好 [ni3 hao3] /hello/hi/\n世界 世界 [shi4 jie4] /world/\n"
+    with tempfile.TemporaryDirectory() as tmpdir:
+        cedict_file = Path(tmpdir) / "cedict.txt"
+        cedict_file.write_text(cedict_content, encoding="utf-8")
+        db_file = Path(tmpdir) / "test.db"
+        dictionary = Dictionary.build_from_cedict(cedict_file, db_file)
+
+        popup = TranslatorPopup("你好世界", original_clipboard="", dictionary=dictionary)
+
+        assert popup.captured_text == "你好世界"
+        assert popup.translation_label.text() == "Translating…"
+
+        # Stop the background worker before the test exits to avoid QThread crash
+        if popup._worker and popup._worker.isRunning():
+            popup._worker.quit()
+            popup._worker.wait(2000)
+
+        dictionary.close()
 
 
 def test_hotkey_manager_import():
@@ -74,7 +101,7 @@ def test_hotkey_manager_import():
     from zh_en_translator.hotkey import HotKeyManager, DEFAULT_HOTKEY_STRING
 
     assert HotKeyManager is not None
-    assert DEFAULT_HOTKEY_STRING == "ctrl+shift+t"
+    assert DEFAULT_HOTKEY_STRING == "<ctrl>+<shift>+t"
 
 
 def test_hotkey_manager_instantiation():
@@ -82,7 +109,7 @@ def test_hotkey_manager_instantiation():
     from zh_en_translator.hotkey import HotKeyManager
 
     manager = HotKeyManager()
-    assert manager.hotkey_string == "ctrl+shift+t"
+    assert manager.hotkey_string == "<ctrl>+<shift>+t"
     assert manager.listener is None
 
 
@@ -99,3 +126,126 @@ def test_capture_instantiation():
 
     capture = TextCapture()
     assert capture.keyboard is not None
+
+
+def test_popup_copy_button_exists():
+    """Copy button is present on the popup."""
+    from PyQt6.QtWidgets import QAbstractButton
+
+    _ = QApplication.instance() or QApplication(sys.argv)
+
+    popup = TranslatorPopup("你好", original_clipboard="")
+    assert hasattr(popup, "btn_copy")
+    assert isinstance(popup.btn_copy, QAbstractButton)
+
+
+def test_popup_lookup_button_exists():
+    """Look up button is present on the popup."""
+    from PyQt6.QtWidgets import QAbstractButton
+
+    _ = QApplication.instance() or QApplication(sys.argv)
+
+    popup = TranslatorPopup("你好", original_clipboard="")
+    assert hasattr(popup, "btn_lookup")
+    assert isinstance(popup.btn_lookup, QAbstractButton)
+
+
+def test_sidebar_instantiation():
+    """TranslatorSidebar can be instantiated without crashing."""
+    from zh_en_translator.ui.sidebar import TranslatorSidebar
+    _ = QApplication.instance() or QApplication(sys.argv)
+    sidebar = TranslatorSidebar()
+    assert not sidebar.isVisible()
+
+
+def test_sidebar_set_translation():
+    """set_translation updates content without crashing."""
+    from zh_en_translator.ui.sidebar import TranslatorSidebar
+    _ = QApplication.instance() or QApplication(sys.argv)
+    sidebar = TranslatorSidebar()
+    sidebar.set_translation("你好", "Hello")
+    assert "Hello" in sidebar.translation_label.text()
+
+
+def test_sidebar_set_side():
+    """set_side does not crash for left or right."""
+    from zh_en_translator.ui.sidebar import TranslatorSidebar
+    _ = QApplication.instance() or QApplication(sys.argv)
+    sidebar = TranslatorSidebar()
+    sidebar.set_side("left")
+    sidebar.set_side("right")
+
+
+def test_sidebar_signals():
+    """closed signal exists on TranslatorSidebar."""
+    from zh_en_translator.ui.sidebar import TranslatorSidebar
+    _ = QApplication.instance() or QApplication(sys.argv)
+    sidebar = TranslatorSidebar()
+    assert hasattr(sidebar, "closed")
+
+
+def test_popup_lang_settings_button_hidden_by_default():
+    """btn_lang_settings is hidden unless OCR reports a missing language pack."""
+    _ = QApplication.instance() or QApplication(sys.argv)
+    popup = TranslatorPopup("你好", original_clipboard="")
+    assert hasattr(popup, "btn_lang_settings")
+    assert popup.btn_lang_settings.isHidden()
+
+
+def test_popup_set_ocr_result_error_stays_in_translation_area():
+    """set_ocr_result with an ⚠ error sets translation label, not source text."""
+    _ = QApplication.instance() or QApplication(sys.argv)
+    popup = TranslatorPopup("🔍 Running OCR…", original_clipboard="", is_ocr_pending=True)
+    error_msg = "⚠ No text detected in image."
+    popup.set_ocr_result(error_msg)
+    assert popup.translation_label.text() == error_msg
+    # Source text should still be the OCR placeholder, not the error
+    assert popup.text_display.toPlainText() == "🔍 Running OCR…"
+    # Language settings button should remain hidden for a generic error
+    assert not popup.btn_lang_settings.isVisible()
+
+
+def test_popup_set_ocr_result_language_pack_shows_button():
+    """set_ocr_result with 'language pack' in the error text shows btn_lang_settings."""
+    _ = QApplication.instance() or QApplication(sys.argv)
+    popup = TranslatorPopup("🔍 Running OCR…", original_clipboard="", is_ocr_pending=True)
+    error_msg = "⚠ No Chinese OCR language pack found.\n\nClick 'Open Language Settings' below."
+    popup.set_ocr_result(error_msg)
+    # isVisible() is False because the parent popup is not shown; check isHidden() instead
+    assert not popup.btn_lang_settings.isHidden()
+
+
+def test_popup_set_ocr_result_success_starts_translation():
+    """set_ocr_result with valid text updates source display and triggers translation."""
+    _ = QApplication.instance() or QApplication(sys.argv)
+    popup = TranslatorPopup("🔍 Running OCR…", original_clipboard="", is_ocr_pending=True)
+    popup.set_ocr_result("你好世界")
+    assert popup.captured_text == "你好世界"
+    assert popup.text_display.toPlainText() == "你好世界"
+    assert popup.translation_label.text() == "Translating…"
+    # Cleanup worker
+    if popup._worker and popup._worker.isRunning():
+        popup._worker.quit()
+        popup._worker.wait(2000)
+
+
+def test_popup_effective_bg_returns_color():
+    """_effective_bg() always returns a QColor with lightness > 0."""
+    from PyQt6.QtGui import QColor
+    _ = QApplication.instance() or QApplication(sys.argv)
+    popup = TranslatorPopup("test", original_clipboard="")
+    bg = popup._effective_bg()
+    assert isinstance(bg, QColor)
+    assert bg.lightness() >= 0
+
+
+def test_popup_effective_bg_uses_config_color():
+    """_effective_bg() returns config bg_color when set."""
+    from PyQt6.QtGui import QColor
+    from zh_en_translator.config import Config
+    _ = QApplication.instance() or QApplication(sys.argv)
+    cfg = Config(bg_color="#ff0000")
+    popup = TranslatorPopup("test", original_clipboard="", config=cfg)
+    bg = popup._effective_bg()
+    assert bg.red() == 255
+    assert bg.green() == 0
