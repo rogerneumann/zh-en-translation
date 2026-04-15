@@ -125,10 +125,11 @@ class TranslatorSidebar(QWidget):
         self.btn_pin.setChecked(False)
         self.btn_pin.setToolTip("Keep pinned (don't auto-collapse on mouse leave)")
         self.btn_pin.setStyleSheet(
-            "QPushButton { background: transparent; border: none;"
-            " font-size: 11pt; opacity: 0.5; }"
-            "QPushButton:checked { opacity: 1.0; }"
-            "QPushButton:hover { background: rgba(0,0,0,0.06); border-radius: 4px; }"
+            "QPushButton { background: transparent; border: 1px solid transparent;"
+            " border-radius: 4px; font-size: 11pt; color: palette(mid); }"
+            "QPushButton:checked { background: rgba(0,160,255,0.15);"
+            " border: 1px solid rgba(0,160,255,0.5); color: palette(text); }"
+            "QPushButton:hover { background: rgba(0,0,0,0.06); }"
         )
         self.btn_pin.toggled.connect(self._on_pin_toggled)
         header.addWidget(self.btn_pin)
@@ -237,15 +238,20 @@ class TranslatorSidebar(QWidget):
 
     def apply_config(self, config) -> None:
         """Apply a Config object: update colors, side, and Y position."""
+        # Compare against OLD colors before updating, then re-point indicator
+        was_fresh = (self._indicator_colour == self.COLOUR_FRESH)
+        was_idle = (self._indicator_colour == self.COLOUR_IDLE)
+
         if config.color_fresh:
             self.COLOUR_FRESH = QColor(config.color_fresh)
         if config.color_idle:
             self.COLOUR_IDLE = QColor(config.color_idle)
-        # Update indicator color to reflect new palette
-        if self._indicator_colour == self.COLOUR_FRESH:
+
+        if was_fresh:
             self._indicator_colour = self.COLOUR_FRESH
-        elif self._indicator_colour == self.COLOUR_IDLE:
+        elif was_idle:
             self._indicator_colour = self.COLOUR_IDLE
+
         self._pos_y = config.sidebar_y
         self.set_side(config.side)
         self.update()
@@ -324,13 +330,14 @@ class TranslatorSidebar(QWidget):
     # ──────────────────────────────────────────────────────────────────────────
 
     def _is_on_strip(self, local_pos: QPoint) -> bool:
-        """True when the cursor is within the visible 6px strip."""
+        """True when the cursor is within the visible 6px strip (collapsed only)."""
+        # When collapsed, the window is mostly off-screen:
+        #   right side → window pushed RIGHT, leftmost 6px visible at screen edge
+        #   left side  → window pushed LEFT, rightmost 6px visible at screen edge
         if self._side == "right":
-            # Strip is the rightmost STRIP_WIDTH pixels
-            return local_pos.x() >= self.WIDTH - self.STRIP_WIDTH
-        else:
-            # Strip is the leftmost STRIP_WIDTH pixels
             return local_pos.x() <= self.STRIP_WIDTH
+        else:
+            return local_pos.x() >= self.WIDTH - self.STRIP_WIDTH
 
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
@@ -391,14 +398,24 @@ class TranslatorSidebar(QWidget):
         painter.setPen(QPen(QColor(0, 0, 0, 40), 1))
         painter.drawPath(path)
 
-        # Indicator strip
-        if self._side == "right":
-            strip_rect = QRectF(
-                self.WIDTH - self.STRIP_WIDTH, 0,
-                self.STRIP_WIDTH, self.height()
-            )
+        # Indicator strip — position depends on which edge is actually visible.
+        # Collapsed: window is mostly off-screen, visible edge is opposite to
+        #            what you'd expect from the side name.
+        #   right collapsed → leftmost STRIP_WIDTH px are on-screen
+        #   left  collapsed → rightmost STRIP_WIDTH px are on-screen
+        # Expanded: full panel visible; strip sits at the screen-edge side.
+        #   right expanded  → rightmost STRIP_WIDTH px (near screen-right edge)
+        #   left  expanded  → leftmost  STRIP_WIDTH px (near screen-left edge)
+        if self._expanded:
+            if self._side == "right":
+                strip_rect = QRectF(self.WIDTH - self.STRIP_WIDTH, 0, self.STRIP_WIDTH, self.height())
+            else:
+                strip_rect = QRectF(0, 0, self.STRIP_WIDTH, self.height())
         else:
-            strip_rect = QRectF(0, 0, self.STRIP_WIDTH, self.height())
+            if self._side == "right":
+                strip_rect = QRectF(0, 0, self.STRIP_WIDTH, self.height())
+            else:
+                strip_rect = QRectF(self.WIDTH - self.STRIP_WIDTH, 0, self.STRIP_WIDTH, self.height())
 
         strip_path = QPainterPath()
         strip_path.addRoundedRect(strip_rect, 4, 4)
