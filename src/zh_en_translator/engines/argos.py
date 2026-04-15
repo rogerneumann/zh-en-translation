@@ -110,9 +110,14 @@ def translate_sentence(text: str) -> str | None:
         target_tokens = results[0].hypotheses[0]
 
         translation = sp_model.decode(target_tokens)
+        # Sentencepiece ▁ (U+2581) marks word boundaries; strip from decoded output
+        translation = translation.replace("\u2581", " ").strip()
+        # Collapse any double-spaces left by the substitution
+        while "  " in translation:
+            translation = translation.replace("  ", " ")
         print(f"[argos] translation: {translation!r}")
 
-        return translation.strip() if translation and translation.strip() else None
+        return translation if translation else None
 
     except Exception as e:
         print(f"[argos] exception: {e}")
