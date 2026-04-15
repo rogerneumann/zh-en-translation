@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 import platformdirs
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QObject, pyqtSignal
 from PyQt6.QtGui import QIcon, QColor
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 
@@ -14,15 +14,23 @@ from zh_en_translator.ui.popup import TranslatorPopup
 from zh_en_translator.engines.dictionary import Dictionary
 
 
-class TranslatorApp:
+class TranslatorApp(QObject):
     """System tray application with global hotkey listener."""
+
+    # Signal used to marshal hotkey events from pynput's thread → Qt main thread.
+    _hotkey_signal = pyqtSignal()
 
     def __init__(self):
         """Initialize the translator app."""
+        # QApplication must exist before QObject.__init__
         self.app = QApplication.instance() or QApplication(sys.argv)
+        super().__init__()
+
         self.tray_icon = None
         self.popup = None
         self.paused = False
+
+        self._hotkey_signal.connect(self._on_hotkey_pressed)
 
         self.hotkey_manager = HotKeyManager()
         self.text_capture = TextCapture()
@@ -164,7 +172,8 @@ class TranslatorApp:
     def start(self):
         """Start the application with hotkey listener."""
         try:
-            self.hotkey_manager.start(self._on_hotkey_pressed)
+            # Emit the signal from pynput's thread; Qt queues it to the main thread.
+            self.hotkey_manager.start(self._hotkey_signal.emit)
         except RuntimeError as e:
             # Log but don't crash; user can still manually trigger via menu
             print(f"Warning: Failed to register global hotkey: {e}")

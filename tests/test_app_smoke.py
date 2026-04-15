@@ -87,8 +87,7 @@ def test_popup_with_dictionary():
         popup = TranslatorPopup("你好世界", original_clipboard="", dictionary=dictionary)
 
         assert popup.captured_text == "你好世界"
-        assert hasattr(popup, "word_table")
-        assert popup.word_table.rowCount() > 0
+        assert popup._word_count > 0
         dictionary.close()
 
 
