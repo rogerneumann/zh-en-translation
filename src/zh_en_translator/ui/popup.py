@@ -1,51 +1,80 @@
-"""Frameless popup widget for displaying captured text and word-by-word translations."""
+"""Frameless popup widget — shows source text and English sentence translation."""
 
 import pyperclip
-from PyQt6.QtCore import Qt, QTimer
-from PyQt6.QtGui import QCursor, QColor
+from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
+from PyQt6.QtGui import QCursor, QColor, QFont
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
-    QHBoxLayout,
     QLabel,
     QTextEdit,
     QApplication,
     QGraphicsDropShadowEffect,
-    QScrollArea,
     QFrame,
 )
 
 from zh_en_translator.engines.dictionary import Dictionary
 
 
+class _TranslationWorker(QThread):
+    """Background thread: downloads pack if needed, then translates."""
+
+    result_ready = pyqtSignal(str)   # emits translated text or error message
+
+    def __init__(self, text: str):
+        super().__init__()
+        self.text = text
+
+    def run(self):
+        from zh_en_translator.engines.argos import ensure_pack, translate_sentence
+
+        if not ensure_pack():
+            self.result_ready.emit(
+                "⚠ Could not download the translation model.\n"
+                "Check your internet connection and try again."
+            )
+            return
+
+        result = translate_sentence(self.text)
+        if result:
+            self.result_ready.emit(result)
+        else:
+            self.result_ready.emit("(no translation returned)")
+
+
 class TranslatorPopup(QWidget):
     """
-    Frameless popup that displays captured text and word-by-word translations.
+    Frameless popup: source text at top, English sentence translation below.
 
-    Features:
-    - Frameless, rounded corners, drop shadow.
-    - Positioned near cursor, auto-repositions to stay on-screen.
-    - Dismiss on Esc, click-outside, or focus loss.
-    - Restores original clipboard on dismiss.
-    - Pinyin + English list when dictionary is provided.
+    Translation runs in a background thread — the popup appears immediately
+    with a 'Translating…' placeholder that is replaced when the result arrives.
+
+    Dismiss: Esc, click-outside, or focus loss.
     """
 
     def __init__(
-        self, text: str, original_clipboard: str = "", dictionary: Dictionary | None = None
+        self,
+        text: str,
+        original_clipboard: str = "",
+        dictionary: Dictionary | None = None,  # kept for API compatibility
     ):
         super().__init__()
         self.captured_text = text
         self.original_clipboard = original_clipboard
-        self.dictionary = dictionary
+        self.dictionary = dictionary  # reserved for future word-lookup feature
         self._dismissed = False
-        self._word_count = 0
+        self._worker: _TranslationWorker | None = None
 
         self._setup_ui()
         self._apply_styling()
         self._position_near_cursor()
+        self._start_translation()
+
+    # ------------------------------------------------------------------
+    # UI construction
+    # ------------------------------------------------------------------
 
     def _setup_ui(self):
-        """Build the UI: source text + pinyin/English word list."""
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.Tool
@@ -54,17 +83,17 @@ class TranslatorPopup(QWidget):
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
         layout = QVBoxLayout()
-        layout.setContentsMargins(16, 14, 16, 14)
+        layout.setContentsMargins(18, 14, 18, 16)
         layout.setSpacing(10)
 
-        # Source text (read-only, selectable, no border)
+        # ── Source text (small, muted) ──────────────────────────────────
         self.text_display = QTextEdit()
         self.text_display.setPlainText(self.captured_text)
         self.text_display.setReadOnly(True)
         self.text_display.setFrameShape(QFrame.Shape.NoFrame)
-        self.text_display.setMaximumHeight(72)
+        self.text_display.setMaximumHeight(60)
         self.text_display.setStyleSheet(
-            "QTextEdit { background: transparent; font-size: 13pt; }"
+            "QTextEdit { background: transparent; font-size: 11pt; color: palette(mid); }"
         )
         self.text_display.setTextInteractionFlags(
             self.text_display.textInteractionFlags()
@@ -72,125 +101,48 @@ class TranslatorPopup(QWidget):
         )
         layout.addWidget(self.text_display)
 
-        # Separator
+        # ── Divider ─────────────────────────────────────────────────────
         sep = QFrame()
         sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet("border: none; border-top: 1px solid rgba(0,0,0,0.10); margin: 0px;")
+        sep.setStyleSheet("border: none; border-top: 1px solid rgba(0,0,0,0.10);")
         layout.addWidget(sep)
 
-        # Word list (pinyin + English)
-        if self.dictionary:
-            self._setup_word_list(layout)
+        # ── English translation (main content) ──────────────────────────
+        self.translation_label = QLabel("Translating…")
+        self.translation_label.setWordWrap(True)
+        self.translation_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.translation_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+        )
+        font = QFont()
+        font.setPointSize(13)
+        self.translation_label.setFont(font)
+        self.translation_label.setStyleSheet(
+            "QLabel { background: transparent; color: palette(text); padding: 4px 0px; }"
+        )
+        layout.addWidget(self.translation_label)
 
-        self._resize_to_fit()
         self.setLayout(layout)
-
-    def _setup_word_list(self, parent_layout: QVBoxLayout):
-        """Build a scrollable pinyin → English list (no Token column)."""
-        from zh_en_translator.engines.pipeline import translate
-
-        results = translate(self.captured_text, self.dictionary)
-        self._word_count = sum(1 for r in results if r.is_chinese)
-
-        scroll = QScrollArea()
-        scroll.setWidgetResizable(True)
-        scroll.setMaximumHeight(280)
-        scroll.setFrameShape(QFrame.Shape.NoFrame)
-        scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-
-        container = QWidget()
-        container.setStyleSheet("background: transparent;")
-        vbox = QVBoxLayout(container)
-        vbox.setSpacing(2)
-        vbox.setContentsMargins(0, 2, 4, 2)
-
-        for result in results:
-            if not result.is_chinese:
-                continue
-
-            row_widget = QWidget()
-            row_widget.setStyleSheet("background: transparent;")
-            row = QHBoxLayout(row_widget)
-            row.setSpacing(12)
-            row.setContentsMargins(0, 3, 0, 3)
-
-            # Pinyin — fixed width, blue
-            pinyin_lbl = QLabel(result.pinyin or "—")
-            pinyin_lbl.setFixedWidth(130)
-            pinyin_lbl.setStyleSheet("color: #5b9bd5; font-size: 10.5pt; background: transparent;")
-            pinyin_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-
-            # English
-            if result.glosses:
-                eng_text = "; ".join(result.glosses[:3])
-                eng_lbl = QLabel(eng_text)
-                eng_lbl.setStyleSheet("font-size: 11pt; background: transparent;")
-            else:
-                eng_lbl = QLabel(f"<i style='color:#d4880a;'>{result.token} — unknown</i>")
-                eng_lbl.setTextFormat(Qt.TextFormat.RichText)
-                eng_lbl.setStyleSheet("background: transparent;")
-
-            eng_lbl.setWordWrap(True)
-            eng_lbl.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
-
-            row.addWidget(pinyin_lbl)
-            row.addWidget(eng_lbl, 1)
-
-            vbox.addWidget(row_widget)
-
-        vbox.addStretch()
-        scroll.setWidget(container)
-        parent_layout.addWidget(scroll)
-
-    def _resize_to_fit(self):
-        """Resize popup to fit content, with reasonable bounds."""
-        min_w, max_w = 380, 540
-        max_h = 520
-
-        source_h = 72 + 10 + 1 + 10  # text_display + spacing + sep + spacing
-        word_h = min(280, max(60, self._word_count * 30 + 8)) if self.dictionary else 0
-        padding = 28  # top + bottom margins
-        estimated_h = min(max_h, source_h + word_h + padding)
-
-        longest = max((len(line) for line in self.captured_text.split("\n")), default=0)
-        estimated_w = min(max_w, max(min_w, longest * 9))
-
-        self.resize(int(estimated_w), int(estimated_h))
+        self.resize(420, 160)
 
     def _apply_styling(self):
-        """Apply rounded corners and drop shadow."""
         self.setStyleSheet(
             """
             QWidget {
                 border-radius: 12px;
                 background-color: palette(window);
             }
-            QScrollBar:vertical {
-                width: 6px;
-                background: transparent;
-            }
-            QScrollBar::handle:vertical {
-                background: rgba(0,0,0,0.18);
-                border-radius: 3px;
-                min-height: 20px;
-            }
-            QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {
-                height: 0px;
-            }
-        """
+            """
         )
-
         shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(22)
-        shadow.setColor(QColor(0, 0, 0, 90))
-        shadow.setOffset(0, 4)
+        shadow.setBlurRadius(24)
+        shadow.setColor(QColor(0, 0, 0, 95))
+        shadow.setOffset(0, 5)
         self.setGraphicsEffect(shadow)
 
     def _position_near_cursor(self):
-        """Position popup near the cursor, staying on-screen."""
         cursor_pos = QCursor.pos()
-        popup_width = self.rect().width()
-        popup_height = self.rect().height()
+        w, h = self.width(), self.height()
 
         app = QApplication.instance()
         if not app:
@@ -199,35 +151,59 @@ class TranslatorPopup(QWidget):
         if not screen:
             return
 
-        available = screen.availableGeometry()
+        avail = screen.availableGeometry()
+        x = cursor_pos.x() + 14
+        y = cursor_pos.y() + 14
 
-        x = cursor_pos.x() + 12
-        y = cursor_pos.y() + 12
+        if x + w > avail.right():
+            x = avail.right() - w - 14
+        if y + h > avail.bottom():
+            y = avail.bottom() - h - 14
 
-        if x + popup_width > available.right():
-            x = available.right() - popup_width - 12
-        if y + popup_height > available.bottom():
-            y = available.bottom() - popup_height - 12
-
-        x = max(x, available.left() + 12)
-        y = max(y, available.top() + 12)
+        x = max(x, avail.left() + 14)
+        y = max(y, avail.top() + 14)
 
         self.move(int(x), int(y))
 
+    # ------------------------------------------------------------------
+    # Translation
+    # ------------------------------------------------------------------
+
+    def _start_translation(self):
+        self._worker = _TranslationWorker(self.captured_text)
+        self._worker.result_ready.connect(self._on_translation_ready)
+        self._worker.start()
+
+    def _on_translation_ready(self, text: str):
+        if self._dismissed:
+            return
+        self.translation_label.setText(text)
+        # Resize to fit the new text, then re-centre near cursor
+        self.translation_label.adjustSize()
+        needed_h = (
+            self.text_display.height()
+            + 10 + 1 + 10          # spacing + sep + spacing
+            + self.translation_label.sizeHint().height()
+            + 18 + 16              # top + bottom margins
+        )
+        self.resize(self.width(), min(520, max(140, needed_h)))
+        self._position_near_cursor()
+
+    # ------------------------------------------------------------------
+    # Dismiss behaviour
+    # ------------------------------------------------------------------
+
     def keyPressEvent(self, event):
-        """Handle Esc key to dismiss."""
         if event.key() == Qt.Key.Key_Escape:
             self._dismiss()
         else:
             super().keyPressEvent(event)
 
     def focusOutEvent(self, event):
-        """Handle focus loss to dismiss."""
         super().focusOutEvent(event)
         QTimer.singleShot(10, self._dismiss)
 
     def changeEvent(self, event):
-        """Handle window deactivation to dismiss."""
         from PyQt6.QtCore import QEvent
 
         if event.type() == QEvent.Type.WindowDeactivate:
@@ -235,18 +211,17 @@ class TranslatorPopup(QWidget):
         super().changeEvent(event)
 
     def _dismiss(self):
-        """Dismiss the popup and restore clipboard."""
         if self._dismissed:
             return
         self._dismissed = True
-
         try:
             pyperclip.copy(self.original_clipboard)
         except Exception:
             pass
-
+        if self._worker and self._worker.isRunning():
+            self._worker.quit()
+            self._worker.wait(500)
         self.close()
 
     def mousePressEvent(self, event):
-        """Handle click-outside detection."""
         super().mousePressEvent(event)
