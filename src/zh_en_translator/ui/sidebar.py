@@ -55,7 +55,7 @@ class TranslatorSidebar(QWidget):
     COLOUR_IDLE    = QColor("#9E8080")
     COLOUR_NEUTRAL = QColor("#AAAAAA")
 
-    def __init__(self):
+    def __init__(self, config=None):
         super().__init__()
         self.setWindowFlags(
             Qt.WindowType.FramelessWindowHint
@@ -64,12 +64,19 @@ class TranslatorSidebar(QWidget):
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
 
+        # Apply config-driven color overrides before using them
+        if config is not None:
+            if config.color_fresh:
+                self.COLOUR_FRESH = QColor(config.color_fresh)
+            if config.color_idle:
+                self.COLOUR_IDLE = QColor(config.color_idle)
+
         # ── State ─────────────────────────────────────────────────────────
-        self._side: str = "right"          # "left" or "right"
+        self._side: str = config.side if config is not None else "right"
         self._expanded: bool = False
         self._pinned: bool = False         # keep-pinned toggle
         self._indicator_colour: QColor = self.COLOUR_IDLE
-        self._pos_y: int = 200            # draggable Y position
+        self._pos_y: int = config.sidebar_y if config is not None else 200
 
         # ── Drag tracking ─────────────────────────────────────────────────
         self._drag_active: bool = False
@@ -227,6 +234,21 @@ class TranslatorSidebar(QWidget):
             return
         self._side = side
         self._reposition()
+
+    def apply_config(self, config) -> None:
+        """Apply a Config object: update colors, side, and Y position."""
+        if config.color_fresh:
+            self.COLOUR_FRESH = QColor(config.color_fresh)
+        if config.color_idle:
+            self.COLOUR_IDLE = QColor(config.color_idle)
+        # Update indicator color to reflect new palette
+        if self._indicator_colour == self.COLOUR_FRESH:
+            self._indicator_colour = self.COLOUR_FRESH
+        elif self._indicator_colour == self.COLOUR_IDLE:
+            self._indicator_colour = self.COLOUR_IDLE
+        self._pos_y = config.sidebar_y
+        self.set_side(config.side)
+        self.update()
 
     def expand(self) -> None:
         """Animate to expanded state."""

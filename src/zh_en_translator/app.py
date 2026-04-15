@@ -7,6 +7,7 @@ from PyQt6.QtCore import Qt, QObject, pyqtSignal, QThread
 from PyQt6.QtGui import QIcon, QColor
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 
+from zh_en_translator.config import load_config, save_config, Config
 from zh_en_translator.hotkey import HotKeyManager
 from zh_en_translator.capture import TextCapture
 from zh_en_translator.ui.popup import TranslatorPopup
@@ -62,24 +63,32 @@ class TranslatorApp(QObject):
         self.app = QApplication.instance() or QApplication(sys.argv)
         super().__init__()
 
+        self.config: Config = load_config()
+
         self.tray_icon = None
         self.popup = None
-        self.sidebar = TranslatorSidebar()
+        self.sidebar = TranslatorSidebar(config=self.config)
         self.paused = False
         self._ocr_worker = None
 
-        self.sidebar_mode: bool = False
+        # Apply mode from config
+        self.sidebar_mode: bool = self.config.mode == "sidebar"
         self._sidebar_translation_worker = None
-        self._sidebar_on_left: bool = False
+        self._sidebar_on_left: bool = self.config.side == "left"
 
         self._hotkey_signal.connect(self._on_hotkey_pressed)
-        self.hotkey_manager = HotKeyManager()
+        self.hotkey_manager = HotKeyManager(hotkey_string=self.config.hotkey)
         self.text_capture = TextCapture()
 
         # Connect sidebar signals
         self.sidebar.closed.connect(self._on_sidebar_closed)
 
         self._setup_tray()
+
+        # Show sidebar if starting in sidebar mode
+        if self.sidebar_mode:
+            self._update_tray_sidebar_label()
+            self.sidebar.show()
 
     def _setup_tray(self):
         self.tray_icon = QSystemTrayIcon(self.app)
@@ -100,7 +109,10 @@ class TranslatorApp(QObject):
         self.action_sidebar_side.triggered.connect(self._on_toggle_sidebar_side)
 
         menu.addSeparator()
+        action_prefs = menu.addAction("Preferences…")
+        action_prefs.triggered.connect(self._open_preferences)
 
+        menu.addSeparator()
         self.action_pause = menu.addAction("Pause")
         self.action_pause.triggered.connect(self._on_pause_resume)
 
@@ -170,7 +182,7 @@ class TranslatorApp(QObject):
             else:
                 return
 
-        self.popup = TranslatorPopup(captured_text, original_clipboard, on_pin=self._pin_to_sidebar)
+        self.popup = TranslatorPopup(captured_text, original_clipboard, on_pin=self._pin_to_sidebar, config=self.config)
         self.popup.show()
 
     def _run_ocr_from_clipboard(self, clipboard):
@@ -182,6 +194,7 @@ class TranslatorApp(QObject):
                 "⚠ No OCR engine available.\nInstall winsdk, tesseract, or paddleocr.",
                 "",
                 on_pin=self._pin_to_sidebar,
+                config=self.config,
             )
             self.popup.show()
             return
@@ -204,6 +217,7 @@ class TranslatorApp(QObject):
             "",
             on_pin=self._pin_to_sidebar,
             is_ocr_pending=True,
+            config=self.config,
         )
         self.popup.show()
 
@@ -263,6 +277,45 @@ class TranslatorApp(QObject):
             self.action_sidebar.setText(
                 "Sidebar Mode: On" if self.sidebar_mode else "Sidebar Mode: Off"
             )
+
+    def _open_preferences(self):
+        from zh_en_translator.ui.preferences import PreferencesDialog
+        dialog = PreferencesDialog(self.config)
+        dialog.settings_applied.connect(self._on_settings_applied)
+        dialog.exec()
+
+    def _on_settings_applied(self, cfg: Config) -> None:
+        old_hotkey = self.config.hotkey
+        self.config = cfg
+        save_config(cfg)
+
+        # Re-register hotkey if changed
+        if cfg.hotkey != old_hotkey:
+            self.hotkey_manager.stop()
+            self.hotkey_manager = HotKeyManager(hotkey_string=cfg.hotkey)
+            try:
+                self.hotkey_manager.start(self._hotkey_signal.emit)
+            except RuntimeError as e:
+                print(f"Warning: Failed to register new hotkey: {e}")
+
+        # Apply config to sidebar
+        self.sidebar.apply_config(cfg)
+
+        # Apply sidebar mode
+        new_mode = cfg.mode == "sidebar"
+        if new_mode != self.sidebar_mode:
+            self.sidebar_mode = new_mode
+            self._update_tray_sidebar_label()
+            if self.sidebar_mode and not self.sidebar.isVisible():
+                self.sidebar.show()
+            elif not self.sidebar_mode:
+                self.sidebar.collapse()
+
+        # Update tray sidebar-side label to match config
+        self._sidebar_on_left = cfg.side == "left"
+        self.action_sidebar_side.setText(
+            "Move Sidebar to Right" if self._sidebar_on_left else "Move Sidebar to Left"
+        )
 
     def _on_pause_resume(self):
         self.paused = not self.paused

@@ -72,6 +72,7 @@ class TranslatorPopup(QWidget):
         dictionary: Dictionary | None = None,   # reserved for future word-lookup
         on_pin=None,                             # Callable[[str, str], None] | None
         is_ocr_pending: bool = False,
+        config=None,                             # Config | None
     ):
         super().__init__()
         self.captured_text = text
@@ -81,9 +82,11 @@ class TranslatorPopup(QWidget):
         self._dismissed = False
         self._worker: _TranslationWorker | None = None
         self._is_ocr_pending = is_ocr_pending
+        self._config = config
 
         self._setup_ui()
         self._apply_styling()
+        self._apply_config(config)
         self._position_near_cursor()
         if not is_ocr_pending:
             self._start_translation()
@@ -204,6 +207,31 @@ class TranslatorPopup(QWidget):
             QPushButton:disabled { color: palette(mid); border-color: rgba(0,0,0,0.07); }
             """
         )
+
+    def _apply_config(self, config):
+        """Apply config settings to font and background color."""
+        if config is None:
+            return
+
+        font = self.translation_label.font()
+        changed = False
+
+        if config.font_family:
+            font.setFamily(config.font_family)
+            changed = True
+
+        if config.font_size != 13:
+            font.setPointSize(config.font_size)
+            changed = True
+
+        if changed:
+            self.translation_label.setFont(font)
+
+        if config.bg_color:
+            from PyQt6.QtGui import QPalette
+            palette = self.palette()
+            palette.setColor(QPalette.ColorRole.Window, QColor(config.bg_color))
+            self.setPalette(palette)
 
     def paintEvent(self, event):
         painter = QPainter(self)
@@ -350,10 +378,14 @@ class TranslatorPopup(QWidget):
         QTimer.singleShot(1500, lambda: self.btn_copy.setText("Copy"))
 
     def _lookup_external(self):
-        """Open MDBG in the default browser with the source Chinese text as query."""
+        """Open the configured lookup URL in the default browser."""
         encoded = urllib.parse.quote(self.captured_text)
-        url = QUrl(f"https://www.mdbg.net/chinese/dictionary?wdqb={encoded}")
-        QDesktopServices.openUrl(url)
+        if self._config and self._config.external_lookup_url:
+            url_template = self._config.external_lookup_url
+        else:
+            url_template = "https://www.mdbg.net/chinese/dictionary?wdqb={query}"
+        url_str = url_template.replace("{query}", encoded)
+        QDesktopServices.openUrl(QUrl(url_str))
 
     # ------------------------------------------------------------------
     # Dismiss behaviour
