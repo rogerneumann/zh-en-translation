@@ -25,7 +25,26 @@ class _OCRWorker(QThread):
     def run(self):
         try:
             result = self.ocr_fn(self.image_bytes, lang="zh")
-            self.result_ready.emit(result if result else "⚠ No text detected in image.")
+            if result:
+                self.result_ready.emit(result)
+            else:
+                # Give a more helpful message if Windows OCR is available but
+                # the Chinese language pack hasn't been installed in Windows.
+                try:
+                    from zh_en_translator.engines.ocr.windows_ocr import (
+                        is_available as win_available,
+                        has_chinese_language,
+                    )
+                    if win_available() and not has_chinese_language():
+                        self.result_ready.emit(
+                            "⚠ No Chinese OCR language pack found.\n"
+                            "Install it: Windows Settings → Time & Language\n"
+                            "→ Language → Add a language → 'Chinese (Simplified, China)'"
+                        )
+                        return
+                except Exception:
+                    pass
+                self.result_ready.emit("⚠ No text detected in image.")
         except Exception as e:
             self.result_ready.emit(f"⚠ OCR failed: {e}")
 
@@ -205,16 +224,20 @@ class TranslatorApp(QObject):
             self._run_ocr_from_qimage(qimage)
 
     def _run_ocr_from_qimage(self, qimage):
-        """Convert a QImage to PNG bytes and run OCR in a background worker."""
+        """Convert a QImage to PNG bytes and run OCR, routing to sidebar or popup."""
         from zh_en_translator.engines.ocr.engine import is_any_engine_available
         if not is_any_engine_available():
-            self.popup = TranslatorPopup(
-                "⚠ No OCR engine available.\nInstall winrt-*, tesseract, or paddleocr.",
-                "",
-                on_pin=self._pin_to_sidebar,
-                config=self.config,
+            msg = (
+                "⚠ No OCR engine available.\n"
+                "Install winrt-* packages or Tesseract.\n"
+                "See README for instructions."
             )
-            self.popup.show()
+            if self.sidebar_mode:
+                self.sidebar.set_translation("OCR", msg)
+                self.sidebar.expand()
+            else:
+                self.popup = TranslatorPopup(msg, "", on_pin=self._pin_to_sidebar, config=self.config)
+                self.popup.show()
             return
 
         from PyQt6.QtCore import QBuffer, QIODevice
@@ -227,24 +250,39 @@ class TranslatorApp(QObject):
         if not image_bytes:
             return
 
-        self.popup = TranslatorPopup(
-            "🔍 Running OCR…",
-            "",
-            on_pin=self._pin_to_sidebar,
-            is_ocr_pending=True,
-            config=self.config,
-        )
-        self.popup.show()
-
         from zh_en_translator.engines.ocr.engine import ocr_image
         self._ocr_worker = _OCRWorker(image_bytes, ocr_image)
-        self._ocr_worker.result_ready.connect(self._on_ocr_result)
+
+        if self.sidebar_mode:
+            # Route OCR result to the sidebar
+            self.sidebar.set_translation_pending("🔍 Running OCR…")
+            self.sidebar.expand()
+            self._ocr_worker.result_ready.connect(self._on_sidebar_ocr_result)
+        else:
+            self.popup = TranslatorPopup(
+                "🔍 Running OCR…",
+                "",
+                on_pin=self._pin_to_sidebar,
+                is_ocr_pending=True,
+                config=self.config,
+            )
+            self.popup.show()
+            self._ocr_worker.result_ready.connect(self._on_ocr_result)
+
         self._ocr_worker.start()
 
     def _on_ocr_result(self, text: str):
-        """Called when OCR worker finishes — update popup with extracted text."""
+        """Called when OCR completes in popup mode — update popup."""
         if self.popup and not self.popup._dismissed:
             self.popup.set_ocr_result(text)
+
+    def _on_sidebar_ocr_result(self, text: str) -> None:
+        """Called when OCR completes in sidebar mode — translate if text, else show error."""
+        if text.startswith("⚠"):
+            self.sidebar.update_translation(text)
+        else:
+            # OCR succeeded — translate the extracted text via sidebar worker
+            self._translate_for_sidebar(text)
 
     def _pin_to_sidebar(self, source: str, translation: str) -> None:
         """Called by the popup's Pin button — show translation in the sidebar."""
