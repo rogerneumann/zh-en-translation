@@ -2,14 +2,13 @@
 
 import pyperclip
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal
-from PyQt6.QtGui import QCursor, QColor, QFont
+from PyQt6.QtGui import QCursor, QFont
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
     QLabel,
     QTextEdit,
     QApplication,
-    QGraphicsDropShadowEffect,
     QFrame,
 )
 
@@ -129,16 +128,20 @@ class TranslatorPopup(QWidget):
         self.setStyleSheet(
             """
             QWidget {
-                border-radius: 12px;
+                border-radius: 10px;
                 background-color: palette(window);
+                border: 1px solid palette(mid);
+            }
+            QTextEdit {
+                border: none;
+                background: transparent;
+            }
+            QLabel {
+                border: none;
+                background: transparent;
             }
             """
         )
-        shadow = QGraphicsDropShadowEffect()
-        shadow.setBlurRadius(24)
-        shadow.setColor(QColor(0, 0, 0, 95))
-        shadow.setOffset(0, 5)
-        self.setGraphicsEffect(shadow)
 
     def _position_near_cursor(self):
         cursor_pos = QCursor.pos()
