@@ -29,6 +29,28 @@ class _OCRWorker(QThread):
             self.result_ready.emit(f"⚠ OCR failed: {e}")
 
 
+class _SidebarTranslationWorker(QThread):
+    result_ready = pyqtSignal(str)
+
+    def __init__(self, text: str):
+        super().__init__()
+        self.text = text
+
+    def run(self):
+        from zh_en_translator.engines.argos import ensure_pack, translate_sentence
+
+        if not ensure_pack():
+            self.result_ready.emit("⚠ Translation model not available.")
+            return
+        try:
+            result = translate_sentence(self.text)
+        except Exception as e:
+            result = None
+        self.result_ready.emit(
+            result if result else f"(no translation — input: {self.text[:60]!r})"
+        )
+
+
 class TranslatorApp(QObject):
     """System tray application with global hotkey listener."""
 
@@ -46,9 +68,16 @@ class TranslatorApp(QObject):
         self.paused = False
         self._ocr_worker = None
 
+        self.sidebar_mode: bool = False
+        self._sidebar_translation_worker = None
+        self._sidebar_on_left: bool = False
+
         self._hotkey_signal.connect(self._on_hotkey_pressed)
         self.hotkey_manager = HotKeyManager()
         self.text_capture = TextCapture()
+
+        # Connect sidebar signals
+        self.sidebar.closed.connect(self._on_sidebar_closed)
 
         self._setup_tray()
 
@@ -61,8 +90,16 @@ class TranslatorApp(QObject):
         action_translate = menu.addAction("Translate Selection")
         action_translate.triggered.connect(self._on_hotkey_pressed)
 
-        action_sidebar = menu.addAction("Show Sidebar")
-        action_sidebar.triggered.connect(self.sidebar.show)
+        menu.addSeparator()
+
+        self.action_sidebar = menu.addAction("Sidebar Mode: Off")
+        self.action_sidebar.setCheckable(True)
+        self.action_sidebar.triggered.connect(self._on_toggle_sidebar_mode)
+
+        self.action_sidebar_side = menu.addAction("Move Sidebar to Left")
+        self.action_sidebar_side.triggered.connect(self._on_toggle_sidebar_side)
+
+        menu.addSeparator()
 
         self.action_pause = menu.addAction("Pause")
         self.action_pause.triggered.connect(self._on_pause_resume)
@@ -87,6 +124,26 @@ class TranslatorApp(QObject):
     def _on_hotkey_pressed(self):
         if self.paused:
             return
+
+        # In sidebar mode — capture text, or if none, just expand sidebar
+        if self.sidebar_mode:
+            captured_text = self.text_capture.capture_selection()
+            if not captured_text:
+                clipboard = QApplication.instance().clipboard()
+                mime = clipboard.mimeData()
+                if mime.hasImage():
+                    self._run_ocr_from_clipboard(clipboard)
+                    return
+                elif mime.hasText():
+                    captured_text = mime.text().strip()
+                if not captured_text:
+                    self.sidebar.expand()
+                    return
+            # Have text in sidebar mode → update sidebar directly
+            self._translate_for_sidebar(captured_text)
+            return
+
+        # Normal popup mode
         if self.popup:
             self.popup.close()
 
@@ -164,6 +221,48 @@ class TranslatorApp(QObject):
     def _pin_to_sidebar(self, source: str, translation: str) -> None:
         """Called by the popup's Pin button — show translation in the sidebar."""
         self.sidebar.set_translation(source, translation)
+        if not self.sidebar_mode:
+            self.sidebar_mode = True
+            self._update_tray_sidebar_label()
+        if not self.sidebar.isVisible():
+            self.sidebar.show()
+
+    def _translate_for_sidebar(self, text: str) -> None:
+        self.sidebar.set_translation_pending(text)
+        self.sidebar.expand()
+        if self._sidebar_translation_worker and self._sidebar_translation_worker.isRunning():
+            self._sidebar_translation_worker.quit()
+            self._sidebar_translation_worker.wait(300)
+        self._sidebar_translation_worker = _SidebarTranslationWorker(text)
+        self._sidebar_translation_worker.result_ready.connect(self.sidebar.update_translation)
+        self._sidebar_translation_worker.start()
+
+    def _on_sidebar_closed(self) -> None:
+        self.sidebar_mode = False
+        self._update_tray_sidebar_label()
+
+    def _on_toggle_sidebar_mode(self, checked: bool) -> None:
+        self.sidebar_mode = checked
+        if checked and not self.sidebar.isVisible():
+            self.sidebar.show()
+        elif not checked:
+            self.sidebar.collapse()
+        self._update_tray_sidebar_label()
+
+    def _on_toggle_sidebar_side(self) -> None:
+        self._sidebar_on_left = not self._sidebar_on_left
+        side = "left" if self._sidebar_on_left else "right"
+        self.sidebar.set_side(side)
+        self.action_sidebar_side.setText(
+            "Move Sidebar to Right" if self._sidebar_on_left else "Move Sidebar to Left"
+        )
+
+    def _update_tray_sidebar_label(self) -> None:
+        if hasattr(self, "action_sidebar"):
+            self.action_sidebar.setChecked(self.sidebar_mode)
+            self.action_sidebar.setText(
+                "Sidebar Mode: On" if self.sidebar_mode else "Sidebar Mode: Off"
+            )
 
     def _on_pause_resume(self):
         self.paused = not self.paused
