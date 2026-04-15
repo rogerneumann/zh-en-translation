@@ -1,13 +1,17 @@
 """Frameless popup widget — shows source text and English sentence translation."""
 
+from __future__ import annotations
+
 import pyperclip
 from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QRectF
 from PyQt6.QtGui import QCursor, QFont, QPainter, QPainterPath, QPen, QColor
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
+    QHBoxLayout,
     QLabel,
     QTextEdit,
+    QPushButton,
     QApplication,
     QFrame,
 )
@@ -16,9 +20,9 @@ from zh_en_translator.engines.dictionary import Dictionary
 
 
 class _TranslationWorker(QThread):
-    """Background thread: downloads pack if needed, then translates."""
+    """Background thread: runs translation and emits the result."""
 
-    result_ready = pyqtSignal(str)   # emits translated text or error message
+    result_ready = pyqtSignal(str)
 
     def __init__(self, text: str):
         super().__init__()
@@ -30,9 +34,8 @@ class _TranslationWorker(QThread):
         print(f"[translate] input ({len(self.text)} chars): {self.text[:80]!r}")
 
         if not ensure_pack():
-            msg = "⚠ Could not download the translation model. Check your internet connection."
-            print(f"[translate] ensure_pack() failed")
-            self.result_ready.emit(msg)
+            print("[translate] ensure_pack() failed")
+            self.result_ready.emit("⚠ Translation model not available.")
             return
 
         try:
@@ -42,7 +45,9 @@ class _TranslationWorker(QThread):
             print(f"[translate] exception: {e}")
             result = None
 
-        self.result_ready.emit(result if result else f"(no translation — input was: {self.text[:60]!r})")
+        self.result_ready.emit(
+            result if result else f"(no translation — input: {self.text[:60]!r})"
+        )
 
 
 class TranslatorPopup(QWidget):
@@ -52,19 +57,25 @@ class TranslatorPopup(QWidget):
     Translation runs in a background thread — the popup appears immediately
     with a 'Translating…' placeholder that is replaced when the result arrives.
 
-    Dismiss: Esc, click-outside, or focus loss.
+    Buttons (enabled once translation is ready):
+      • Replace text — pastes the translation over the original selection
+      • Pin →        — sends the translation to the persistent sidebar
+
+    Dismiss: Esc key or clicking outside the popup.
     """
 
     def __init__(
         self,
         text: str,
         original_clipboard: str = "",
-        dictionary: Dictionary | None = None,  # kept for API compatibility
+        dictionary: Dictionary | None = None,   # reserved for future word-lookup
+        on_pin=None,                             # Callable[[str, str], None] | None
     ):
         super().__init__()
         self.captured_text = text
         self.original_clipboard = original_clipboard
-        self.dictionary = dictionary  # reserved for future word-lookup feature
+        self.dictionary = dictionary
+        self._on_pin = on_pin
         self._dismissed = False
         self._worker: _TranslationWorker | None = None
 
@@ -84,23 +95,21 @@ class TranslatorPopup(QWidget):
             | Qt.WindowType.WindowStaysOnTopHint
         )
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
         layout = QVBoxLayout()
-        layout.setContentsMargins(18, 14, 18, 16)
+        layout.setContentsMargins(18, 14, 18, 14)
         layout.setSpacing(10)
 
-        # ── Source text (small, muted) ──────────────────────────────────
+        # ── Source text (small, muted, selectable) ──────────────────────
         self.text_display = QTextEdit()
         self.text_display.setPlainText(self.captured_text)
         self.text_display.setReadOnly(True)
         self.text_display.setFrameShape(QFrame.Shape.NoFrame)
         self.text_display.setMaximumHeight(60)
-        self.text_display.setStyleSheet(
-            "QTextEdit { background: transparent; font-size: 11pt; color: palette(mid); }"
-        )
         self.text_display.setTextInteractionFlags(
-            self.text_display.textInteractionFlags()
-            | Qt.TextInteractionFlag.TextSelectableByMouse
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
         )
         layout.addWidget(self.text_display)
 
@@ -110,58 +119,91 @@ class TranslatorPopup(QWidget):
         sep.setStyleSheet("border: none; border-top: 1px solid rgba(0,0,0,0.10);")
         layout.addWidget(sep)
 
-        # ── English translation (main content) ──────────────────────────
+        # ── English translation (main content, selectable) ──────────────
         self.translation_label = QLabel("Translating…")
         self.translation_label.setWordWrap(True)
-        self.translation_label.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self.translation_label.setAlignment(
+            Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft
+        )
         self.translation_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.TextSelectableByKeyboard
         )
         font = QFont()
         font.setPointSize(13)
         self.translation_label.setFont(font)
-        self.translation_label.setStyleSheet(
-            "QLabel { background: transparent; color: palette(text); padding: 4px 0px; }"
-        )
         layout.addWidget(self.translation_label)
 
+        # ── Action buttons ───────────────────────────────────────────────
+        btn_row = QHBoxLayout()
+        btn_row.setSpacing(8)
+        btn_row.addStretch()
+
+        self.btn_replace = QPushButton("Replace text")
+        self.btn_replace.setEnabled(False)
+        self.btn_replace.setToolTip("Paste translation over the selected text")
+        self.btn_replace.clicked.connect(self._replace_text)
+        btn_row.addWidget(self.btn_replace)
+
+        self.btn_pin = QPushButton("Pin →")
+        self.btn_pin.setEnabled(False)
+        self.btn_pin.setToolTip("Pin translation to the sidebar")
+        self.btn_pin.setVisible(self._on_pin is not None)
+        self.btn_pin.clicked.connect(self._pin_to_sidebar)
+        btn_row.addWidget(self.btn_pin)
+
+        layout.addLayout(btn_row)
+
         self.setLayout(layout)
-        self.resize(420, 160)
+        self.resize(420, 190)
 
     def _apply_styling(self):
-        # Child widgets only — root background is painted in paintEvent.
         self.setStyleSheet(
             """
-            QTextEdit { border: none; background: transparent; font-size: 11pt; color: palette(mid); }
-            QLabel    { border: none; background: transparent; }
-            QFrame    { background: transparent; }
+            QTextEdit {
+                border: none;
+                background: transparent;
+                font-size: 11pt;
+                color: palette(mid);
+            }
+            QLabel {
+                border: none;
+                background: transparent;
+                color: palette(text);
+                padding: 4px 0;
+            }
+            QFrame { background: transparent; }
+            QPushButton {
+                background: transparent;
+                border: 1px solid rgba(0,0,0,0.15);
+                border-radius: 4px;
+                padding: 3px 10px;
+                font-size: 10pt;
+                color: palette(text);
+            }
+            QPushButton:hover  { background: rgba(0,0,0,0.06); }
+            QPushButton:pressed { background: rgba(0,0,0,0.12); }
+            QPushButton:disabled { color: palette(mid); border-color: rgba(0,0,0,0.07); }
             """
         )
 
     def paintEvent(self, event):
-        """
-        Manually paint the rounded-rect background.
-
-        With WA_TranslucentBackground the OS does not fill the window, so
-        stylesheet background-color on the root QWidget is a no-op on Windows.
-        We must draw the fill ourselves.
-        """
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-
         rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
         path = QPainterPath()
         path.addRoundedRect(rect, 10, 10)
-
-        # Fill with window background colour
         bg = self.palette().color(self.backgroundRole())
         painter.fillPath(path, bg)
-
-        # 1 px border
         painter.setPen(QPen(QColor(0, 0, 0, 40), 1))
         painter.drawPath(path)
-
         painter.end()
+
+    def showEvent(self, event):
+        """Grab keyboard focus so Esc works immediately."""
+        super().showEvent(event)
+        self.activateWindow()
+        self.raise_()
 
     def _position_near_cursor(self):
         cursor_pos = QCursor.pos()
@@ -201,16 +243,69 @@ class TranslatorPopup(QWidget):
         if self._dismissed:
             return
         self.translation_label.setText(text)
-        # Resize to fit the new text, then re-centre near cursor
         self.translation_label.adjustSize()
+
         needed_h = (
             self.text_display.height()
-            + 10 + 1 + 10          # spacing + sep + spacing
+            + 10 + 1 + 10                           # spacing + sep + spacing
             + self.translation_label.sizeHint().height()
-            + 18 + 16              # top + bottom margins
+            + 40                                    # button row
+            + 14 + 14                               # top + bottom margins
         )
-        self.resize(self.width(), min(520, max(140, needed_h)))
+        self.resize(self.width(), min(540, max(190, needed_h)))
         self._position_near_cursor()
+
+        # Enable action buttons now that we have a real translation
+        is_real = not text.startswith("⚠") and text != "Translating…"
+        self.btn_replace.setEnabled(is_real)
+        if self._on_pin is not None:
+            self.btn_pin.setEnabled(is_real)
+
+    # ------------------------------------------------------------------
+    # Action buttons
+    # ------------------------------------------------------------------
+
+    def _replace_text(self):
+        """Copy the translation to clipboard and paste it over the selection."""
+        translation = self.translation_label.text()
+        if not translation or translation == "Translating…":
+            return
+
+        try:
+            pyperclip.copy(translation)
+        except Exception:
+            return
+
+        # Close without restoring original clipboard (translation stays in clipboard).
+        self._dismissed = True
+        if self._worker and self._worker.isRunning():
+            self._worker.quit()
+            self._worker.wait(500)
+        self.close()
+
+        # Give the source app ~120 ms to regain focus before we paste.
+        QTimer.singleShot(120, self._do_paste)
+
+    def _do_paste(self):
+        try:
+            from pynput.keyboard import Controller as KeyboardController, Key
+            kb = KeyboardController()
+            kb.press(Key.ctrl)
+            kb.press("v")
+            kb.release("v")
+            kb.release(Key.ctrl)
+        except Exception as e:
+            print(f"[replace] paste failed: {e}")
+
+    def _pin_to_sidebar(self):
+        """Send the current translation to the sidebar and dismiss."""
+        if self._on_pin is None:
+            return
+        translation = self.translation_label.text()
+        if not translation or translation == "Translating…":
+            return
+        self._on_pin(self.captured_text, translation)
+        self._dismiss()
 
     # ------------------------------------------------------------------
     # Dismiss behaviour
@@ -222,15 +317,12 @@ class TranslatorPopup(QWidget):
         else:
             super().keyPressEvent(event)
 
-    def focusOutEvent(self, event):
-        super().focusOutEvent(event)
-        QTimer.singleShot(10, self._dismiss)
-
     def changeEvent(self, event):
         from PyQt6.QtCore import QEvent
 
         if event.type() == QEvent.Type.WindowDeactivate:
-            QTimer.singleShot(10, self._dismiss)
+            # Delay slightly so button-click signals fire before we close.
+            QTimer.singleShot(150, self._dismiss)
         super().changeEvent(event)
 
     def _dismiss(self):
