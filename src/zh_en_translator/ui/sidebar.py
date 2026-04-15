@@ -390,10 +390,13 @@ class TranslatorSidebar(QWidget):
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
 
-        # Rounded-rect background (same pattern as popup.py)
+        # Rounded-rect background.
+        # Use the APPLICATION palette, not self.palette() — on Windows,
+        # WA_TranslucentBackground on frameless Tool windows causes
+        # self.palette().color(backgroundRole()) to return black.
         path = QPainterPath()
         path.addRoundedRect(rect, 10, 10)
-        bg = self.palette().color(self.backgroundRole())
+        bg = QApplication.palette().color(self.backgroundRole())
         painter.fillPath(path, bg)
         painter.setPen(QPen(QColor(0, 0, 0, 40), 1))
         painter.drawPath(path)

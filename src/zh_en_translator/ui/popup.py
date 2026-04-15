@@ -248,7 +248,16 @@ class TranslatorPopup(QWidget):
         rect = QRectF(self.rect()).adjusted(0.5, 0.5, -0.5, -0.5)
         path = QPainterPath()
         path.addRoundedRect(rect, 10, 10)
-        bg = self.palette().color(self.backgroundRole())
+
+        # Use config override first; fall back to the APPLICATION palette (not
+        # self.palette()) — on Windows, WA_TranslucentBackground on frameless
+        # Tool windows causes self.palette().color(backgroundRole()) to return
+        # black (the DWM composite color), making text invisible.
+        if self._config and self._config.bg_color:
+            bg = QColor(self._config.bg_color)
+        else:
+            bg = QApplication.palette().color(self.backgroundRole())
+
         painter.fillPath(path, bg)
         painter.setPen(QPen(QColor(0, 0, 0, 40), 1))
         painter.drawPath(path)
