@@ -50,6 +50,16 @@ def is_available() -> bool:
         return False
 
 
+def has_chinese_language() -> bool:
+    """Return True if a Chinese OCR language pack is available in Windows."""
+    try:
+        (OcrEngine, Language, *_) = _imports()
+        available = list(OcrEngine.get_available_recognizer_languages())
+        return any(l.language_tag.startswith("zh") for l in available)
+    except Exception:
+        return False
+
+
 def ocr_image(image_bytes: bytes, lang: str = "zh") -> str | None:
     """
     Run Windows.Media.Ocr on the given image bytes.
