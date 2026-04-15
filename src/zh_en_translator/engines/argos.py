@@ -1,33 +1,62 @@
-"""Sentence-level translation via Argos Translate (offline neural MT)."""
+"""Offline Chinese→English translation via ctranslate2 + sentencepiece.
+
+Calls ctranslate2 and sentencepiece directly from the installed argostranslate
+pack, bypassing argostranslate.translate which hard-imports stanza (and stanza
+requires downloading Chinese NLP models that are unavailable on restricted networks).
+"""
 
 from __future__ import annotations
+from pathlib import Path
+
+
+def _find_pack_dir() -> Path | None:
+    """
+    Locate the installed zh→en ctranslate2 pack directory.
+
+    Uses argostranslate.settings (which does NOT import stanza) to find the
+    correct platform-specific packages directory.
+    """
+    try:
+        import argostranslate.settings
+        package_dirs = argostranslate.settings.package_dirs
+    except Exception:
+        return None
+
+    for pkg_dir in package_dirs:
+        pkg_path = Path(pkg_dir)
+        if not pkg_path.exists():
+            continue
+        for d in pkg_path.iterdir():
+            if d.is_dir() and "zh_en" in d.name:
+                model_dir = d / "model"
+                spm_file = d / "sentencepiece.model"
+                if (model_dir / "model.bin").exists() and spm_file.exists():
+                    return d
+    return None
 
 
 def is_available() -> bool:
-    """Return True if the zh→en Argos language pack is installed and ready."""
+    """Return True if the zh→en pack and required libraries are present."""
+    if _find_pack_dir() is None:
+        return False
     try:
-        import argostranslate.translate
-
-        langs = argostranslate.translate.get_installed_languages()
-        zh = next((l for l in langs if l.code == "zh"), None)
-        en = next((l for l in langs if l.code == "en"), None)
-        if not zh or not en:
-            return False
-        return zh.get_translation(en) is not None
-    except Exception:
+        import ctranslate2  # noqa: F401
+        import sentencepiece  # noqa: F401
+        return True
+    except ImportError:
         return False
 
 
 def ensure_pack() -> bool:
     """
-    Ensure the zh→en language pack is downloaded and installed.
+    Ensure the zh→en pack is ready to use.
 
-    Safe to call repeatedly — returns immediately if already installed.
-    Requires internet access for the one-time ~100 MB download.
-    Returns True if the pack is ready to use.
+    Returns True immediately if already installed. Falls back to downloading
+    via argostranslate.package (requires internet for one-time ~100 MB download).
     """
     if is_available():
         return True
+
     try:
         import argostranslate.package
 
@@ -50,28 +79,43 @@ def translate_sentence(text: str) -> str | None:
     """
     Translate Chinese text to English.
 
-    Returns the translated string, or None if the pack is not installed
-    or translation fails for any reason.
+    Uses ctranslate2 + sentencepiece directly — no stanza, no network calls.
+    Returns the translated string, or None on failure.
     """
     if not text.strip():
         return None
 
-    import argostranslate.translate
-
-    langs = argostranslate.translate.get_installed_languages()
-    print(f"[argos] installed language codes: {[l.code for l in langs]}")
-
-    zh = next((l for l in langs if l.code == "zh"), None)
-    en = next((l for l in langs if l.code == "en"), None)
-    if not zh or not en:
-        print(f"[argos] zh={zh}, en={en} — language pack missing")
+    pack_dir = _find_pack_dir()
+    if not pack_dir:
+        print("[argos] pack directory not found")
         return None
 
-    translation = zh.get_translation(en)
-    if not translation:
-        print("[argos] get_translation(en) returned None")
-        return None
+    try:
+        import ctranslate2
+        import sentencepiece as spm
 
-    result = translation.translate(text)
-    print(f"[argos] raw result: {result!r}")
-    return result if result and result.strip() else None
+        model_dir = str(pack_dir / "model")
+        spm_path = str(pack_dir / "sentencepiece.model")
+
+        print(f"[argos] model: {pack_dir.name}")
+
+        translator = ctranslate2.Translator(model_dir, device="cpu")
+        sp_model = spm.SentencePieceProcessor()
+        sp_model.Load(spm_path)
+
+        tokens = sp_model.encode(text, out_type=str)
+        print(f"[argos] encoded {len(tokens)} tokens")
+
+        results = translator.translate_batch([tokens])
+        target_tokens = results[0].hypotheses[0]
+
+        translation = sp_model.decode(target_tokens)
+        print(f"[argos] translation: {translation!r}")
+
+        return translation.strip() if translation and translation.strip() else None
+
+    except Exception as e:
+        print(f"[argos] exception: {e}")
+        import traceback
+        traceback.print_exc()
+        return None
