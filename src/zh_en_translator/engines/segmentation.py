@@ -1,15 +1,24 @@
-"""Chinese text segmentation using max-length matching."""
+"""Chinese text segmentation using jieba (preferred) with character-run fallback."""
+
+import logging
+
+try:
+    import jieba
+
+    jieba.setLogLevel(logging.WARNING)
+    _JIEBA_AVAILABLE = True
+except ImportError:
+    _JIEBA_AVAILABLE = False
 
 
-def segment(text: str) -> list[str]:
+def _segment_fallback(text: str) -> list[str]:
     """
     Segment Chinese text using greedy left-to-right character consumption.
 
     Groups consecutive Chinese characters into tokens, and groups non-Chinese
     characters (ASCII, punctuation, spaces) into their own tokens.
 
-    Note: This is a simple fallback when jieba is unavailable. For better
-    multi-character word segmentation, install jieba and use jieba.cut().
+    This is the fallback used when jieba is not installed.
 
     Args:
         text: Text to segment.
@@ -52,3 +61,25 @@ def segment(text: str) -> list[str]:
         result.append("".join(current_non_chinese))
 
     return result
+
+
+def segment(text: str) -> list[str]:
+    """
+    Segment Chinese text into tokens.
+
+    Uses jieba for accurate word segmentation when available; falls back to
+    character-run grouping when jieba is not installed.
+
+    Args:
+        text: Text to segment.
+
+    Returns:
+        List of tokens (empty strings filtered out).
+    """
+    if not text:
+        return []
+
+    if _JIEBA_AVAILABLE:
+        return [tok for tok in jieba.cut(text, cut_all=False) if tok]
+
+    return _segment_fallback(text)

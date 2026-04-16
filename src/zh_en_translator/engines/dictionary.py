@@ -1,8 +1,18 @@
 """CC-CEDICT loader with SQLite indexing and pinyin tone-mark conversion."""
 
+import io
+import logging
 import sqlite3
+import urllib.request
+import zipfile
 from dataclasses import dataclass
 from pathlib import Path
+
+import platformdirs
+
+logger = logging.getLogger(__name__)
+
+CEDICT_URL = "https://www.mdbg.net/chinese/export/cedict/cedict_1_0_ts_utf-8_mdbg.zip"
 
 
 @dataclass
@@ -99,6 +109,64 @@ def _convert_pinyin_tone_marks(pinyin_str: str) -> str:
         converted.append("".join(result))
 
     return " ".join(converted)
+
+
+def get_cedict_path() -> Path:
+    """
+    Return the path where the full CC-CEDICT file should live.
+
+    Uses platformdirs user_data_dir so the file is stored in a writable
+    location outside the package (e.g. ~/.local/share/zh-en-translator/).
+    """
+    data_dir = Path(platformdirs.user_data_dir("zh-en-translator"))
+    return data_dir / "cedict_ts.u8"
+
+
+def _bundled_sample_path() -> Path:
+    """Return path to the bundled sample CC-CEDICT file inside the package."""
+    return Path(__file__).parent.parent / "resources" / "cedict_sample.txt"
+
+
+def ensure_cedict() -> Path:
+    """
+    Ensure the full CC-CEDICT file is present and return its path.
+
+    On first run (file absent), downloads the ZIP from MDBG, extracts
+    ``cedict_ts.u8``, and saves it to ``get_cedict_path()``.
+
+    On any download or extraction failure, logs a warning and falls back to
+    the bundled sample file so the app still works offline.
+
+    Returns:
+        Path to the CC-CEDICT file to use (full download or bundled sample).
+    """
+    target = get_cedict_path()
+
+    if target.exists():
+        logger.debug("CC-CEDICT found at %s", target)
+        return target
+
+    logger.info("Full CC-CEDICT not found; downloading from %s", CEDICT_URL)
+
+    try:
+        target.parent.mkdir(parents=True, exist_ok=True)
+
+        with urllib.request.urlopen(CEDICT_URL, timeout=60) as response:
+            zip_data = response.read()
+
+        with zipfile.ZipFile(io.BytesIO(zip_data)) as zf:
+            with zf.open("cedict_ts.u8") as cedict_file:
+                cedict_bytes = cedict_file.read()
+
+        target.write_bytes(cedict_bytes)
+        logger.info("CC-CEDICT downloaded and saved to %s", target)
+        return target
+
+    except Exception as exc:
+        logger.warning(
+            "Failed to download CC-CEDICT (%s); falling back to bundled sample.", exc
+        )
+        return _bundled_sample_path()
 
 
 class Dictionary:

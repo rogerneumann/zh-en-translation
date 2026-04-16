@@ -6,10 +6,13 @@ or %APPDATA%/zh-en-translator/config.toml (Windows).
 
 from __future__ import annotations
 
+import logging
 import sys
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def get_config_path() -> Path:
@@ -37,6 +40,7 @@ class Config:
     font_family: str = ""         # empty = system default
     font_size: int = 13
     bg_color: str = ""            # empty = system palette; hex like "#FFFFFF"
+    theme: str = "system"         # "system" | "dark" | "light" | "sepia"
 
     # [sidebar]
     side: str = "right"           # "left" | "right"
@@ -49,6 +53,13 @@ class Config:
 
     # [ocr]
     ocr_engine: str = "auto"      # "auto" | "windows" | "tesseract" | "paddle"
+
+    # [pinyin]
+    show_pinyin: bool = True
+    pinyin_max_chars: int = 80
+
+    # [translation]
+    traditional_to_simplified: bool = True
 
 
 def load_config(config_path: Path | None = None) -> Config:
@@ -67,7 +78,7 @@ def load_config(config_path: Path | None = None) -> Config:
         with open(config_path, "rb") as f:
             data = tomllib.load(f)
     except Exception as e:
-        print(f"Warning: Failed to parse config file {config_path}: {e}", file=sys.stderr)
+        logger.warning("Failed to parse config file %s: %s", config_path, e)
         return Config()
 
     defaults = Config()
@@ -81,12 +92,18 @@ def load_config(config_path: Path | None = None) -> Config:
         font_family=_get("display", "font_family", defaults.font_family),
         font_size=_get("display", "font_size", defaults.font_size),
         bg_color=_get("display", "bg_color", defaults.bg_color),
+        theme=_get("display", "theme", defaults.theme),
         side=_get("sidebar", "side", defaults.side),
         sidebar_y=_get("sidebar", "sidebar_y", defaults.sidebar_y),
         color_fresh=_get("sidebar", "color_fresh", defaults.color_fresh),
         color_idle=_get("sidebar", "color_idle", defaults.color_idle),
         external_lookup_url=_get("lookup", "external_lookup_url", defaults.external_lookup_url),
         ocr_engine=_get("ocr", "ocr_engine", defaults.ocr_engine),
+        show_pinyin=_get("pinyin", "show_pinyin", defaults.show_pinyin),
+        pinyin_max_chars=_get("pinyin", "pinyin_max_chars", defaults.pinyin_max_chars),
+        traditional_to_simplified=_get(
+            "translation", "traditional_to_simplified", defaults.traditional_to_simplified
+        ),
     )
 
 
@@ -106,6 +123,7 @@ mode = {_toml_str(cfg.mode)}
 font_family = {_toml_str(cfg.font_family)}
 font_size = {cfg.font_size}
 bg_color = {_toml_str(cfg.bg_color)}
+theme = {_toml_str(cfg.theme)}
 
 [sidebar]
 side = {_toml_str(cfg.side)}
@@ -118,11 +136,25 @@ external_lookup_url = {_toml_str(cfg.external_lookup_url)}
 
 [ocr]
 ocr_engine = {_toml_str(cfg.ocr_engine)}
+
+[pinyin]
+show_pinyin = {_toml_bool(cfg.show_pinyin)}
+pinyin_max_chars = {cfg.pinyin_max_chars}
+
+[translation]
+traditional_to_simplified = {_toml_bool(cfg.traditional_to_simplified)}
 """
     config_path.write_text(toml_content, encoding="utf-8")
 
 
+def _toml_bool(value: bool) -> str:
+    """Format a Python bool as a TOML boolean literal (lowercase true/false)."""
+    return "true" if value else "false"
+
+
 def _toml_str(value: str) -> str:
     """Format a Python string as a TOML string literal (double-quoted, escaped)."""
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
+    escaped = (
+        value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
+    )
     return f'"{escaped}"'

@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QGroupBox,
     QSizePolicy,
+    QCheckBox,
 )
 
 from zh_en_translator.config import Config, save_config
@@ -83,12 +84,16 @@ class PreferencesDialog(QDialog):
             font_family=config.font_family,
             font_size=config.font_size,
             bg_color=config.bg_color,
+            theme=config.theme,
             side=config.side,
             sidebar_y=config.sidebar_y,
             color_fresh=config.color_fresh,
             color_idle=config.color_idle,
             external_lookup_url=config.external_lookup_url,
             ocr_engine=config.ocr_engine,
+            show_pinyin=config.show_pinyin,
+            pinyin_max_chars=config.pinyin_max_chars,
+            traditional_to_simplified=config.traditional_to_simplified,
         )
 
         self.setWindowTitle("Preferences")
@@ -158,6 +163,15 @@ class PreferencesDialog(QDialog):
         mode_layout.addWidget(self._mode_sidebar)
         layout.addWidget(mode_group)
 
+        # Traditional Chinese
+        trad_group = QGroupBox("Traditional Chinese")
+        trad_layout = QVBoxLayout(trad_group)
+
+        self._trad_to_simp_check = QCheckBox("Convert Traditional → Simplified automatically")
+        trad_layout.addWidget(self._trad_to_simp_check)
+
+        layout.addWidget(trad_group)
+
         layout.addStretch()
         return widget
 
@@ -165,6 +179,22 @@ class PreferencesDialog(QDialog):
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setSpacing(12)
+
+        # Theme
+        theme_group = QGroupBox("Theme")
+        theme_layout = QHBoxLayout(theme_group)
+        theme_layout.addWidget(QLabel("Theme:"))
+        self._theme_combo = QComboBox()
+        for label, value in [
+            ("System default", "system"),
+            ("Light", "light"),
+            ("Dark", "dark"),
+            ("Sepia", "sepia"),
+        ]:
+            self._theme_combo.addItem(label, userData=value)
+        theme_layout.addWidget(self._theme_combo)
+        theme_layout.addStretch()
+        layout.addWidget(theme_group)
 
         # Font family
         font_group = QGroupBox("Font")
@@ -204,6 +234,27 @@ class PreferencesDialog(QDialog):
         bg_layout.addStretch()
 
         layout.addWidget(bg_group)
+
+        # Pinyin
+        pinyin_group = QGroupBox("Pinyin")
+        pinyin_layout = QVBoxLayout(pinyin_group)
+
+        self._show_pinyin_check = QCheckBox("Show pinyin")
+        pinyin_layout.addWidget(self._show_pinyin_check)
+
+        pinyin_max_row = QHBoxLayout()
+        pinyin_max_row.addWidget(QLabel("Max chars for pinyin:"))
+        self._pinyin_max_spin = QSpinBox()
+        self._pinyin_max_spin.setRange(10, 500)
+        self._pinyin_max_spin.setSingleStep(10)
+        self._pinyin_max_spin.setValue(80)
+        pinyin_max_row.addWidget(self._pinyin_max_spin)
+        pinyin_max_row.addStretch()
+        pinyin_layout.addLayout(pinyin_max_row)
+
+        self._show_pinyin_check.toggled.connect(self._pinyin_max_spin.setEnabled)
+
+        layout.addWidget(pinyin_group)
         layout.addStretch()
         return widget
 
@@ -309,14 +360,20 @@ class PreferencesDialog(QDialog):
             self._mode_sidebar.setChecked(True)
         else:
             self._mode_popup.setChecked(True)
+        self._trad_to_simp_check.setChecked(cfg.traditional_to_simplified)
 
         # Display
+        theme_index = self._theme_combo.findData(cfg.theme)
+        self._theme_combo.setCurrentIndex(max(0, theme_index))
         if cfg.font_family:
             self._font_combo.setCurrentFont(QFont(cfg.font_family))
         else:
             self._font_combo.lineEdit().setText("")
         self._font_size_spin.setValue(cfg.font_size)
         self._bg_color_btn.set_color_str(cfg.bg_color)
+        self._show_pinyin_check.setChecked(cfg.show_pinyin)
+        self._pinyin_max_spin.setValue(cfg.pinyin_max_chars)
+        self._pinyin_max_spin.setEnabled(cfg.show_pinyin)
 
         # Sidebar
         if cfg.side == "left":
@@ -338,7 +395,8 @@ class PreferencesDialog(QDialog):
         mode = "sidebar" if self._mode_sidebar.isChecked() else "popup"
         side = "left" if self._side_left.isChecked() else "right"
 
-        font_family = self._font_combo.lineEdit().text().strip() if self._font_combo.lineEdit() else ""
+        line_edit = self._font_combo.lineEdit()
+        font_family = line_edit.text().strip() if line_edit else ""
 
         ocr_engine = self._ocr_combo.currentData() or "auto"
 
@@ -348,6 +406,7 @@ class PreferencesDialog(QDialog):
             font_family=font_family,
             font_size=self._font_size_spin.value(),
             bg_color=self._bg_color_btn.get_color_str(),
+            theme=self._theme_combo.currentData() or "system",
             side=side,
             sidebar_y=self._sidebar_y_spin.value(),
             color_fresh=self._color_fresh_btn.get_color_str(),
@@ -355,6 +414,9 @@ class PreferencesDialog(QDialog):
             external_lookup_url=self._lookup_url_edit.text().strip()
                 or self.config.external_lookup_url,
             ocr_engine=ocr_engine,
+            show_pinyin=self._show_pinyin_check.isChecked(),
+            pinyin_max_chars=self._pinyin_max_spin.value(),
+            traditional_to_simplified=self._trad_to_simp_check.isChecked(),
         )
 
     # ------------------------------------------------------------------

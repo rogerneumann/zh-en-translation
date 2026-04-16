@@ -11,6 +11,17 @@ from PyQt6.QtWidgets import QApplication
 from zh_en_translator.ui.popup import TranslatorPopup
 
 
+def _cleanup(popup):
+    """Stop all background threads and close the popup."""
+    popup._dismissed = True
+    for attr in ("_worker", "_pinyin_worker"):
+        w = getattr(popup, attr, None)
+        if w and w.isRunning():
+            w.quit()
+            w.wait(3000)
+    popup.close()
+
+
 def test_popup_import():
     """Test that popup module can be imported."""
     from zh_en_translator.ui.popup import TranslatorPopup
@@ -20,17 +31,18 @@ def test_popup_import():
 
 def test_popup_instantiation():
     """Test that TranslatorPopup can be instantiated with test text."""
-    # Ensure QApplication exists
     _ = QApplication.instance() or QApplication(sys.argv)
 
     test_text = "你好世界 Hello World"
     popup = TranslatorPopup(test_text, original_clipboard="")
 
-    # Verify basic properties
-    assert popup.captured_text == test_text
-    assert popup.isVisible() is False  # Not shown yet
-    assert popup.windowFlags() & popup.windowFlags()  # Has window flags set
-    assert popup.text_display.toPlainText() == test_text
+    try:
+        assert popup.captured_text == test_text
+        assert popup.isVisible() is False  # Not shown yet
+        assert popup.windowFlags() & popup.windowFlags()  # Has window flags set
+        assert popup.text_display.toPlainText() == test_text
+    finally:
+        _cleanup(popup)
 
 
 def test_popup_window_flags():
@@ -40,10 +52,13 @@ def test_popup_window_flags():
     popup = TranslatorPopup("Test", original_clipboard="")
     from PyQt6.QtCore import Qt
 
-    flags = popup.windowFlags()
-    assert flags & Qt.WindowType.FramelessWindowHint
-    assert flags & Qt.WindowType.Tool
-    assert flags & Qt.WindowType.WindowStaysOnTopHint
+    try:
+        flags = popup.windowFlags()
+        assert flags & Qt.WindowType.FramelessWindowHint
+        assert flags & Qt.WindowType.Tool
+        assert flags & Qt.WindowType.WindowStaysOnTopHint
+    finally:
+        _cleanup(popup)
 
 
 def test_popup_text_display_selectable():
@@ -53,8 +68,11 @@ def test_popup_text_display_selectable():
     popup = TranslatorPopup("Test text", original_clipboard="")
     from PyQt6.QtCore import Qt
 
-    text_flags = popup.text_display.textInteractionFlags()
-    assert text_flags & Qt.TextInteractionFlag.TextSelectableByMouse
+    try:
+        text_flags = popup.text_display.textInteractionFlags()
+        assert text_flags & Qt.TextInteractionFlag.TextSelectableByMouse
+    finally:
+        _cleanup(popup)
 
 
 def test_popup_long_text_sizing():
@@ -64,8 +82,11 @@ def test_popup_long_text_sizing():
     long_text = "这是一段很长的中文文本。" * 20
     popup = TranslatorPopup(long_text, original_clipboard="")
 
-    assert popup.width() <= 700
-    assert popup.height() <= 600
+    try:
+        assert popup.width() <= 700
+        assert popup.height() <= 600
+    finally:
+        _cleanup(popup)
 
 
 def test_popup_with_dictionary():
@@ -85,15 +106,12 @@ def test_popup_with_dictionary():
 
         popup = TranslatorPopup("你好世界", original_clipboard="", dictionary=dictionary)
 
-        assert popup.captured_text == "你好世界"
-        assert popup.translation_label.text() == "Translating…"
-
-        # Stop the background worker before the test exits to avoid QThread crash
-        if popup._worker and popup._worker.isRunning():
-            popup._worker.quit()
-            popup._worker.wait(2000)
-
-        dictionary.close()
+        try:
+            assert popup.captured_text == "你好世界"
+            assert popup.translation_label.text() == "Translating…"
+        finally:
+            _cleanup(popup)
+            dictionary.close()
 
 
 def test_hotkey_manager_import():
@@ -135,8 +153,11 @@ def test_popup_copy_button_exists():
     _ = QApplication.instance() or QApplication(sys.argv)
 
     popup = TranslatorPopup("你好", original_clipboard="")
-    assert hasattr(popup, "btn_copy")
-    assert isinstance(popup.btn_copy, QAbstractButton)
+    try:
+        assert hasattr(popup, "btn_copy")
+        assert isinstance(popup.btn_copy, QAbstractButton)
+    finally:
+        _cleanup(popup)
 
 
 def test_popup_lookup_button_exists():
@@ -146,8 +167,11 @@ def test_popup_lookup_button_exists():
     _ = QApplication.instance() or QApplication(sys.argv)
 
     popup = TranslatorPopup("你好", original_clipboard="")
-    assert hasattr(popup, "btn_lookup")
-    assert isinstance(popup.btn_lookup, QAbstractButton)
+    try:
+        assert hasattr(popup, "btn_lookup")
+        assert isinstance(popup.btn_lookup, QAbstractButton)
+    finally:
+        _cleanup(popup)
 
 
 def test_sidebar_instantiation():
@@ -188,8 +212,11 @@ def test_popup_lang_settings_button_hidden_by_default():
     """btn_lang_settings is hidden unless OCR reports a missing language pack."""
     _ = QApplication.instance() or QApplication(sys.argv)
     popup = TranslatorPopup("你好", original_clipboard="")
-    assert hasattr(popup, "btn_lang_settings")
-    assert popup.btn_lang_settings.isHidden()
+    try:
+        assert hasattr(popup, "btn_lang_settings")
+        assert popup.btn_lang_settings.isHidden()
+    finally:
+        _cleanup(popup)
 
 
 def test_popup_set_ocr_result_error_stays_in_translation_area():
@@ -197,12 +224,13 @@ def test_popup_set_ocr_result_error_stays_in_translation_area():
     _ = QApplication.instance() or QApplication(sys.argv)
     popup = TranslatorPopup("🔍 Running OCR…", original_clipboard="", is_ocr_pending=True)
     error_msg = "⚠ No text detected in image."
-    popup.set_ocr_result(error_msg)
-    assert popup.translation_label.text() == error_msg
-    # Source text should still be the OCR placeholder, not the error
-    assert popup.text_display.toPlainText() == "🔍 Running OCR…"
-    # Language settings button should remain hidden for a generic error
-    assert not popup.btn_lang_settings.isVisible()
+    try:
+        popup.set_ocr_result(error_msg)
+        assert popup.translation_label.text() == error_msg
+        assert popup.text_display.toPlainText() == "🔍 Running OCR…"
+        assert not popup.btn_lang_settings.isVisible()
+    finally:
+        _cleanup(popup)
 
 
 def test_popup_set_ocr_result_language_pack_shows_button():
@@ -210,23 +238,24 @@ def test_popup_set_ocr_result_language_pack_shows_button():
     _ = QApplication.instance() or QApplication(sys.argv)
     popup = TranslatorPopup("🔍 Running OCR…", original_clipboard="", is_ocr_pending=True)
     error_msg = "⚠ No Chinese OCR language pack found.\n\nClick 'Open Language Settings' below."
-    popup.set_ocr_result(error_msg)
-    # isVisible() is False because the parent popup is not shown; check isHidden() instead
-    assert not popup.btn_lang_settings.isHidden()
+    try:
+        popup.set_ocr_result(error_msg)
+        assert not popup.btn_lang_settings.isHidden()
+    finally:
+        _cleanup(popup)
 
 
 def test_popup_set_ocr_result_success_starts_translation():
     """set_ocr_result with valid text updates source display and triggers translation."""
     _ = QApplication.instance() or QApplication(sys.argv)
     popup = TranslatorPopup("🔍 Running OCR…", original_clipboard="", is_ocr_pending=True)
-    popup.set_ocr_result("你好世界")
-    assert popup.captured_text == "你好世界"
-    assert popup.text_display.toPlainText() == "你好世界"
-    assert popup.translation_label.text() == "Translating…"
-    # Cleanup worker
-    if popup._worker and popup._worker.isRunning():
-        popup._worker.quit()
-        popup._worker.wait(2000)
+    try:
+        popup.set_ocr_result("你好世界")
+        assert popup.captured_text == "你好世界"
+        assert popup.text_display.toPlainText() == "你好世界"
+        assert popup.translation_label.text() == "Translating…"
+    finally:
+        _cleanup(popup)
 
 
 def test_popup_effective_bg_returns_color():
@@ -234,18 +263,73 @@ def test_popup_effective_bg_returns_color():
     from PyQt6.QtGui import QColor
     _ = QApplication.instance() or QApplication(sys.argv)
     popup = TranslatorPopup("test", original_clipboard="")
-    bg = popup._effective_bg()
-    assert isinstance(bg, QColor)
-    assert bg.lightness() >= 0
+    try:
+        bg = popup._effective_bg()
+        assert isinstance(bg, QColor)
+        assert bg.lightness() >= 0
+    finally:
+        _cleanup(popup)
 
 
 def test_popup_effective_bg_uses_config_color():
     """_effective_bg() returns config bg_color when set."""
-    from PyQt6.QtGui import QColor
     from zh_en_translator.config import Config
     _ = QApplication.instance() or QApplication(sys.argv)
     cfg = Config(bg_color="#ff0000")
     popup = TranslatorPopup("test", original_clipboard="", config=cfg)
-    bg = popup._effective_bg()
-    assert bg.red() == 255
-    assert bg.green() == 0
+    try:
+        bg = popup._effective_bg()
+        assert bg.red() == 255
+        assert bg.green() == 0
+    finally:
+        _cleanup(popup)
+
+
+def test_preferences_trad_to_simp_check_exists():
+    """PreferencesDialog has _trad_to_simp_check checkbox on the General tab."""
+    from zh_en_translator.config import Config
+    from zh_en_translator.ui.preferences import PreferencesDialog
+    from PyQt6.QtWidgets import QCheckBox
+
+    _ = QApplication.instance() or QApplication(sys.argv)
+
+    cfg = Config(traditional_to_simplified=True)
+    dlg = PreferencesDialog(cfg)
+
+    assert hasattr(dlg, "_trad_to_simp_check")
+    assert isinstance(dlg._trad_to_simp_check, QCheckBox)
+    assert dlg._trad_to_simp_check.isChecked() is True
+
+
+def test_preferences_trad_to_simp_check_reflects_false():
+    """_trad_to_simp_check is unchecked when config has traditional_to_simplified=False."""
+    from zh_en_translator.config import Config
+    from zh_en_translator.ui.preferences import PreferencesDialog
+
+    _ = QApplication.instance() or QApplication(sys.argv)
+
+    cfg = Config(traditional_to_simplified=False)
+    dlg = PreferencesDialog(cfg)
+
+    assert dlg._trad_to_simp_check.isChecked() is False
+
+
+def test_preferences_collect_trad_to_simp():
+    """_collect_config() reads _trad_to_simp_check state into traditional_to_simplified."""
+    from zh_en_translator.config import Config
+    from zh_en_translator.ui.preferences import PreferencesDialog
+
+    _ = QApplication.instance() or QApplication(sys.argv)
+
+    cfg = Config(traditional_to_simplified=True)
+    dlg = PreferencesDialog(cfg)
+
+    # Toggle it off
+    dlg._trad_to_simp_check.setChecked(False)
+    collected = dlg._collect_config()
+    assert collected.traditional_to_simplified is False
+
+    # Toggle it back on
+    dlg._trad_to_simp_check.setChecked(True)
+    collected = dlg._collect_config()
+    assert collected.traditional_to_simplified is True

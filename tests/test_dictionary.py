@@ -1,10 +1,17 @@
 """Tests for the CC-CEDICT dictionary module."""
 
+import io
 import tempfile
+import zipfile
 from pathlib import Path
+from unittest.mock import MagicMock, patch
 
-
-from zh_en_translator.engines.dictionary import Dictionary, _convert_pinyin_tone_marks
+from zh_en_translator.engines.dictionary import (
+    Dictionary,
+    _convert_pinyin_tone_marks,
+    _bundled_sample_path,
+    ensure_cedict,
+)
 
 
 class TestToneMarkConversion:
@@ -143,3 +150,77 @@ class TestDictionaryBuild:
             entries = dictionary.lookup("你好")
             assert len(entries) == 1
             dictionary.close()
+
+
+def _make_fake_zip(cedict_content: str) -> bytes:
+    """Create an in-memory ZIP containing cedict_ts.u8 with the given content."""
+    buf = io.BytesIO()
+    with zipfile.ZipFile(buf, "w", compression=zipfile.ZIP_STORED) as zf:
+        zf.writestr("cedict_ts.u8", cedict_content)
+    return buf.getvalue()
+
+
+class TestEnsureCedict:
+    """Tests for ensure_cedict() download and fallback logic."""
+
+    def test_ensure_cedict_downloads_if_missing(self, tmp_path):
+        """ensure_cedict() downloads the ZIP and extracts cedict_ts.u8 when absent."""
+        cedict_content = "# CC-CEDICT\n你好 你好 [ni3 hao3] /hello/hi/\n"
+        fake_zip_bytes = _make_fake_zip(cedict_content)
+
+        target_path = tmp_path / "cedict_ts.u8"
+
+        # Fake urlopen response
+        mock_response = MagicMock()
+        mock_response.read.return_value = fake_zip_bytes
+        mock_response.__enter__ = lambda s: s
+        mock_response.__exit__ = MagicMock(return_value=False)
+
+        with (
+            patch(
+                "zh_en_translator.engines.dictionary.get_cedict_path",
+                return_value=target_path,
+            ),
+            patch(
+                "zh_en_translator.engines.dictionary.urllib.request.urlopen",
+                return_value=mock_response,
+            ),
+        ):
+            result = ensure_cedict()
+
+        assert result == target_path
+        assert target_path.exists()
+        assert "你好" in target_path.read_text(encoding="utf-8")
+
+    def test_ensure_cedict_returns_existing_file(self, tmp_path):
+        """ensure_cedict() returns the existing path without downloading."""
+        target_path = tmp_path / "cedict_ts.u8"
+        target_path.write_text("# already downloaded\n", encoding="utf-8")
+
+        with patch(
+            "zh_en_translator.engines.dictionary.get_cedict_path",
+            return_value=target_path,
+        ):
+            result = ensure_cedict()
+
+        assert result == target_path
+
+    def test_ensure_cedict_returns_sample_on_download_failure(self, tmp_path):
+        """ensure_cedict() falls back to bundled sample when download raises."""
+        target_path = tmp_path / "cedict_ts.u8"
+
+        with (
+            patch(
+                "zh_en_translator.engines.dictionary.get_cedict_path",
+                return_value=target_path,
+            ),
+            patch(
+                "zh_en_translator.engines.dictionary.urllib.request.urlopen",
+                side_effect=OSError("network unreachable"),
+            ),
+        ):
+            result = ensure_cedict()
+
+        # Must not raise; must return the bundled sample path
+        assert result == _bundled_sample_path()
+        assert result.exists()
