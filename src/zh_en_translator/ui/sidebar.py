@@ -242,6 +242,53 @@ class TranslatorSidebar(QWidget):
         muted_color = theme_palette.muted
         btn_hover   = theme_palette.btn_hover
 
+        # Compute border color with fallback
+        border_color = getattr(theme_palette, 'border', 'rgba(0,0,0,0.1)')
+
+        # Create unified stylesheet for entire sidebar including context menus
+        unified_css = f"""
+            QLabel#titleLabel {{
+                color: {muted_color};
+                background: transparent;
+            }}
+            QLabel {{
+                background: transparent;
+                color: {text_color};
+            }}
+            QLabel {{ font-size: 10pt; color: {muted_color}; }}
+            QPushButton {{
+                background: transparent;
+                border: 1px solid transparent;
+                border-radius: 4px;
+                font-size: 11pt;
+                color: {muted_color};
+            }}
+            QPushButton:checked {{
+                background: rgba(0,160,255,0.15);
+                border: 1px solid rgba(0,160,255,0.5);
+                color: {text_color};
+            }}
+            QPushButton:hover {{
+                background: {btn_hover};
+            }}
+            QMenu {{
+                background: {theme_palette.bg};
+                color: {text_color};
+                padding: 4px;
+                border: 1px solid {border_color};
+            }}
+            QMenu::item:selected {{
+                background: {btn_hover};
+            }}
+            QMenu::separator {{
+                background: {border_color};
+                height: 1px;
+                margin: 2px 0;
+            }}
+        """
+        self.setStyleSheet(unified_css)
+
+        # Also set stylesheets on individual widgets for specificity
         self._title_label.setStyleSheet(
             f"color: {muted_color}; background: transparent;"
         )

@@ -53,6 +53,7 @@ class TranslatorPopup(QWidget):
         self.dictionary = dictionary
         self._on_pin = on_pin
         self._dismissed = False
+        self._pinned = False  # keep popup open when pinned
         self._worker: TranslationWorker | None = None
         self._pinyin_worker: PinyinWorker | None = None
         self._is_ocr_pending = is_ocr_pending
@@ -153,12 +154,23 @@ class TranslatorPopup(QWidget):
         self.btn_replace.clicked.connect(self._replace_text)
         btn_row.addWidget(self.btn_replace)
 
-        self.btn_pin = QPushButton("Pin →")
+        # Pin button (checkable) — keep popup open
+        self.btn_pin = QPushButton("📌")
         self.btn_pin.setEnabled(False)
-        self.btn_pin.setToolTip("Pin translation to the sidebar")
+        self.btn_pin.setCheckable(True)
+        self.btn_pin.setChecked(False)
+        self.btn_pin.setFixedSize(32, 32)
+        self.btn_pin.setToolTip("Keep popup open (don't auto-dismiss)")
         self.btn_pin.setVisible(self._on_pin is not None)
-        self.btn_pin.clicked.connect(self._pin_to_sidebar)
+        self.btn_pin.toggled.connect(self._on_pin_toggled)
         btn_row.addWidget(self.btn_pin)
+
+        # Close button
+        self.btn_close = QPushButton("✕")
+        self.btn_close.setFixedSize(32, 32)
+        self.btn_close.setToolTip("Close popup")
+        self.btn_close.clicked.connect(self._dismiss)
+        btn_row.addWidget(self.btn_close)
 
         # Hidden button — shown only when OCR reports a missing language pack
         self.btn_lang_settings = QPushButton("Open Language Settings")
@@ -205,19 +217,25 @@ class TranslatorPopup(QWidget):
         self.btn_replace.setAccessibleDescription(
             "Replace the original selected text with the English translation"
         )
+        self.btn_pin.setAccessibleName("Pin")
         self.btn_pin.setAccessibleDescription(
-            "Pin this translation to the persistent sidebar panel"
+            "Keep the popup open; toggle to prevent auto-dismiss"
+        )
+        self.btn_close.setAccessibleName("Close")
+        self.btn_close.setAccessibleDescription(
+            "Close the popup"
         )
         self.btn_lang_settings.setAccessibleDescription(
             "Open Windows Language Settings to install the Chinese OCR language pack"
         )
 
-        # Logical tab order: source → translation → copy → lookup → replace → pin
+        # Logical tab order: source → translation → copy → lookup → replace → pin → close
         QWidget.setTabOrder(self.text_display, self.translation_label)
         QWidget.setTabOrder(self.translation_label, self.btn_copy)
         QWidget.setTabOrder(self.btn_copy, self.btn_lookup)
         QWidget.setTabOrder(self.btn_lookup, self.btn_replace)
         QWidget.setTabOrder(self.btn_replace, self.btn_pin)
+        QWidget.setTabOrder(self.btn_pin, self.btn_close)
 
     def _apply_styling(self):
         from zh_en_translator.engines.themes import resolve_palette
@@ -278,6 +296,11 @@ class TranslatorPopup(QWidget):
             QPushButton:hover  {{ background: {palette.btn_hover}; }}
             QPushButton:pressed {{ background: {palette.btn_pressed}; }}
             QPushButton:disabled {{ color: {palette.muted}; border-color: {palette.border}; }}
+            QPushButton:checked {{
+                background: rgba(0,160,255,0.15);
+                border: 1px solid rgba(0,160,255,0.5);
+                color: {palette.text};
+            }}
         """)
 
     def _apply_config(self, config):
@@ -490,15 +513,9 @@ class TranslatorPopup(QWidget):
         except Exception as e:
             logger.warning("paste failed: %s", e)
 
-    def _pin_to_sidebar(self):
-        """Send the current translation to the sidebar and dismiss."""
-        if self._on_pin is None:
-            return
-        translation = self.translation_label.text()
-        if not translation or translation == "Translating…":
-            return
-        self._on_pin(self.captured_text, translation)
-        self._dismiss()
+    def _on_pin_toggled(self, checked: bool) -> None:
+        """Handle pin state toggle."""
+        self._pinned = checked
 
     def _copy_translation(self):
         """Copy the translation text to the system clipboard without dismissing."""
@@ -541,8 +558,10 @@ class TranslatorPopup(QWidget):
         from PyQt6.QtCore import QEvent
 
         if event.type() == QEvent.Type.WindowDeactivate:
-            # Delay slightly so button-click signals fire before we close.
-            QTimer.singleShot(150, self._dismiss)
+            # Only auto-dismiss if not pinned
+            if not self._pinned:
+                # Delay slightly so button-click signals fire before we close.
+                QTimer.singleShot(150, self._dismiss)
         super().changeEvent(event)
 
     def _dismiss(self):
