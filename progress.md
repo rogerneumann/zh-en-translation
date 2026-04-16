@@ -505,6 +505,19 @@ ms_translator_region = ""   # e.g. "eastus", "westeurope"; optional
 
 ---
 
+## App icon + monitor warning fix (post-M10)
+
+**Scope**: Replace placeholder icon; suppress spurious Qt monitor warning.
+
+**Delivered**:
+- `src/zh_en_translator/app.py`:
+  - `_render_icon_pixmap(size)` — draws a blue (#2563EB) antialiased rounded square with a white "中" glyph at any requested pixel size; font fallback chain: Microsoft YaHei → SimHei → Arial Unicode MS → system default
+  - `_create_icon()` now builds a multi-size `QIcon` (16, 24, 32, 48, 64, 128, 256 px) via `QIcon.addPixmap()`
+  - `_setup_tray()` calls `QApplication.setWindowIcon(app_icon)` so popup and sidebar windows inherit the icon automatically (Windows taskbar, Alt-Tab switcher, Explorer title bar)
+  - `main()` sets `QT_LOGGING_RULES=qt.qpa.screen.warning=false` **before** `QApplication` is created — suppresses the harmless `"Unable to open monitor interface to \\\\.\\DISPLAY2:"` warning (error `0xe0000225` = `ERROR_NOT_FOUND`) that Windows emits when a secondary display adapter detects no physical monitor on the port
+
+---
+
 ## Open questions / risks
 
 - **MSI code signing** — deferred; SmartScreen warning until cert available.

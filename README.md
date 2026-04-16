@@ -1,12 +1,40 @@
-# zh-en-translation
+# zh-en-translator
 
-A lightweight, offline-first Chinese→English popup translator for Windows 11 (with cross-platform intent). Triggered by a global hotkey (`Ctrl+Shift+T`) on selected text in any application, it displays a frameless popup with translation options.
+A lightweight, **offline-first** Chinese → English popup translator for
+Windows 11 (cross-platform intent). Press a global hotkey on any selected
+Chinese text and a frameless popup appears at the cursor with the full-sentence
+English translation, pinyin, action buttons, and an optional persistent sidebar.
 
-## Development
+No text leaves the machine by default — translation runs locally via
+[Argos Translate](https://github.com/argosopentech/argostranslate) +
+[ctranslate2](https://github.com/OpenNMT/CTranslate2). Microsoft Azure
+Translator can be opted into explicitly (see [Cloud translation](#cloud-translation-optional)).
 
-### Install
+---
 
-**Windows (Python 3.14+) — use the helper script** (works around a sentencepiece wheel issue):
+## Features
+
+| Feature | Notes |
+|---|---|
+| Global hotkey | Default `Ctrl+Shift+T`, fully configurable |
+| Popup mode | Frameless rounded popup at cursor, dismisses on Esc / click-outside / focus loss |
+| Sidebar mode | Persistent 6 px peek-tab at screen edge; slides out on click |
+| Sentence translation | Argos Translate + ctranslate2 — fully offline after one-time model download |
+| Pinyin | Shown above source text; auto-hidden for long inputs |
+| Dictionary lookup | CC-CEDICT (~120 k entries) downloaded on first run |
+| Replace in-place | Pastes translation back into the source field (Word, browsers, IDEs, etc.) |
+| OCR | Translate Chinese text in clipboard images via Windows OCR / Tesseract / PaddleOCR |
+| Traditional Chinese | Auto-converts Traditional → Simplified via OpenCC before translation |
+| Themes | System / Light / Dark / Sepia |
+| Preferences | In-app dialog — hotkey, font, colours, OCR engine, cloud key, and more |
+| Accessibility | Screen-reader names/descriptions, logical tab order |
+| Cloud (opt-in) | Azure Translator with explicit privacy warning; zero egress when disabled |
+
+---
+
+## Install
+
+### Windows (Python 3.11 or 3.12 recommended)
 
 ```powershell
 python -m venv .venv
@@ -14,54 +42,137 @@ python -m venv .venv
 .\scripts\install-windows.ps1
 ```
 
-To also install Windows OCR support (pre-built `winrt-*` wheels, no compiler needed):
+To also install Windows OCR support (pre-built `winrt-*` wheels — no compiler needed):
 
 ```powershell
 .\scripts\install-windows.ps1 -OCR
 ```
 
-If `winrt-*` wheels aren't yet available for your Python version, install
-[Tesseract](https://github.com/UB-Mannheim/tesseract/wiki) (standalone binary,
-no compiler required) and then:
+> **Python 3.14 note:** `argostranslate 1.9.x` pins `sentencepiece==0.2.0` which
+> has no pre-built wheel for Python 3.14. The install script handles this by
+> installing `sentencepiece>=0.2.0 --only-binary :all:` first (picks up 0.2.1),
+> then argostranslate with `--no-deps`.
 
-```powershell
-pip install pytesseract Pillow
-```
-
-**Linux / macOS:**
+### Linux / macOS
 
 ```bash
-# Clone the repository
-git clone https://github.com/yourusername/zh-en-translation.git
-cd zh-en-translation
-
-# Install in development mode with dependencies
 pip install -e ".[dev]"
 ```
 
-> **Why the Windows script?** `argostranslate 1.9.6` pins `sentencepiece==0.2.0` which
-> has no pre-built wheel for Python 3.14. The script installs `sentencepiece>=0.2.0`
-> binary-only first (picks up 0.2.1 which ships a 3.14 wheel), then installs
-> argostranslate with `--no-deps` to avoid the locked constraint being re-applied.
+---
 
-### Run
+## OCR (optional)
 
-```bash
-# Start the translator app (tray icon)
+| Engine | Install | Notes |
+|---|---|---|
+| **Windows OCR** (recommended) | `.\scripts\install-windows.ps1 -OCR` | Offline, ships with Windows; needs Chinese language pack |
+| **Tesseract** | Install [Tesseract binary](https://github.com/UB-Mannheim/tesseract/wiki) + `chi_sim` pack, then `pip install pytesseract Pillow` | Offline |
+| **PaddleOCR** | `pip install "zh-en-translator[ocr-paddle]"` | Best quality; heavy download |
+
+If Windows OCR is installed but the Chinese language pack is missing, the
+popup shows an "Open Language Settings" button that takes you directly to the
+Windows language settings to add **Chinese (Simplified, China)**.
+
+---
+
+## Traditional Chinese
+
+Install the OpenCC converter to enable automatic Traditional → Simplified
+conversion before translation:
+
+```powershell
+pip install "zh-en-translator[traditional]"
+```
+
+Toggle the setting in **Preferences → General → Traditional Chinese**.
+
+---
+
+## Cloud translation (optional)
+
+By default the app is fully offline. To use Microsoft Azure Translator:
+
+1. Get an API key from the [Azure portal](https://portal.azure.com) (Cognitive Services → Translator). The **Free tier (F0)** allows 2 million characters/month.
+2. Open **Preferences → Cloud** tab.
+3. Tick **Enable cloud translation**, paste your key, and optionally enter your region (e.g. `eastus`).
+4. Click **Apply**.
+
+> **Privacy:** enabling this option sends every translated text segment to
+> Microsoft Azure servers. The API key is stored in plain text in
+> `config.toml` — secure that file if the machine is shared.
+>
+> When disabled (the default), zero outbound network traffic is generated
+> during translation.
+
+Cloud translation uses Azure as the primary engine and falls back to local
+Argos automatically on any network or API failure.
+
+---
+
+## Run
+
+```powershell
 zh-en-translator
 ```
 
-### Test
+The app appears as a system-tray icon (blue rounded square with "中"). Right-click
+the tray icon for the context menu.
+
+---
+
+## Configuration
+
+Settings are stored in `%APPDATA%\zh-en-translator\config.toml` (Windows) or
+`~/.config/zh-en-translator/config.toml` (Linux/macOS). Edit in the **Preferences** dialog
+(tray → Preferences…) or directly in the file:
+
+```toml
+[general]
+hotkey = "<ctrl>+<shift>+t"
+mode = "popup"           # popup | sidebar
+
+[display]
+theme = "system"         # system | dark | light | sepia
+font_family = ""         # empty = system default
+font_size = 13
+
+[sidebar]
+side = "right"           # left | right
+sidebar_y = 200
+color_fresh = "#00C9CC"
+color_idle = "#9E8080"
+
+[lookup]
+external_lookup_url = "https://www.mdbg.net/chinese/dictionary?wdqb={query}"
+
+[ocr]
+ocr_engine = "auto"      # auto | windows | tesseract | paddle
+
+[pinyin]
+show_pinyin = true
+pinyin_max_chars = 80
+
+[translation]
+traditional_to_simplified = true
+
+[cloud]
+ms_translator_enabled = false
+ms_translator_api_key = ""
+ms_translator_region = ""
+```
+
+---
+
+## Development
+
+### Tests
 
 ```bash
-# Run all tests with offscreen rendering (Linux/CI)
-QT_QPA_PLATFORM=offscreen pytest -x
-
-# Run tests with output
+# Headless (Linux / CI)
 QT_QPA_PLATFORM=offscreen pytest -v
 
-# Run specific test file
-QT_QPA_PLATFORM=offscreen pytest tests/test_app_smoke.py -v
+# Windows (offscreen is set automatically by the test suite)
+pytest -v
 ```
 
 ### Lint
@@ -70,34 +181,44 @@ QT_QPA_PLATFORM=offscreen pytest tests/test_app_smoke.py -v
 ruff check src/ tests/
 ```
 
+### Architecture
+
+```
+zh-en-translation/
+├─ src/zh_en_translator/
+│  ├─ app.py                  ← tray app + hotkey entry point
+│  ├─ hotkey.py               ← pynput global hotkey wrapper
+│  ├─ capture.py              ← clipboard-based text capture + replace
+│  ├─ config.py               ← TOML config loader/writer
+│  ├─ engines/
+│  │  ├─ argos.py             ← offline sentence MT (ctranslate2)
+│  │  ├─ ms_cloud.py          ← Azure Translator (opt-in)
+│  │  ├─ dictionary.py        ← CC-CEDICT + SQLite
+│  │  ├─ segmentation.py      ← jieba word segmenter
+│  │  ├─ converter.py         ← OpenCC Traditional→Simplified
+│  │  ├─ themes.py            ← theme palette definitions
+│  │  ├─ translation_worker.py← QThread wrapper (cloud → argos fallback)
+│  │  └─ ocr/                 ← Windows / Tesseract / PaddleOCR engines
+│  └─ ui/
+│     ├─ popup.py             ← frameless translation popup
+│     ├─ sidebar.py           ← peek-tab sidebar
+│     └─ preferences.py       ← tabbed preferences dialog
+└─ tests/                     ← 152 tests
+```
+
+---
+
 ## Milestones
 
-### Milestone 1 (M1) — "Hello Popup"
-
-- System tray app with global hotkey listener
-- Captures selected text via clipboard save/restore pattern
-- Frameless popup with rounded corners and drop shadow
-- Dismiss via Esc, click-outside, or focus loss
-- No translation engine yet (scaffold only)
-
-### Milestone 2 (M2) — "Dictionary Lookup"
-
-- CC-CEDICT loader with SQLite indexing (~50 common words in bundled sample)
-- Pinyin conversion from tone numbers (e.g., `chuan2 tong3` → `chuán tǒng`) with full tone-mark support (tones 1–5)
-- Chinese text segmentation (character-by-character + greedy longest-match dictionary lookup)
-- Word-by-word table in popup showing:
-  - Token | Pinyin | English glosses
-  - Unknown Chinese tokens highlighted with yellow background
-  - All cells selectable for copy/paste
-- Popup table scrolls vertically if content exceeds ~400 px
-- M1 fallback: popup works without dictionary (shows only captured text)
-
-#### Dictionary data
-
-The bundled dictionary contains ~50 common Simplified Chinese words. For production use, replace `src/zh_en_translator/resources/cedict_sample.txt` with the full CC-CEDICT file from:
-
-[CC-CEDICT](https://www.mdbg.net/chinese/dictionary?page=cc-cedict)
-
-Format: one entry per line as `traditional simplified [pinyin] /gloss1/gloss2/.../`
-
-Lines starting with `#` are treated as comments and skipped.
+| # | Milestone | Status |
+|---|---|---|
+| M1 | Hello Popup — tray, hotkey, frameless popup | ✅ |
+| M2 | Dictionary Lookup — CC-CEDICT + jieba + pinyin | ✅ |
+| M3 | Replace + Copy + External Lookup | ✅ |
+| M4 | Sentence Translation — Argos / ctranslate2 (offline) | ✅ |
+| M5 | Sidebar Mode — peek-tab, animations, indicator colours | ✅ |
+| M6 | OCR — Windows / Tesseract / PaddleOCR waterfall | ✅ |
+| M7 | Preferences — TOML config + in-app dialog | ✅ |
+| M8 | Packaging (MSI) | ⏳ |
+| M9 | Accessibility + Traditional Chinese — OpenCC, Qt a11y tree | ✅ |
+| M10 | Optional MS Cloud — Azure Translator opt-in | ✅ |
