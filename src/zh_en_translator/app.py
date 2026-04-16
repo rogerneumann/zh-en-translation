@@ -5,8 +5,8 @@ import sys
 import threading
 
 import pyperclip
-from PyQt6.QtCore import Qt, QObject, pyqtSignal, QThread
-from PyQt6.QtGui import QIcon, QColor
+from PyQt6.QtCore import Qt, QObject, QRectF, pyqtSignal, QThread
+from PyQt6.QtGui import QBrush, QFont, QIcon, QColor, QPainter, QPainterPath, QPixmap
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 
 from zh_en_translator.config import load_config, save_config, Config
@@ -18,6 +18,41 @@ from zh_en_translator.ui.sidebar import TranslatorSidebar
 from zh_en_translator.engines.translation_worker import TranslationWorker
 
 logger = logging.getLogger(__name__)
+
+
+def _render_icon_pixmap(size: int):
+    """Draw the app icon at the requested pixel size.
+
+    Design: blue rounded square + white '中' character.
+    Rendered with full antialiasing so it looks crisp at every size Windows
+    requests (16 px tray, 32 px taskbar, 48 px Alt-Tab, 256 px Explorer).
+    """
+    pixmap = QPixmap(size, size)
+    pixmap.fill(Qt.GlobalColor.transparent)
+
+    p = QPainter(pixmap)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setRenderHint(QPainter.RenderHint.TextAntialiasing)
+
+    # Rounded-square background
+    radius = size * 0.22
+    path = QPainterPath()
+    path.addRoundedRect(QRectF(0, 0, size, size), radius, radius)
+    p.fillPath(path, QBrush(QColor("#2563EB")))  # Tailwind blue-600
+
+    # White '中' glyph — try CJK-capable fonts in priority order
+    for family in ("Microsoft YaHei", "SimHei", "Arial Unicode MS", ""):
+        font = QFont(family, int(size * 0.52))
+        font.setBold(True)
+        p.setFont(font)
+        if p.fontMetrics().inFont("中"):
+            break
+
+    p.setPen(QColor("white"))
+    p.drawText(QRectF(0, 0, size, size), Qt.AlignmentFlag.AlignCenter, "中")
+
+    p.end()
+    return pixmap
 
 
 def _ensure_cedict_background() -> None:
@@ -110,7 +145,11 @@ class TranslatorApp(QObject):
 
     def _setup_tray(self):
         self.tray_icon = QSystemTrayIcon(self.app)
-        self.tray_icon.setIcon(self._create_icon())
+        app_icon = self._create_icon()
+        # Set on QApplication so every window (popup, sidebar) shows the same
+        # icon in the Windows taskbar and Alt-Tab switcher.
+        self.app.setWindowIcon(app_icon)
+        self.tray_icon.setIcon(app_icon)
 
         menu = QMenu()
 
@@ -141,15 +180,11 @@ class TranslatorApp(QObject):
         self.tray_icon.setContextMenu(menu)
         self.tray_icon.show()
 
-    def _create_icon(self):
-        from PyQt6.QtGui import QPixmap, QPainter
-
-        pixmap = QPixmap(16, 16)
-        pixmap.fill(Qt.GlobalColor.transparent)
-        painter = QPainter(pixmap)
-        painter.fillRect(pixmap.rect(), QColor(100, 150, 255))
-        painter.end()
-        return QIcon(pixmap)
+    def _create_icon(self) -> QIcon:
+        icon = QIcon()
+        for size in (16, 24, 32, 48, 64, 128, 256):
+            icon.addPixmap(_render_icon_pixmap(size))
+        return icon
 
     def _on_hotkey_pressed(self):
         if self.paused:
@@ -430,6 +465,12 @@ class TranslatorApp(QObject):
 
 def main():
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s [%(name)s] %(message)s")
+    # Suppress Qt's harmless "Unable to open monitor interface" warning that
+    # appears when a secondary display is detected by Windows but currently
+    # powered off (error 0xe0000225 = ERROR_NOT_FOUND from the GDI/DXGI layer).
+    # Must be set before QApplication is created.
+    import os
+    os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.screen.warning=false")
     app = TranslatorApp()
     app.start()
 
