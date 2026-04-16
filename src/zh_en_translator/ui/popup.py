@@ -91,6 +91,30 @@ class TranslatorPopup(QWidget):
         layout.setContentsMargins(18, 14, 18, 14)
         layout.setSpacing(10)
 
+        # ── Header row (pin + close buttons) ─────────────────────────────
+        header = QHBoxLayout()
+        header.setSpacing(4)
+        header.addStretch()
+
+        # Pin button (checkable) — keep popup open
+        self.btn_pin = QPushButton("📌")
+        self.btn_pin.setEnabled(False)
+        self.btn_pin.setCheckable(True)
+        self.btn_pin.setChecked(False)
+        self.btn_pin.setFixedSize(32, 32)
+        self.btn_pin.setToolTip("Keep popup open (don't auto-dismiss)")
+        self.btn_pin.toggled.connect(self._on_pin_toggled)
+        header.addWidget(self.btn_pin)
+
+        # Close button
+        self.btn_close = QPushButton("✕")
+        self.btn_close.setFixedSize(32, 32)
+        self.btn_close.setToolTip("Close popup")
+        self.btn_close.clicked.connect(self._dismiss)
+        header.addWidget(self.btn_close)
+
+        layout.addLayout(header)
+
         # ── Pinyin label (hidden until PinyinWorker returns a result) ────
         self._pinyin_label = QLabel("")
         self._pinyin_label.setObjectName("pinyinLabel")
@@ -154,23 +178,13 @@ class TranslatorPopup(QWidget):
         self.btn_replace.clicked.connect(self._replace_text)
         btn_row.addWidget(self.btn_replace)
 
-        # Pin button (checkable) — keep popup open
-        self.btn_pin = QPushButton("📌")
-        self.btn_pin.setEnabled(False)
-        self.btn_pin.setCheckable(True)
-        self.btn_pin.setChecked(False)
-        self.btn_pin.setFixedSize(32, 32)
-        self.btn_pin.setToolTip("Keep popup open (don't auto-dismiss)")
-        self.btn_pin.setVisible(self._on_pin is not None)
-        self.btn_pin.toggled.connect(self._on_pin_toggled)
-        btn_row.addWidget(self.btn_pin)
-
-        # Close button
-        self.btn_close = QPushButton("✕")
-        self.btn_close.setFixedSize(32, 32)
-        self.btn_close.setToolTip("Close popup")
-        self.btn_close.clicked.connect(self._dismiss)
-        btn_row.addWidget(self.btn_close)
+        # Pin to sidebar button
+        self.btn_pin_sidebar = QPushButton("Pin →")
+        self.btn_pin_sidebar.setEnabled(False)
+        self.btn_pin_sidebar.setToolTip("Pin translation to the sidebar")
+        self.btn_pin_sidebar.setVisible(self._on_pin is not None)
+        self.btn_pin_sidebar.clicked.connect(self._pin_to_sidebar)
+        btn_row.addWidget(self.btn_pin_sidebar)
 
         # Hidden button — shown only when OCR reports a missing language pack
         self.btn_lang_settings = QPushButton("Open Language Settings")
@@ -225,17 +239,19 @@ class TranslatorPopup(QWidget):
         self.btn_close.setAccessibleDescription(
             "Close the popup"
         )
+        self.btn_pin_sidebar.setAccessibleDescription(
+            "Pin this translation to the persistent sidebar panel"
+        )
         self.btn_lang_settings.setAccessibleDescription(
             "Open Windows Language Settings to install the Chinese OCR language pack"
         )
 
-        # Logical tab order: source → translation → copy → lookup → replace → pin → close
+        # Logical tab order: source → translation → copy → lookup → replace → pin_sidebar
         QWidget.setTabOrder(self.text_display, self.translation_label)
         QWidget.setTabOrder(self.translation_label, self.btn_copy)
         QWidget.setTabOrder(self.btn_copy, self.btn_lookup)
         QWidget.setTabOrder(self.btn_lookup, self.btn_replace)
-        QWidget.setTabOrder(self.btn_replace, self.btn_pin)
-        QWidget.setTabOrder(self.btn_pin, self.btn_close)
+        QWidget.setTabOrder(self.btn_replace, self.btn_pin_sidebar)
 
     def _apply_styling(self):
         from zh_en_translator.engines.themes import resolve_palette
@@ -457,8 +473,9 @@ class TranslatorPopup(QWidget):
         self.btn_copy.setEnabled(is_real)
         self.btn_lookup.setEnabled(is_real)
         self.btn_replace.setEnabled(is_real)
+        self.btn_pin.setEnabled(is_real)
         if self._on_pin is not None:
-            self.btn_pin.setEnabled(is_real)
+            self.btn_pin_sidebar.setEnabled(is_real)
 
     def _on_pinyin_ready(self, pinyin_str: str):
         """Show pinyin label when PinyinWorker returns a non-empty result."""
@@ -516,6 +533,16 @@ class TranslatorPopup(QWidget):
     def _on_pin_toggled(self, checked: bool) -> None:
         """Handle pin state toggle."""
         self._pinned = checked
+
+    def _pin_to_sidebar(self):
+        """Send the current translation to the sidebar and dismiss."""
+        if self._on_pin is None:
+            return
+        translation = self.translation_label.text()
+        if not translation or translation == "Translating…":
+            return
+        self._on_pin(self.captured_text, translation)
+        self._dismiss()
 
     def _copy_translation(self):
         """Copy the translation text to the system clipboard without dismissing."""
