@@ -19,11 +19,12 @@ Source of truth for plan/scope: `PLAN.md`.
 | M5 — Sidebar Mode (peek tab) | ✅ Done | Peek-tab with 6px strip, slide animation, drag, keep-pinned, indicator colours |
 | M6 — OCR | ✅ Done | Waterfall: PaddleOCR → winsdk → Tesseract; auto-detect clipboard |
 | M7 — Preferences | ✅ Done | In-app dialog + TOML config; font, colors, sidebar, hotkey, OCR engine |
+| Windows testing fixes | ✅ Done | Black popup/sidebar, OCR routing, clipboard wipe, strip click, mode sync — see below |
 | M8 — Packaging (MSI) | ⏳ Pending | |
 | M9 — Accessibility + Traditional | ⏳ Pending | |
 | M10 — Optional MS Cloud | ⏳ Pending | |
 
-Branch: `claude/fix-windows-testing-issues-E6tHq`
+All fixes merged to `main`.
 
 ---
 
@@ -167,24 +168,25 @@ Design spec agreed with user:
 **Scope**: Clipboard image → OCR → translate. Auto-detect in hotkey flow.
 
 **Delivered** (commits `4803a95`, `8a0da4a`):
-- `src/zh_en_translator/engines/ocr/engine.py` — unified waterfall: PaddleOCR → winsdk Windows.Media.Ocr → Tesseract
-- `src/zh_en_translator/engines/ocr/windows_ocr.py` — async WinRT OCR via `winsdk`
+- `src/zh_en_translator/engines/ocr/engine.py` — unified waterfall: PaddleOCR → Windows.Media.Ocr → Tesseract
+- `src/zh_en_translator/engines/ocr/windows_ocr.py` — async WinRT OCR; tries `winrt-*` packages first, falls back to `winsdk`
 - `src/zh_en_translator/engines/ocr/tesseract_ocr.py` — `pytesseract` fallback
 - `src/zh_en_translator/engines/ocr/paddle_ocr.py` — PaddleOCR opt-in engine
 - `src/zh_en_translator/app.py` — auto-detect flow: selected text → clipboard image (OCR) → clipboard text
 - `src/zh_en_translator/ui/popup.py` — `is_ocr_pending` param + `set_ocr_result()` method
-- `pyproject.toml` — optional deps: `[ocr-windows]`, `[ocr-tesseract]`, `[ocr-paddle]`
+- `pyproject.toml` — optional deps: `[ocr-windows]` (winrt-* wheels), `[ocr-windows-legacy]` (winsdk), `[ocr-tesseract]`, `[ocr-paddle]`
 - 7 new tests (`tests/test_ocr.py`)
 
 **First-run notes**:
-- winsdk not yet installed on test Windows machine; install with `pip install winsdk`
+- Install Windows OCR support (no C compiler needed): `.\scripts\install-windows.ps1 -OCR`
 - PaddleOCR is opt-in (heavy): `pip install "zh-en-translator[ocr-paddle]"`
 - Tesseract needs separate binary install + chi_sim language pack
 
 **Manual test checklist for Windows 11**:
-- [ ] `pip install winsdk` → OCR engine available
-- [ ] Copy image with Chinese text → `Ctrl+Shift+T` → popup shows OCR text + translation
+- [ ] Run `.\scripts\install-windows.ps1 -OCR` → `winrt-*` packages installed
+- [ ] Copy image with Chinese text → `Ctrl+Shift+T` → popup/sidebar shows OCR text + translation
 - [ ] Copy image with no text → "No text detected"
+- [ ] No Chinese language pack installed → "Open Language Settings" button appears
 - [ ] No selection, clipboard has Chinese text → translate clipboard text directly
 
 ---
@@ -232,11 +234,37 @@ Design spec agreed with user:
 
 ---
 
+## Windows testing fixes (post-M7)
+
+Bugs found and fixed during first Windows 11 testing pass.
+
+**Installation fixes**:
+- `sentencepiece==0.2.0` has no Python 3.14 wheel — workaround: install `sentencepiece>=0.2.0 --only-binary :all:` first (picks up 0.2.1), then `argostranslate --no-deps`
+- `winsdk` requires a C compiler (no MSVC on user's machine) — switched `[ocr-windows]` to `winrt-*` pre-built binary wheels; `winsdk` kept as `[ocr-windows-legacy]`
+- Added `scripts/install-windows.ps1` with `-OCR` switch to automate the above
+
+**Runtime bugs fixed**:
+
+| Bug | Root cause | Fix |
+|---|---|---|
+| Black/invisible popup | `WA_TranslucentBackground` corrupts per-widget palette on Windows (DWM sets Window role to black); `palette(text)` in stylesheets resolves to invisible | `setPalette(QApplication.palette())` reset + replace all `palette()` tokens with explicit hex colors computed from `_effective_bg().lightness()` |
+| Black sidebar panel | Same `WA_TranslucentBackground` issue; sidebar child widgets still had `palette(text)` / `palette(mid)` | Added `_effective_bg()` + `_apply_styling()` to sidebar; bakes explicit hex colors into all five child widget stylesheets |
+| OCR clipboard wipe | `capture_selection()` calls `pyperclip.copy("")` which wipes image data from clipboard | Snapshot `clipboard.image()` before `capture_selection()`; use snapshot as fallback |
+| OCR always opened popup | `_run_ocr_from_qimage()` always created `TranslatorPopup` even in sidebar mode | Check `self.sidebar_mode` and route to sidebar with `_on_sidebar_ocr_result()` |
+| "No text detected" (missing Chinese pack) | Windows OCR available but Chinese language pack not installed | Added `has_chinese_language()` check; show actionable error + "Open Language Settings" button (`ms-settings:regionlanguage`) |
+| Sidebar strip unclickable | Collapsed window pushed mostly off-screen; strip drawn/detected at wrong side | Inverted strip position and `_is_on_strip` hit-test for collapsed vs expanded state |
+| Indicator colors not updating | `apply_config()` compared indicator colour against already-updated `COLOUR_FRESH`/`COLOUR_IDLE` values | Save `was_fresh`/`was_idle` booleans before updating the class-level colours |
+| Preferences mode sync | Tray toggle updated `sidebar_mode` but not `config.mode`; preferences opened showing stale state | Keep `config.mode` in sync in all three places where `sidebar_mode` changes; build runtime snapshot in `_open_preferences` |
+| Pin button no visual feedback | Qt stylesheets don't support `opacity` property | Replaced with real CSS: `background: rgba(0,160,255,0.15); border: 1px solid rgba(0,160,255,0.5)` for `:checked` state |
+
+**Tests added**: 74 → 83 (new: `btn_lang_settings` visibility, `set_ocr_result` routing, `_effective_bg`, `has_chinese_language`, `windows_ocr.is_available` with winrt+winsdk both blocked)
+
+---
+
 ## Open questions / risks
 
 - **Full CC-CEDICT distribution** — sample is only 50 entries. Bundle full ~2 MB file or download on first run?
 - **jieba re-introduction** — opt-in in future milestone?
 - **MSI code signing** — deferred; SmartScreen warning until cert available.
 - **Sidebar translation history** — currently shows only last translation; future: scrollable history.
-- **winsdk OCR on Python 3.14** — needs testing; asyncio integration may need adjustment.
 - **Theme support** (system/dark/light/sepia) — deferred to M9 alongside accessibility work.
