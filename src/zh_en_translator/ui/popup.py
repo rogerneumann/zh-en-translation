@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import urllib.parse
 import pyperclip
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QRectF, QUrl
+from PyQt6.QtCore import Qt, QTimer, QRectF, QUrl
 from PyQt6.QtGui import QCursor, QFont, QPainter, QPainterPath, QPen, QColor, QDesktopServices
 from PyQt6.QtWidgets import (
     QWidget,
@@ -18,37 +19,9 @@ from PyQt6.QtWidgets import (
 )
 
 from zh_en_translator.engines.dictionary import Dictionary
+from zh_en_translator.engines.translation_worker import TranslationWorker, PinyinWorker
 
-
-class _TranslationWorker(QThread):
-    """Background thread: runs translation and emits the result."""
-
-    result_ready = pyqtSignal(str)
-
-    def __init__(self, text: str):
-        super().__init__()
-        self.text = text
-
-    def run(self):
-        from zh_en_translator.engines.argos import ensure_pack, translate_sentence
-
-        print(f"[translate] input ({len(self.text)} chars): {self.text[:80]!r}")
-
-        if not ensure_pack():
-            print("[translate] ensure_pack() failed")
-            self.result_ready.emit("⚠ Translation model not available.")
-            return
-
-        try:
-            result = translate_sentence(self.text)
-            print(f"[translate] result: {result!r}")
-        except Exception as e:
-            print(f"[translate] exception: {e}")
-            result = None
-
-        self.result_ready.emit(
-            result if result else f"(no translation — input: {self.text[:60]!r})"
-        )
+logger = logging.getLogger(__name__)
 
 
 class TranslatorPopup(QWidget):
@@ -80,7 +53,8 @@ class TranslatorPopup(QWidget):
         self.dictionary = dictionary
         self._on_pin = on_pin
         self._dismissed = False
-        self._worker: _TranslationWorker | None = None
+        self._worker: TranslationWorker | None = None
+        self._pinyin_worker: PinyinWorker | None = None
         self._is_ocr_pending = is_ocr_pending
         self._config = config
 
@@ -90,6 +64,7 @@ class TranslatorPopup(QWidget):
         self._position_near_cursor()
         if not is_ocr_pending:
             self._start_translation()
+            self._start_pinyin(text)
         else:
             self.translation_label.setText("Waiting for OCR…")
 
@@ -114,6 +89,13 @@ class TranslatorPopup(QWidget):
         layout = QVBoxLayout()
         layout.setContentsMargins(18, 14, 18, 14)
         layout.setSpacing(10)
+
+        # ── Pinyin label (hidden until PinyinWorker returns a result) ────
+        self._pinyin_label = QLabel("")
+        self._pinyin_label.setObjectName("pinyinLabel")
+        self._pinyin_label.setWordWrap(True)
+        self._pinyin_label.setVisible(False)
+        layout.addWidget(self._pinyin_label)
 
         # ── Source text (small, muted, selectable) ──────────────────────
         self.text_display = QTextEdit()
@@ -190,47 +172,113 @@ class TranslatorPopup(QWidget):
         layout.addLayout(btn_row)
 
         self.setLayout(layout)
+        self._setup_accessibility()
         self.resize(420, 190)
 
+    def _setup_accessibility(self):
+        """Set accessible names, descriptions, and logical tab order for screen readers."""
+        # Pinyin label
+        self._pinyin_label.setAccessibleName("Pinyin romanisation")
+        self._pinyin_label.setAccessibleDescription(
+            "Pinyin phonetic reading of the source text"
+        )
+
+        # Source text
+        self.text_display.setAccessibleName("Source text")
+        self.text_display.setAccessibleDescription(
+            "Original Chinese text being translated. Editable."
+        )
+
+        # Translation
+        self.translation_label.setAccessibleName("Translation")
+        self.translation_label.setAccessibleDescription(
+            "English translation of the source text"
+        )
+
+        # Buttons (accessible names are already implied by button text, but add descriptions)
+        self.btn_copy.setAccessibleDescription(
+            "Copy the English translation to the clipboard"
+        )
+        self.btn_lookup.setAccessibleDescription(
+            "Open the source text in an external dictionary"
+        )
+        self.btn_replace.setAccessibleDescription(
+            "Replace the original selected text with the English translation"
+        )
+        self.btn_pin.setAccessibleDescription(
+            "Pin this translation to the persistent sidebar panel"
+        )
+        self.btn_lang_settings.setAccessibleDescription(
+            "Open Windows Language Settings to install the Chinese OCR language pack"
+        )
+
+        # Logical tab order: source → translation → copy → lookup → replace → pin
+        QWidget.setTabOrder(self.text_display, self.translation_label)
+        QWidget.setTabOrder(self.translation_label, self.btn_copy)
+        QWidget.setTabOrder(self.btn_copy, self.btn_lookup)
+        QWidget.setTabOrder(self.btn_lookup, self.btn_replace)
+        QWidget.setTabOrder(self.btn_replace, self.btn_pin)
+
     def _apply_styling(self):
-        # Determine readable text/muted colours that work on both light and dark
-        # backgrounds, regardless of what WA_TranslucentBackground did to the
-        # per-widget palette on Windows.
-        bg = self._effective_bg()
-        is_dark = bg.lightness() < 128
-        text_color   = "#e8e8e8" if is_dark else "#111111"
-        muted_color  = "#aaaaaa" if is_dark else "#666666"
-        btn_border   = "rgba(255,255,255,0.15)" if is_dark else "rgba(0,0,0,0.15)"
-        btn_hover    = "rgba(255,255,255,0.08)" if is_dark else "rgba(0,0,0,0.06)"
-        btn_pressed  = "rgba(255,255,255,0.14)" if is_dark else "rgba(0,0,0,0.12)"
-        self.setStyleSheet(
-            f"""
+        from zh_en_translator.engines.themes import resolve_palette
+
+        # Determine if system is in dark mode
+        sys_bg = QApplication.palette().color(self.backgroundRole())
+        system_is_dark = sys_bg.lightness() < 128
+
+        theme = "system"
+        if self._config:
+            theme = self._config.theme
+
+        palette = resolve_palette(theme, system_is_dark)
+
+        # bg_color override takes priority over theme background
+        if self._config and self._config.bg_color:
+            from PyQt6.QtGui import QColor
+            bg = QColor(self._config.bg_color)
+            is_dark = bg.lightness() < 128
+            # Re-resolve using the overridden bg's darkness
+            palette = resolve_palette("dark" if is_dark else "light", system_is_dark)
+            bg_hex = self._config.bg_color
+        else:
+            bg_hex = palette.bg
+            # Update the widget's palette so paintEvent uses the theme bg
+            from PyQt6.QtGui import QColor, QPalette
+            qpalette = self.palette()
+            qpalette.setColor(QPalette.ColorRole.Window, QColor(bg_hex))
+            self.setPalette(qpalette)
+
+        self.setStyleSheet(f"""
             QTextEdit {{
                 border: none;
                 background: transparent;
                 font-size: 11pt;
-                color: {muted_color};
+                color: {palette.muted};
             }}
             QLabel {{
                 border: none;
                 background: transparent;
-                color: {text_color};
+                color: {palette.text};
                 padding: 4px 0;
+            }}
+            QLabel#pinyinLabel {{
+                color: {palette.muted};
+                font-size: 9pt;
+                padding: 0;
             }}
             QFrame {{ background: transparent; }}
             QPushButton {{
                 background: transparent;
-                border: 1px solid {btn_border};
+                border: 1px solid {palette.border};
                 border-radius: 4px;
                 padding: 3px 10px;
                 font-size: 10pt;
-                color: {text_color};
+                color: {palette.text};
             }}
-            QPushButton:hover  {{ background: {btn_hover}; }}
-            QPushButton:pressed {{ background: {btn_pressed}; }}
-            QPushButton:disabled {{ color: {muted_color}; border-color: {btn_border}; }}
-            """
-        )
+            QPushButton:hover  {{ background: {palette.btn_hover}; }}
+            QPushButton:pressed {{ background: {palette.btn_pressed}; }}
+            QPushButton:disabled {{ color: {palette.muted}; border-color: {palette.border}; }}
+        """)
 
     def _apply_config(self, config):
         """Apply config settings to font and background color."""
@@ -261,6 +309,11 @@ class TranslatorPopup(QWidget):
         """Safe background colour for both light and dark mode on Windows."""
         if self._config and self._config.bg_color:
             return QColor(self._config.bg_color)
+        if self._config and self._config.theme != "system":
+            from zh_en_translator.engines.themes import THEMES
+            palette = THEMES.get(self._config.theme)
+            if palette:
+                return QColor(palette.bg)
         app_bg = QApplication.palette().color(self.backgroundRole())
         # Near-pure-black (lightness < 10) almost certainly indicates the
         # WA_TranslucentBackground palette corruption rather than intentional
@@ -319,9 +372,27 @@ class TranslatorPopup(QWidget):
     # ------------------------------------------------------------------
 
     def _start_translation(self):
-        self._worker = _TranslationWorker(self.captured_text)
+        self._worker = TranslationWorker(self.captured_text)
         self._worker.result_ready.connect(self._on_translation_ready)
         self._worker.start()
+
+    def _start_pinyin(self, text: str):
+        """Start PinyinWorker if config enables it for this text length."""
+        if self._config is None or not self._config.show_pinyin:
+            return
+        if len(text) > self._config.pinyin_max_chars:
+            return
+        self._pinyin_worker = PinyinWorker(text)
+        self._pinyin_worker.result_ready.connect(self._on_pinyin_ready)
+        self._pinyin_worker.start()
+
+    def _on_pinyin_ready(self, pinyin_str: str):
+        """Show pinyin label when worker returns a non-empty result."""
+        if self._dismissed or not pinyin_str:
+            return
+        self._pinyin_label.setText(pinyin_str)
+        self._pinyin_label.setVisible(True)
+        self._position_near_cursor()
 
     def set_ocr_result(self, text: str):
         """Called by app after OCR completes — either start translation or show error."""
@@ -366,6 +437,20 @@ class TranslatorPopup(QWidget):
         if self._on_pin is not None:
             self.btn_pin.setEnabled(is_real)
 
+    def _on_pinyin_ready(self, pinyin_str: str):
+        """Show pinyin label when PinyinWorker returns a non-empty result."""
+        if self._dismissed:
+            return
+        if not pinyin_str:
+            return
+        self._pinyin_label.setText(pinyin_str)
+        self._pinyin_label.setVisible(True)
+        self._pinyin_label.adjustSize()
+        # Expand popup height slightly to accommodate the new label
+        extra = self._pinyin_label.sizeHint().height() + 4
+        self.resize(self.width(), min(580, self.height() + extra))
+        self._position_near_cursor()
+
     # ------------------------------------------------------------------
     # Action buttons
     # ------------------------------------------------------------------
@@ -386,6 +471,9 @@ class TranslatorPopup(QWidget):
         if self._worker and self._worker.isRunning():
             self._worker.quit()
             self._worker.wait(500)
+        if self._pinyin_worker and self._pinyin_worker.isRunning():
+            self._pinyin_worker.quit()
+            self._pinyin_worker.wait(500)
         self.close()
 
         # Give the source app ~120 ms to regain focus before we paste.
@@ -400,7 +488,7 @@ class TranslatorPopup(QWidget):
             kb.release("v")
             kb.release(Key.ctrl)
         except Exception as e:
-            print(f"[replace] paste failed: {e}")
+            logger.warning("paste failed: %s", e)
 
     def _pin_to_sidebar(self):
         """Send the current translation to the sidebar and dismiss."""
@@ -468,6 +556,9 @@ class TranslatorPopup(QWidget):
         if self._worker and self._worker.isRunning():
             self._worker.quit()
             self._worker.wait(500)
+        if self._pinyin_worker and self._pinyin_worker.isRunning():
+            self._pinyin_worker.quit()
+            self._pinyin_worker.wait(500)
         self.close()
 
     def mousePressEvent(self, event):

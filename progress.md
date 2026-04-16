@@ -21,7 +21,7 @@ Source of truth for plan/scope: `PLAN.md`.
 | M7 — Preferences | ✅ Done | In-app dialog + TOML config; font, colors, sidebar, hotkey, OCR engine |
 | Windows testing fixes | ✅ Done | Black popup/sidebar, OCR routing, clipboard wipe, strip click, mode sync — see below |
 | M8 — Packaging (MSI) | ⏳ Pending | |
-| M9 — Accessibility + Traditional | ⏳ Pending | |
+| M9 — Accessibility + Traditional | ✅ Done | OpenCC converter, theme support, Qt accessibility (names, descriptions, tab order) |
 | M10 — Optional MS Cloud | ⏳ Pending | |
 
 All fixes merged to `main`.
@@ -261,10 +261,130 @@ Bugs found and fixed during first Windows 11 testing pass.
 
 ---
 
+## Cleanup / Refactor
+
+- `next_prompt.md` removed (was stale — referenced an old branch)
+- Debug `print()` calls replaced with `logging` module throughout (`argos.py`, `popup.py`, `app.py`, `config.py`); `logging.basicConfig()` added to `app.main()` so warnings surface by default
+- `_TranslationWorker` (popup.py) and `_SidebarTranslationWorker` (app.py) deduplicated into `src/zh_en_translator/engines/translation_worker.py`
+
+---
+
+## M2 update — jieba + full CC-CEDICT
+
+**Added in branch `claude/review-plan-implementation-C0Fix`**:
+
+- **jieba segmentation** (`src/zh_en_translator/engines/segmentation.py`):
+  - `try: import jieba` at module load; sets `_JIEBA_AVAILABLE = True/False`.
+  - `jieba.setLogLevel(logging.WARNING)` silences noisy stderr output.
+  - `segment()` uses `jieba.cut(text, cut_all=False)` when jieba is available; filters empty tokens.
+  - Old character-run logic preserved as `_segment_fallback(text)` for no-jieba environments.
+  - `jieba>=0.42.1` added to `pyproject.toml` main dependencies.
+
+- **Full CC-CEDICT download on first run** (`src/zh_en_translator/engines/dictionary.py`):
+  - `CEDICT_URL` constant pointing to the MDBG ZIP distribution.
+  - `get_cedict_path()` returns `platformdirs.user_data_dir("zh-en-translator") / "cedict_ts.u8"`.
+  - `ensure_cedict()` checks for existing file; downloads the ZIP via `urllib.request.urlopen`,
+    extracts `cedict_ts.u8`, and saves it. On any failure logs a warning and returns the bundled
+    sample so the app stays functional offline.
+
+- **Background warm-up** (`src/zh_en_translator/app.py`):
+  - `_ensure_cedict_background()` module-level helper calls `ensure_cedict()` and logs the result.
+  - `TranslatorApp.__init__` launches it as a daemon thread immediately after `load_config()`,
+    so the dictionary is ready before the first popup lookup.
+
+- **Tests** (88 → 91):
+  - `test_segmentation.py`: updated `test_segment_english_only` to allow jieba's word-level
+    splitting of English text (was hardcoded to fallback single-token behaviour); added mock tests
+    for jieba path, empty-token filtering, and fallback path.
+  - `test_dictionary.py`: added `TestEnsureCedict` class with three tests —
+    download-and-extract success path, returns-existing-file (no re-download), and
+    fallback-to-bundled-sample on network failure.
+
+**Deviations**: none — jieba wheel fails to build in the sandbox via pip but is pure Python;
+copied the extracted source tree directly to site-packages as a workaround.
+
+---
+
+## M9 — Part 1: OpenCC Traditional→Simplified
+
+**Scope**: Detect and convert Traditional Chinese input to Simplified before dictionary lookup and neural MT.
+
+**Delivered**:
+- `src/zh_en_translator/engines/converter.py` — `to_simplified(text)` / `is_available()` with dual-backend probe:
+  - Tries `import opencc` (official package) first, then `import opencc_python_reimplemented` as fallback.
+  - Caches the `OpenCC("t2s")` instance at module level (expensive to construct).
+  - Graceful degradation: if neither backend is importable, logs a debug message and returns text unchanged.
+  - Never raises — all exceptions are caught and the original text is returned.
+- `pyproject.toml` — new optional dep group `[traditional]` → `opencc-python-reimplemented>=1.1.0`.
+- `src/zh_en_translator/config.py` — new `[translation]` TOML section with `traditional_to_simplified: bool = True` (default on).
+- `src/zh_en_translator/app.py` — conversion applied in four code paths (all before text enters the pipeline):
+  - Popup mode: after text capture, before `TranslatorPopup`.
+  - Sidebar mode: after text capture, before `_translate_for_sidebar`.
+  - OCR popup path: in `_on_ocr_result`, skipped if text starts with `⚠`.
+  - OCR sidebar path: in `_on_sidebar_ocr_result`, skipped if text starts with `⚠`.
+- `src/zh_en_translator/ui/preferences.py` — "Traditional Chinese" group box in the General tab with `_trad_to_simp_check` (`QCheckBox`); wired in `_load_config_into_ui()` and `_collect_config()`.
+- `tests/test_converter.py` — 7 tests: simplified passthrough, traditional conversion (conditional on `is_available()`), never-raises, empty string, ASCII passthrough, `is_available()` bool type, idempotent.
+- `tests/test_config.py` — 3 new tests: `traditional_to_simplified` default, False round-trip, True round-trip.
+- `tests/test_app_smoke.py` — 3 new preferences tests: checkbox exists, reflects False, `_collect_config()` reads state.
+
+**OpenCC availability in sandbox**: `opencc-python-reimplemented` not installed; graceful fallback active (Traditional text passes through unchanged, tests adapted via `is_available()` guard).
+
+**Config field**:
+```
+[translation]
+traditional_to_simplified = true
+```
+
+---
+
+## M9 — Part 2: Theme support
+
+**Scope**: Add `theme` config field (system/dark/light/sepia) controlling the overall color palette of both the popup and sidebar.
+
+**Delivered**:
+- `src/zh_en_translator/engines/themes.py` — `ThemePalette` frozen dataclass + `THEMES` dict (light, dark, sepia palettes) + `resolve_palette(theme, system_is_dark)` helper.
+- `src/zh_en_translator/config.py` — `theme: str = "system"` field added to `Config`; saved/loaded from `[display]` TOML section.
+- `src/zh_en_translator/ui/popup.py` — `_apply_styling()` replaced with theme-aware version that calls `resolve_palette()`; `_effective_bg()` updated to respect non-system theme when no `bg_color` override is set.
+- `src/zh_en_translator/ui/sidebar.py` — `_apply_styling()` and `_effective_bg()` updated similarly; indicator strip colors (`COLOUR_FRESH` / `COLOUR_IDLE`) unchanged.
+- `src/zh_en_translator/ui/preferences.py` — "Theme" group box added above Font in the Display tab (`_theme_combo` QComboBox with System default / Light / Dark / Sepia); wired in `_load_config_into_ui()` and `_collect_config()`.
+- `tests/test_themes.py` — 11 new tests covering `resolve_palette`, config roundtrip, and preferences combo.
+
+**Behavior**: `bg_color` override still takes priority over theme background — when set, the palette is re-resolved based on the override color's lightness.
+
+**Config field**:
+```
+[display]
+theme = "system"   # "system" | "dark" | "light" | "sepia"
+```
+
+**Tests**: 112 → 123 (+11).
+
+---
+
+## M9 — Part 3: Qt Accessibility
+
+**Scope**: Screen-reader support via Qt accessible names, descriptions, and logical tab order for the popup and sidebar.
+
+**Delivered**:
+- `src/zh_en_translator/ui/popup.py` — new `_setup_accessibility()` method called at the end of `_setup_ui()`:
+  - `setAccessibleName()` on `_pinyin_label`, `text_display`, `translation_label`
+  - `setAccessibleDescription()` on all five buttons (`btn_copy`, `btn_lookup`, `btn_replace`, `btn_pin`, `btn_lang_settings`) and all informational widgets
+  - Logical tab order: source text → translation → Copy → Look up → Replace text → Pin
+- `src/zh_en_translator/ui/sidebar.py` — new `_setup_accessibility()` method called in `__init__`:
+  - `setAccessibleName("Translation sidebar")` on the sidebar itself
+  - `setAccessibleName("Source text")` on `source_label`
+  - `setAccessibleName("Translation")` on `translation_label`
+  - `setAccessibleDescription()` on `btn_pin` and `_close_btn`
+- `tests/test_accessibility.py` — 15 new tests covering popup and sidebar accessible names/descriptions; all use `qapp` fixture and `_cleanup` pattern
+
+**Tests**: 123 → 138 (+15).
+
+**Manual verification needed**: NVDA screen reader navigation, DPI scaling on 4K displays.
+
+---
+
 ## Open questions / risks
 
-- **Full CC-CEDICT distribution** — sample is only 50 entries. Bundle full ~2 MB file or download on first run?
-- **jieba re-introduction** — opt-in in future milestone?
 - **MSI code signing** — deferred; SmartScreen warning until cert available.
 - **Sidebar translation history** — currently shows only last translation; future: scrollable history.
 - **Theme support** (system/dark/light/sepia) — deferred to M9 alongside accessibility work.

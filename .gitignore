@@ -37,3 +37,6 @@ Thumbs.db
 # Local config (post-M7)
 user_dict.toml
 config.local.toml
+
+# Generated database files (built at runtime from CC-CEDICT source)
+*.db

@@ -55,7 +55,7 @@ def has_chinese_language() -> bool:
     try:
         (OcrEngine, Language, *_) = _imports()
         available = list(OcrEngine.get_available_recognizer_languages())
-        return any(l.language_tag.startswith("zh") for l in available)
+        return any(lang.language_tag.startswith("zh") for lang in available)
     except Exception:
         return False
 

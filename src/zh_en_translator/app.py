@@ -1,6 +1,8 @@
 """Main application: system tray app with global hotkey and popup translator."""
 
+import logging
 import sys
+import threading
 
 import pyperclip
 from PyQt6.QtCore import Qt, QObject, pyqtSignal, QThread
@@ -8,10 +10,23 @@ from PyQt6.QtGui import QIcon, QColor
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 
 from zh_en_translator.config import load_config, save_config, Config
+from zh_en_translator.engines.dictionary import ensure_cedict
 from zh_en_translator.hotkey import HotKeyManager
 from zh_en_translator.capture import TextCapture
 from zh_en_translator.ui.popup import TranslatorPopup
 from zh_en_translator.ui.sidebar import TranslatorSidebar
+from zh_en_translator.engines.translation_worker import TranslationWorker
+
+logger = logging.getLogger(__name__)
+
+
+def _ensure_cedict_background() -> None:
+    """Download full CC-CEDICT in background so it is ready on first popup use."""
+    try:
+        path = ensure_cedict()
+        logger.info("CC-CEDICT ready at %s", path)
+    except Exception as exc:
+        logger.warning("Background CC-CEDICT initialisation failed: %s", exc)
 
 
 class _OCRWorker(QThread):
@@ -52,28 +67,6 @@ class _OCRWorker(QThread):
             self.result_ready.emit(f"⚠ OCR failed: {e}")
 
 
-class _SidebarTranslationWorker(QThread):
-    result_ready = pyqtSignal(str)
-
-    def __init__(self, text: str):
-        super().__init__()
-        self.text = text
-
-    def run(self):
-        from zh_en_translator.engines.argos import ensure_pack, translate_sentence
-
-        if not ensure_pack():
-            self.result_ready.emit("⚠ Translation model not available.")
-            return
-        try:
-            result = translate_sentence(self.text)
-        except Exception as e:
-            result = None
-        self.result_ready.emit(
-            result if result else f"(no translation — input: {self.text[:60]!r})"
-        )
-
-
 class TranslatorApp(QObject):
     """System tray application with global hotkey listener."""
 
@@ -86,6 +79,9 @@ class TranslatorApp(QObject):
         super().__init__()
 
         self.config: Config = load_config()
+
+        # Warm CC-CEDICT cache in background so it is ready before first lookup
+        threading.Thread(target=_ensure_cedict_background, daemon=True).start()
 
         self.tray_icon = None
         self.popup = None
@@ -185,6 +181,9 @@ class TranslatorApp(QObject):
                     self.sidebar.expand()
                     return
             # Have text in sidebar mode → update sidebar directly
+            if self.config.traditional_to_simplified:
+                from zh_en_translator.engines.converter import to_simplified
+                captured_text = to_simplified(captured_text)
             self._translate_for_sidebar(captured_text)
             return
 
@@ -217,7 +216,13 @@ class TranslatorApp(QObject):
             else:
                 return
 
-        self.popup = TranslatorPopup(captured_text, original_clipboard, on_pin=self._pin_to_sidebar, config=self.config)
+        if self.config.traditional_to_simplified:
+            from zh_en_translator.engines.converter import to_simplified
+            captured_text = to_simplified(captured_text)
+
+        self.popup = TranslatorPopup(
+            captured_text, original_clipboard, on_pin=self._pin_to_sidebar, config=self.config
+        )
         self.popup.show()
 
     def _run_ocr_from_clipboard(self, clipboard):
@@ -239,7 +244,9 @@ class TranslatorApp(QObject):
                 self.sidebar.set_translation("OCR", msg)
                 self.sidebar.expand()
             else:
-                self.popup = TranslatorPopup(msg, "", on_pin=self._pin_to_sidebar, config=self.config)
+                self.popup = TranslatorPopup(
+                    msg, "", on_pin=self._pin_to_sidebar, config=self.config
+                )
                 self.popup.show()
             return
 
@@ -276,6 +283,9 @@ class TranslatorApp(QObject):
 
     def _on_ocr_result(self, text: str):
         """Called when OCR completes in popup mode — update popup."""
+        if not text.startswith("⚠") and self.config.traditional_to_simplified:
+            from zh_en_translator.engines.converter import to_simplified
+            text = to_simplified(text)
         if self.popup and not self.popup._dismissed:
             self.popup.set_ocr_result(text)
 
@@ -284,7 +294,10 @@ class TranslatorApp(QObject):
         if text.startswith("⚠"):
             self.sidebar.update_translation(text)
         else:
-            # OCR succeeded — translate the extracted text via sidebar worker
+            # OCR succeeded — apply Traditional→Simplified then translate
+            if self.config.traditional_to_simplified:
+                from zh_en_translator.engines.converter import to_simplified
+                text = to_simplified(text)
             self._translate_for_sidebar(text)
 
     def _pin_to_sidebar(self, source: str, translation: str) -> None:
@@ -303,7 +316,7 @@ class TranslatorApp(QObject):
         if self._sidebar_translation_worker and self._sidebar_translation_worker.isRunning():
             self._sidebar_translation_worker.quit()
             self._sidebar_translation_worker.wait(300)
-        self._sidebar_translation_worker = _SidebarTranslationWorker(text)
+        self._sidebar_translation_worker = TranslationWorker(text)
         self._sidebar_translation_worker.result_ready.connect(self.sidebar.update_translation)
         self._sidebar_translation_worker.start()
 
@@ -353,6 +366,7 @@ class TranslatorApp(QObject):
             color_idle=self.config.color_idle,
             external_lookup_url=self.config.external_lookup_url,
             ocr_engine=self.config.ocr_engine,
+            traditional_to_simplified=self.config.traditional_to_simplified,
         )
         dialog = PreferencesDialog(current)
         dialog.settings_applied.connect(self._on_settings_applied)
@@ -370,7 +384,7 @@ class TranslatorApp(QObject):
             try:
                 self.hotkey_manager.start(self._hotkey_signal.emit)
             except RuntimeError as e:
-                print(f"Warning: Failed to register new hotkey: {e}")
+                logger.warning("Failed to register new hotkey: %s", e)
 
         # Apply config to sidebar
         self.sidebar.apply_config(cfg)
@@ -400,7 +414,7 @@ class TranslatorApp(QObject):
         try:
             self.hotkey_manager.start(self._hotkey_signal.emit)
         except RuntimeError as e:
-            print(f"Warning: Failed to register global hotkey: {e}")
+            logger.warning("Failed to register global hotkey: %s", e)
 
         sys.exit(self.app.exec())
 
@@ -412,6 +426,7 @@ class TranslatorApp(QObject):
 
 
 def main():
+    logging.basicConfig(level=logging.WARNING, format="%(levelname)s [%(name)s] %(message)s")
     app = TranslatorApp()
     app.start()
 
