@@ -21,7 +21,7 @@ Source of truth for plan/scope: `PLAN.md`.
 | M7 — Preferences | ✅ Done | In-app dialog + TOML config; font, colors, sidebar, hotkey, OCR engine |
 | Windows testing fixes | ✅ Done | Black popup/sidebar, OCR routing, clipboard wipe, strip click, mode sync — see below |
 | M8 — Packaging (MSI) | ⏳ Pending | |
-| M9 — Accessibility + Traditional | ⏳ Pending | |
+| M9 — Accessibility + Traditional | 🔄 Part 1 done | OpenCC converter + config toggle + preferences UI |
 | M10 — Optional MS Cloud | ⏳ Pending | |
 
 All fixes merged to `main`.
@@ -302,6 +302,38 @@ Bugs found and fixed during first Windows 11 testing pass.
 
 **Deviations**: none — jieba wheel fails to build in the sandbox via pip but is pure Python;
 copied the extracted source tree directly to site-packages as a workaround.
+
+---
+
+## M9 — Part 1: OpenCC Traditional→Simplified
+
+**Scope**: Detect and convert Traditional Chinese input to Simplified before dictionary lookup and neural MT.
+
+**Delivered**:
+- `src/zh_en_translator/engines/converter.py` — `to_simplified(text)` / `is_available()` with dual-backend probe:
+  - Tries `import opencc` (official package) first, then `import opencc_python_reimplemented` as fallback.
+  - Caches the `OpenCC("t2s")` instance at module level (expensive to construct).
+  - Graceful degradation: if neither backend is importable, logs a debug message and returns text unchanged.
+  - Never raises — all exceptions are caught and the original text is returned.
+- `pyproject.toml` — new optional dep group `[traditional]` → `opencc-python-reimplemented>=1.1.0`.
+- `src/zh_en_translator/config.py` — new `[translation]` TOML section with `traditional_to_simplified: bool = True` (default on).
+- `src/zh_en_translator/app.py` — conversion applied in four code paths (all before text enters the pipeline):
+  - Popup mode: after text capture, before `TranslatorPopup`.
+  - Sidebar mode: after text capture, before `_translate_for_sidebar`.
+  - OCR popup path: in `_on_ocr_result`, skipped if text starts with `⚠`.
+  - OCR sidebar path: in `_on_sidebar_ocr_result`, skipped if text starts with `⚠`.
+- `src/zh_en_translator/ui/preferences.py` — "Traditional Chinese" group box in the General tab with `_trad_to_simp_check` (`QCheckBox`); wired in `_load_config_into_ui()` and `_collect_config()`.
+- `tests/test_converter.py` — 7 tests: simplified passthrough, traditional conversion (conditional on `is_available()`), never-raises, empty string, ASCII passthrough, `is_available()` bool type, idempotent.
+- `tests/test_config.py` — 3 new tests: `traditional_to_simplified` default, False round-trip, True round-trip.
+- `tests/test_app_smoke.py` — 3 new preferences tests: checkbox exists, reflects False, `_collect_config()` reads state.
+
+**OpenCC availability in sandbox**: `opencc-python-reimplemented` not installed; graceful fallback active (Traditional text passes through unchanged, tests adapted via `is_available()` guard).
+
+**Config field**:
+```
+[translation]
+traditional_to_simplified = true
+```
 
 ---
 

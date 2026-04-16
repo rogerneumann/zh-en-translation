@@ -167,3 +167,35 @@ def test_toml_special_chars(tmp_path):
     loaded = load_config(config_path=config_file)
 
     assert loaded.external_lookup_url == original.external_lookup_url
+
+
+# ---------------------------------------------------------------------------
+# test_traditional_to_simplified_roundtrip
+# ---------------------------------------------------------------------------
+
+def test_traditional_to_simplified_roundtrip(tmp_path):
+    """traditional_to_simplified=False saves and reloads correctly."""
+    config_file = tmp_path / "config.toml"
+
+    original = Config(traditional_to_simplified=False)
+    save_config(original, config_path=config_file)
+    loaded = load_config(config_path=config_file)
+
+    assert loaded.traditional_to_simplified is False
+
+
+def test_traditional_to_simplified_default():
+    """traditional_to_simplified defaults to True."""
+    cfg = Config()
+    assert cfg.traditional_to_simplified is True
+
+
+def test_traditional_to_simplified_true_roundtrip(tmp_path):
+    """traditional_to_simplified=True saves and reloads correctly."""
+    config_file = tmp_path / "config.toml"
+
+    original = Config(traditional_to_simplified=True)
+    save_config(original, config_path=config_file)
+    loaded = load_config(config_path=config_file)
+
+    assert loaded.traditional_to_simplified is True

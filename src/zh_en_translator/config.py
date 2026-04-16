@@ -57,6 +57,9 @@ class Config:
     show_pinyin: bool = True
     pinyin_max_chars: int = 80
 
+    # [translation]
+    traditional_to_simplified: bool = True
+
 
 def load_config(config_path: Path | None = None) -> Config:
     """Read config from TOML file and return a Config instance.
@@ -96,6 +99,9 @@ def load_config(config_path: Path | None = None) -> Config:
         ocr_engine=_get("ocr", "ocr_engine", defaults.ocr_engine),
         show_pinyin=_get("pinyin", "show_pinyin", defaults.show_pinyin),
         pinyin_max_chars=_get("pinyin", "pinyin_max_chars", defaults.pinyin_max_chars),
+        traditional_to_simplified=_get(
+            "translation", "traditional_to_simplified", defaults.traditional_to_simplified
+        ),
     )
 
 
@@ -131,6 +137,9 @@ ocr_engine = {_toml_str(cfg.ocr_engine)}
 [pinyin]
 show_pinyin = {_toml_bool(cfg.show_pinyin)}
 pinyin_max_chars = {cfg.pinyin_max_chars}
+
+[translation]
+traditional_to_simplified = {_toml_bool(cfg.traditional_to_simplified)}
 """
     config_path.write_text(toml_content, encoding="utf-8")
 

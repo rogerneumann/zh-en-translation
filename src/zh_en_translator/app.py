@@ -181,6 +181,9 @@ class TranslatorApp(QObject):
                     self.sidebar.expand()
                     return
             # Have text in sidebar mode → update sidebar directly
+            if self.config.traditional_to_simplified:
+                from zh_en_translator.engines.converter import to_simplified
+                captured_text = to_simplified(captured_text)
             self._translate_for_sidebar(captured_text)
             return
 
@@ -212,6 +215,10 @@ class TranslatorApp(QObject):
                     return
             else:
                 return
+
+        if self.config.traditional_to_simplified:
+            from zh_en_translator.engines.converter import to_simplified
+            captured_text = to_simplified(captured_text)
 
         self.popup = TranslatorPopup(
             captured_text, original_clipboard, on_pin=self._pin_to_sidebar, config=self.config
@@ -276,6 +283,9 @@ class TranslatorApp(QObject):
 
     def _on_ocr_result(self, text: str):
         """Called when OCR completes in popup mode — update popup."""
+        if not text.startswith("⚠") and self.config.traditional_to_simplified:
+            from zh_en_translator.engines.converter import to_simplified
+            text = to_simplified(text)
         if self.popup and not self.popup._dismissed:
             self.popup.set_ocr_result(text)
 
@@ -284,7 +294,10 @@ class TranslatorApp(QObject):
         if text.startswith("⚠"):
             self.sidebar.update_translation(text)
         else:
-            # OCR succeeded — translate the extracted text via sidebar worker
+            # OCR succeeded — apply Traditional→Simplified then translate
+            if self.config.traditional_to_simplified:
+                from zh_en_translator.engines.converter import to_simplified
+                text = to_simplified(text)
             self._translate_for_sidebar(text)
 
     def _pin_to_sidebar(self, source: str, translation: str) -> None:
@@ -353,6 +366,7 @@ class TranslatorApp(QObject):
             color_idle=self.config.color_idle,
             external_lookup_url=self.config.external_lookup_url,
             ocr_engine=self.config.ocr_engine,
+            traditional_to_simplified=self.config.traditional_to_simplified,
         )
         dialog = PreferencesDialog(current)
         dialog.settings_applied.connect(self._on_settings_applied)

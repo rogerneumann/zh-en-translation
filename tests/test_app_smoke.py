@@ -248,3 +248,53 @@ def test_popup_effective_bg_uses_config_color():
     bg = popup._effective_bg()
     assert bg.red() == 255
     assert bg.green() == 0
+
+
+def test_preferences_trad_to_simp_check_exists():
+    """PreferencesDialog has _trad_to_simp_check checkbox on the General tab."""
+    from zh_en_translator.config import Config
+    from zh_en_translator.ui.preferences import PreferencesDialog
+    from PyQt6.QtWidgets import QCheckBox
+
+    _ = QApplication.instance() or QApplication(sys.argv)
+
+    cfg = Config(traditional_to_simplified=True)
+    dlg = PreferencesDialog(cfg)
+
+    assert hasattr(dlg, "_trad_to_simp_check")
+    assert isinstance(dlg._trad_to_simp_check, QCheckBox)
+    assert dlg._trad_to_simp_check.isChecked() is True
+
+
+def test_preferences_trad_to_simp_check_reflects_false():
+    """_trad_to_simp_check is unchecked when config has traditional_to_simplified=False."""
+    from zh_en_translator.config import Config
+    from zh_en_translator.ui.preferences import PreferencesDialog
+
+    _ = QApplication.instance() or QApplication(sys.argv)
+
+    cfg = Config(traditional_to_simplified=False)
+    dlg = PreferencesDialog(cfg)
+
+    assert dlg._trad_to_simp_check.isChecked() is False
+
+
+def test_preferences_collect_trad_to_simp():
+    """_collect_config() reads _trad_to_simp_check state into traditional_to_simplified."""
+    from zh_en_translator.config import Config
+    from zh_en_translator.ui.preferences import PreferencesDialog
+
+    _ = QApplication.instance() or QApplication(sys.argv)
+
+    cfg = Config(traditional_to_simplified=True)
+    dlg = PreferencesDialog(cfg)
+
+    # Toggle it off
+    dlg._trad_to_simp_check.setChecked(False)
+    collected = dlg._collect_config()
+    assert collected.traditional_to_simplified is False
+
+    # Toggle it back on
+    dlg._trad_to_simp_check.setChecked(True)
+    collected = dlg._collect_config()
+    assert collected.traditional_to_simplified is True

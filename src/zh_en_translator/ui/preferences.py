@@ -92,6 +92,7 @@ class PreferencesDialog(QDialog):
             ocr_engine=config.ocr_engine,
             show_pinyin=config.show_pinyin,
             pinyin_max_chars=config.pinyin_max_chars,
+            traditional_to_simplified=config.traditional_to_simplified,
         )
 
         self.setWindowTitle("Preferences")
@@ -160,6 +161,15 @@ class PreferencesDialog(QDialog):
         mode_layout.addWidget(self._mode_popup)
         mode_layout.addWidget(self._mode_sidebar)
         layout.addWidget(mode_group)
+
+        # Traditional Chinese
+        trad_group = QGroupBox("Traditional Chinese")
+        trad_layout = QVBoxLayout(trad_group)
+
+        self._trad_to_simp_check = QCheckBox("Convert Traditional → Simplified automatically")
+        trad_layout.addWidget(self._trad_to_simp_check)
+
+        layout.addWidget(trad_group)
 
         layout.addStretch()
         return widget
@@ -333,6 +343,7 @@ class PreferencesDialog(QDialog):
             self._mode_sidebar.setChecked(True)
         else:
             self._mode_popup.setChecked(True)
+        self._trad_to_simp_check.setChecked(cfg.traditional_to_simplified)
 
         # Display
         if cfg.font_family:
@@ -385,6 +396,7 @@ class PreferencesDialog(QDialog):
             ocr_engine=ocr_engine,
             show_pinyin=self._show_pinyin_check.isChecked(),
             pinyin_max_chars=self._pinyin_max_spin.value(),
+            traditional_to_simplified=self._trad_to_simp_check.isChecked(),
         )
 
     # ------------------------------------------------------------------
