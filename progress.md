@@ -383,8 +383,45 @@ theme = "system"   # "system" | "dark" | "light" | "sepia"
 
 ---
 
+## Popup UI Refinements (Post-M9)
+
+**Scope**: Improve popup UI consistency with sidebar; add pin-to-keep-open and close button.
+
+**Delivered**:
+- `src/zh_en_translator/ui/popup.py`:
+  - Checkable pin button (📌) — replaces "Pin →" text button; toggling keeps popup open instead of dismissing
+  - Close button (✕) — provides visual affordance for users who forget Esc keyboard shortcut
+  - `_pinned` state added to `__init__`; `changeEvent()` respects pinned state to prevent auto-dismiss on focus loss
+  - `_on_pin_toggled(checked)` handler updates pin state
+  - Button styling includes `:checked` pseudo-state with blue highlight (`rgba(0,160,255,0.15)` background, `rgba(0,160,255,0.5)` border)
+  - Accessibility labels updated for new buttons; tab order includes both pin and close buttons
+  - Pin button disabled while translation pending; enabled once result arrives
+
+- `src/zh_en_translator/ui/sidebar.py`:
+  - **Context menu fix**: Added unified stylesheet for `QMenu` items to prevent black background on right-click menus
+  - `_apply_styling()` now computes border color with fallback and creates unified CSS for entire sidebar (both widgets and context menus)
+  - QMenu styled with theme background, correct text color, padding, and border
+  - QMenu items get hover background color; separators get proper styling
+
+**Behavior changes**:
+- **Popup pinning**: User can now toggle pin to keep the popup open. Esc still closes; click-outside only closes if unpinned.
+- **Close button**: Always available; gives non-keyboard users a clear way to dismiss.
+- **Context menus**: Sidebar context menus now respect the theme (light/dark) instead of appearing with black background.
+
+**Tests**: No new tests (UI-only changes); existing smoke tests remain passing.
+
+**Manual test checklist for Windows 11**:
+- [ ] Pin button (📌) appears disabled while translating; enabled once translation arrives
+- [ ] Click pin button → blue highlight + popup stays open on focus loss
+- [ ] Click pin button again → highlight disappears; popup dismisses on next focus loss
+- [ ] Close button (✕) always visible; clicking closes popup immediately
+- [ ] Esc still closes popup (pinned or not)
+- [ ] Right-click on sidebar text → context menu appears with proper colors (not black background)
+
+---
+
 ## Open questions / risks
 
 - **MSI code signing** — deferred; SmartScreen warning until cert available.
 - **Sidebar translation history** — currently shows only last translation; future: scrollable history.
-- **Theme support** (system/dark/light/sepia) — deferred to M9 alongside accessibility work.
+
