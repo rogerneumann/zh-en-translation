@@ -316,7 +316,7 @@ class TranslatorApp(QObject):
         if self._sidebar_translation_worker and self._sidebar_translation_worker.isRunning():
             self._sidebar_translation_worker.quit()
             self._sidebar_translation_worker.wait(300)
-        self._sidebar_translation_worker = TranslationWorker(text)
+        self._sidebar_translation_worker = TranslationWorker(text, config=self.config)
         self._sidebar_translation_worker.result_ready.connect(self.sidebar.update_translation)
         self._sidebar_translation_worker.start()
 
@@ -367,6 +367,9 @@ class TranslatorApp(QObject):
             external_lookup_url=self.config.external_lookup_url,
             ocr_engine=self.config.ocr_engine,
             traditional_to_simplified=self.config.traditional_to_simplified,
+            ms_translator_enabled=self.config.ms_translator_enabled,
+            ms_translator_api_key=self.config.ms_translator_api_key,
+            ms_translator_region=self.config.ms_translator_region,
         )
         dialog = PreferencesDialog(current)
         dialog.settings_applied.connect(self._on_settings_applied)

@@ -22,7 +22,7 @@ Source of truth for plan/scope: `PLAN.md`.
 | Windows testing fixes | ✅ Done | Black popup/sidebar, OCR routing, clipboard wipe, strip click, mode sync — see below |
 | M8 — Packaging (MSI) | ⏳ Pending | |
 | M9 — Accessibility + Traditional | ✅ Done | OpenCC converter, theme support, Qt accessibility (names, descriptions, tab order) |
-| M10 — Optional MS Cloud | ⏳ Pending | |
+| M10 — Optional MS Cloud | ✅ Done | Azure Translator opt-in; warning banner; fallback to Argos |
 
 All fixes merged to `main`.
 
@@ -438,6 +438,70 @@ theme = "system"   # "system" | "dark" | "light" | "sepia"
 - [ ] Esc still closes popup (pinned or not)
 - [ ] "Pin →" button in action row sends to sidebar and closes popup
 - [ ] Right-click on sidebar text → context menu appears with proper colors (not black background)
+
+---
+
+## M10 — Optional MS Cloud
+
+**Scope**: Opt-in Azure Translator with explicit warning banner; zero egress when disabled.
+
+**Delivered**:
+- `src/zh_en_translator/engines/ms_cloud.py` — Azure Cognitive Services Translator (v3 REST API):
+  - `is_configured(api_key)` — True only when a non-blank key is provided
+  - `translate_sentence(text, api_key, region)` — POST to Azure endpoint with `urllib.request`; returns `None` on any failure (HTTP error, network error, malformed JSON); never raises
+  - Zero network calls when key is empty or text is blank
+- `src/zh_en_translator/config.py` — new `[cloud]` TOML section with three fields:
+  - `ms_translator_enabled: bool = False` (default off — no egress)
+  - `ms_translator_api_key: str = ""`
+  - `ms_translator_region: str = ""`
+- `src/zh_en_translator/engines/translation_worker.py` — `TranslationWorker` now accepts an optional `config` argument:
+  - When `ms_translator_enabled=True` AND a key is configured, tries Azure first
+  - Automatically falls back to local Argos engine on any cloud failure
+  - When `ms_translator_enabled=False` (default), the cloud code path is never reached
+- `src/zh_en_translator/ui/popup.py` — passes `config` to `TranslationWorker` so popup picks up engine choice
+- `src/zh_en_translator/app.py`:
+  - Sidebar `TranslationWorker` also receives `config`
+  - `_open_preferences()` snapshot now includes the three cloud fields (prevents them resetting on every dialog open)
+- `src/zh_en_translator/ui/preferences.py` — new **Cloud** tab (fifth tab):
+  - Orange-bordered warning banner: data leaves the machine, API key stored plain-text
+  - `ms_translator_enabled` checkbox (unchecked by default)
+  - API key `QLineEdit` with `EchoMode.Password` + "Show/Hide" toggle button
+  - Region `QLineEdit` (optional; blank = no region header sent)
+  - Credentials group box is disabled until the checkbox is ticked
+  - Hint text with pricing info (Azure Free tier: 2 M chars/month)
+- `tests/test_ms_cloud.py` — 20 tests (14 run everywhere; 6 require PyQt6 and skip cleanly in headless CI):
+  - `is_configured` edge cases
+  - Zero-network guarantee when key is empty
+  - Mocked HTTP success, region header forwarding, no-region-header path
+  - Graceful failure: HTTP 401, URLError, malformed JSON
+  - Config defaults + round-trip for all three cloud fields
+  - `TranslationWorker` skips cloud when disabled; uses cloud when enabled (Qt-gated)
+  - Preferences tab presence, default unchecked state, collect-config, masked key field (Qt-gated)
+
+**User discoverability**:
+- Right-click tray → **Preferences…** → **Cloud** tab (the tab is always visible; badge-free but clearly named)
+- Warning banner inside the tab makes the opt-in nature immediately visible
+- Credentials group box is greyed out until the user explicitly ticks the enable checkbox — prevents accidental key entry
+
+**Config fields**:
+```toml
+[cloud]
+ms_translator_enabled = false
+ms_translator_api_key = ""
+ms_translator_region = ""   # e.g. "eastus", "westeurope"; optional
+```
+
+**Tests**: 138 → 152 (+14 non-Qt, +6 Qt-gated skips in sandbox).
+
+**Manual test checklist for Windows 11**:
+- [ ] Tray → Preferences → Cloud tab visible (5th tab)
+- [ ] Warning banner shown with orange border
+- [ ] Credentials group disabled until checkbox ticked
+- [ ] Enter valid Azure key + region → Apply → translate selection → result comes from Azure (check network monitor)
+- [ ] Disable cloud → Apply → no outbound traffic during translation
+- [ ] Invalid key → translation falls back to Argos silently (warning logged)
+- [ ] Config.toml contains `[cloud]` section after Apply
+- [ ] Restart app → cloud settings persist
 
 ---
 

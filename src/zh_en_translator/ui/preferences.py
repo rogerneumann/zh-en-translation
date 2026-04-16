@@ -27,6 +27,14 @@ from PyQt6.QtWidgets import (
 
 from zh_en_translator.config import Config, save_config
 
+_CLOUD_WARNING = (
+    "⚠  Enabling cloud translation will send your text to Microsoft Azure servers "
+    "over the internet. Only enable this if your organisation permits sending "
+    "potentially sensitive data to third-party cloud services.\n\n"
+    "The API key is stored in plain text in config.toml. "
+    "Secure that file if the machine is shared."
+)
+
 
 class _ColorSwatchButton(QPushButton):
     """A button that shows a color swatch and opens QColorDialog on click."""
@@ -94,6 +102,9 @@ class PreferencesDialog(QDialog):
             show_pinyin=config.show_pinyin,
             pinyin_max_chars=config.pinyin_max_chars,
             traditional_to_simplified=config.traditional_to_simplified,
+            ms_translator_enabled=config.ms_translator_enabled,
+            ms_translator_api_key=config.ms_translator_api_key,
+            ms_translator_region=config.ms_translator_region,
         )
 
         self.setWindowTitle("Preferences")
@@ -117,6 +128,7 @@ class PreferencesDialog(QDialog):
         self._tabs.addTab(self._build_display_tab(), "Display")
         self._tabs.addTab(self._build_sidebar_tab(), "Sidebar")
         self._tabs.addTab(self._build_lookup_ocr_tab(), "Lookup && OCR")
+        self._tabs.addTab(self._build_cloud_tab(), "Cloud")
 
         # Standard dialog buttons
         buttons = QDialogButtonBox(
@@ -347,6 +359,82 @@ class PreferencesDialog(QDialog):
         layout.addStretch()
         return widget
 
+    def _build_cloud_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(12)
+
+        # Warning banner
+        warning_box = QGroupBox()
+        warning_box.setStyleSheet(
+            "QGroupBox { border: 2px solid #CC4400; border-radius: 6px; "
+            "background: #FFF4F0; padding: 8px; }"
+        )
+        warning_layout = QVBoxLayout(warning_box)
+        warning_label = QLabel(_CLOUD_WARNING)
+        warning_label.setWordWrap(True)
+        warning_label.setStyleSheet("color: #882200; font-size: 9pt; background: transparent;")
+        warning_layout.addWidget(warning_label)
+        layout.addWidget(warning_box)
+
+        # Enable toggle
+        enable_group = QGroupBox("Microsoft Azure Translator")
+        enable_layout = QVBoxLayout(enable_group)
+
+        self._ms_enabled_check = QCheckBox("Enable cloud translation (sends text to Azure)")
+        enable_layout.addWidget(self._ms_enabled_check)
+
+        layout.addWidget(enable_group)
+
+        # Credentials
+        creds_group = QGroupBox("API Credentials")
+        creds_layout = QVBoxLayout(creds_group)
+
+        # API key row
+        key_row = QHBoxLayout()
+        key_row.addWidget(QLabel("API Key:"))
+        self._ms_api_key_edit = QLineEdit()
+        self._ms_api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self._ms_api_key_edit.setPlaceholderText("Paste your Azure subscription key here")
+        key_row.addWidget(self._ms_api_key_edit, 1)
+        self._ms_show_key_btn = QPushButton("Show")
+        self._ms_show_key_btn.setFixedWidth(60)
+        self._ms_show_key_btn.setCheckable(True)
+        self._ms_show_key_btn.toggled.connect(self._on_show_key_toggled)
+        key_row.addWidget(self._ms_show_key_btn)
+        creds_layout.addLayout(key_row)
+
+        # Region row
+        region_row = QHBoxLayout()
+        region_row.addWidget(QLabel("Region:"))
+        self._ms_region_edit = QLineEdit()
+        self._ms_region_edit.setPlaceholderText("e.g. eastus, westeurope (leave blank if unsure)")
+        region_row.addWidget(self._ms_region_edit, 1)
+        creds_layout.addLayout(region_row)
+
+        hint = QLabel(
+            "Get an API key from the Azure portal (Cognitive Services → Translator). "
+            "The Free tier (F0) allows 2 million characters/month."
+        )
+        hint.setWordWrap(True)
+        hint.setStyleSheet("color: gray; font-size: 9pt;")
+        creds_layout.addWidget(hint)
+
+        layout.addWidget(creds_group)
+
+        # Enable checkbox controls credentials group sensitivity
+        self._ms_enabled_check.toggled.connect(creds_group.setEnabled)
+        creds_group.setEnabled(False)  # disabled until checkbox is ticked
+
+        layout.addStretch()
+        return widget
+
+    def _on_show_key_toggled(self, checked: bool) -> None:
+        self._ms_api_key_edit.setEchoMode(
+            QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
+        )
+        self._ms_show_key_btn.setText("Hide" if checked else "Show")
+
     # ------------------------------------------------------------------
     # Load / collect config values
     # ------------------------------------------------------------------
@@ -390,6 +478,11 @@ class PreferencesDialog(QDialog):
         if engine_index >= 0:
             self._ocr_combo.setCurrentIndex(engine_index)
 
+        # Cloud
+        self._ms_enabled_check.setChecked(cfg.ms_translator_enabled)
+        self._ms_api_key_edit.setText(cfg.ms_translator_api_key)
+        self._ms_region_edit.setText(cfg.ms_translator_region)
+
     def _collect_config(self) -> Config:
         """Build a Config from the current UI state."""
         mode = "sidebar" if self._mode_sidebar.isChecked() else "popup"
@@ -417,6 +510,9 @@ class PreferencesDialog(QDialog):
             show_pinyin=self._show_pinyin_check.isChecked(),
             pinyin_max_chars=self._pinyin_max_spin.value(),
             traditional_to_simplified=self._trad_to_simp_check.isChecked(),
+            ms_translator_enabled=self._ms_enabled_check.isChecked(),
+            ms_translator_api_key=self._ms_api_key_edit.text().strip(),
+            ms_translator_region=self._ms_region_edit.text().strip(),
         )
 
     # ------------------------------------------------------------------
