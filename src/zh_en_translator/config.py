@@ -6,10 +6,13 @@ or %APPDATA%/zh-en-translator/config.toml (Windows).
 
 from __future__ import annotations
 
+import logging
 import sys
 import tomllib
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def get_config_path() -> Path:
@@ -67,7 +70,7 @@ def load_config(config_path: Path | None = None) -> Config:
         with open(config_path, "rb") as f:
             data = tomllib.load(f)
     except Exception as e:
-        print(f"Warning: Failed to parse config file {config_path}: {e}", file=sys.stderr)
+        logger.warning("Failed to parse config file %s: %s", config_path, e)
         return Config()
 
     defaults = Config()
@@ -124,5 +127,7 @@ ocr_engine = {_toml_str(cfg.ocr_engine)}
 
 def _toml_str(value: str) -> str:
     """Format a Python string as a TOML string literal (double-quoted, escaped)."""
-    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
+    escaped = (
+        value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
+    )
     return f'"{escaped}"'

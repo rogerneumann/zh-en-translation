@@ -1,5 +1,6 @@
 """Main application: system tray app with global hotkey and popup translator."""
 
+import logging
 import sys
 
 import pyperclip
@@ -12,6 +13,9 @@ from zh_en_translator.hotkey import HotKeyManager
 from zh_en_translator.capture import TextCapture
 from zh_en_translator.ui.popup import TranslatorPopup
 from zh_en_translator.ui.sidebar import TranslatorSidebar
+from zh_en_translator.engines.translation_worker import TranslationWorker
+
+logger = logging.getLogger(__name__)
 
 
 class _OCRWorker(QThread):
@@ -50,28 +54,6 @@ class _OCRWorker(QThread):
                 self.result_ready.emit("⚠ No text detected in image.")
         except Exception as e:
             self.result_ready.emit(f"⚠ OCR failed: {e}")
-
-
-class _SidebarTranslationWorker(QThread):
-    result_ready = pyqtSignal(str)
-
-    def __init__(self, text: str):
-        super().__init__()
-        self.text = text
-
-    def run(self):
-        from zh_en_translator.engines.argos import ensure_pack, translate_sentence
-
-        if not ensure_pack():
-            self.result_ready.emit("⚠ Translation model not available.")
-            return
-        try:
-            result = translate_sentence(self.text)
-        except Exception as e:
-            result = None
-        self.result_ready.emit(
-            result if result else f"(no translation — input: {self.text[:60]!r})"
-        )
 
 
 class TranslatorApp(QObject):
@@ -217,7 +199,9 @@ class TranslatorApp(QObject):
             else:
                 return
 
-        self.popup = TranslatorPopup(captured_text, original_clipboard, on_pin=self._pin_to_sidebar, config=self.config)
+        self.popup = TranslatorPopup(
+            captured_text, original_clipboard, on_pin=self._pin_to_sidebar, config=self.config
+        )
         self.popup.show()
 
     def _run_ocr_from_clipboard(self, clipboard):
@@ -239,7 +223,9 @@ class TranslatorApp(QObject):
                 self.sidebar.set_translation("OCR", msg)
                 self.sidebar.expand()
             else:
-                self.popup = TranslatorPopup(msg, "", on_pin=self._pin_to_sidebar, config=self.config)
+                self.popup = TranslatorPopup(
+                    msg, "", on_pin=self._pin_to_sidebar, config=self.config
+                )
                 self.popup.show()
             return
 
@@ -303,7 +289,7 @@ class TranslatorApp(QObject):
         if self._sidebar_translation_worker and self._sidebar_translation_worker.isRunning():
             self._sidebar_translation_worker.quit()
             self._sidebar_translation_worker.wait(300)
-        self._sidebar_translation_worker = _SidebarTranslationWorker(text)
+        self._sidebar_translation_worker = TranslationWorker(text)
         self._sidebar_translation_worker.result_ready.connect(self.sidebar.update_translation)
         self._sidebar_translation_worker.start()
 
@@ -370,7 +356,7 @@ class TranslatorApp(QObject):
             try:
                 self.hotkey_manager.start(self._hotkey_signal.emit)
             except RuntimeError as e:
-                print(f"Warning: Failed to register new hotkey: {e}")
+                logger.warning("Failed to register new hotkey: %s", e)
 
         # Apply config to sidebar
         self.sidebar.apply_config(cfg)
@@ -400,7 +386,7 @@ class TranslatorApp(QObject):
         try:
             self.hotkey_manager.start(self._hotkey_signal.emit)
         except RuntimeError as e:
-            print(f"Warning: Failed to register global hotkey: {e}")
+            logger.warning("Failed to register global hotkey: %s", e)
 
         sys.exit(self.app.exec())
 
@@ -412,6 +398,7 @@ class TranslatorApp(QObject):
 
 
 def main():
+    logging.basicConfig(level=logging.WARNING, format="%(levelname)s [%(name)s] %(message)s")
     app = TranslatorApp()
     app.start()
 

@@ -261,6 +261,14 @@ Bugs found and fixed during first Windows 11 testing pass.
 
 ---
 
+## Cleanup / Refactor
+
+- `next_prompt.md` removed (was stale — referenced an old branch)
+- Debug `print()` calls replaced with `logging` module throughout (`argos.py`, `popup.py`, `app.py`, `config.py`); `logging.basicConfig()` added to `app.main()` so warnings surface by default
+- `_TranslationWorker` (popup.py) and `_SidebarTranslationWorker` (app.py) deduplicated into `src/zh_en_translator/engines/translation_worker.py`
+
+---
+
 ## Open questions / risks
 
 - **Full CC-CEDICT distribution** — sample is only 50 entries. Bundle full ~2 MB file or download on first run?

@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import logging
 import urllib.parse
 import pyperclip
-from PyQt6.QtCore import Qt, QTimer, QThread, pyqtSignal, QRectF, QUrl
+from PyQt6.QtCore import Qt, QTimer, QRectF, QUrl
 from PyQt6.QtGui import QCursor, QFont, QPainter, QPainterPath, QPen, QColor, QDesktopServices
 from PyQt6.QtWidgets import (
     QWidget,
@@ -18,37 +19,9 @@ from PyQt6.QtWidgets import (
 )
 
 from zh_en_translator.engines.dictionary import Dictionary
+from zh_en_translator.engines.translation_worker import TranslationWorker
 
-
-class _TranslationWorker(QThread):
-    """Background thread: runs translation and emits the result."""
-
-    result_ready = pyqtSignal(str)
-
-    def __init__(self, text: str):
-        super().__init__()
-        self.text = text
-
-    def run(self):
-        from zh_en_translator.engines.argos import ensure_pack, translate_sentence
-
-        print(f"[translate] input ({len(self.text)} chars): {self.text[:80]!r}")
-
-        if not ensure_pack():
-            print("[translate] ensure_pack() failed")
-            self.result_ready.emit("⚠ Translation model not available.")
-            return
-
-        try:
-            result = translate_sentence(self.text)
-            print(f"[translate] result: {result!r}")
-        except Exception as e:
-            print(f"[translate] exception: {e}")
-            result = None
-
-        self.result_ready.emit(
-            result if result else f"(no translation — input: {self.text[:60]!r})"
-        )
+logger = logging.getLogger(__name__)
 
 
 class TranslatorPopup(QWidget):
@@ -80,7 +53,7 @@ class TranslatorPopup(QWidget):
         self.dictionary = dictionary
         self._on_pin = on_pin
         self._dismissed = False
-        self._worker: _TranslationWorker | None = None
+        self._worker: TranslationWorker | None = None
         self._is_ocr_pending = is_ocr_pending
         self._config = config
 
@@ -319,7 +292,7 @@ class TranslatorPopup(QWidget):
     # ------------------------------------------------------------------
 
     def _start_translation(self):
-        self._worker = _TranslationWorker(self.captured_text)
+        self._worker = TranslationWorker(self.captured_text)
         self._worker.result_ready.connect(self._on_translation_ready)
         self._worker.start()
 
@@ -400,7 +373,7 @@ class TranslatorPopup(QWidget):
             kb.release("v")
             kb.release(Key.ctrl)
         except Exception as e:
-            print(f"[replace] paste failed: {e}")
+            logger.warning("paste failed: %s", e)
 
     def _pin_to_sidebar(self):
         """Send the current translation to the sidebar and dismiss."""

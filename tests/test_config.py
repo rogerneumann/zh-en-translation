@@ -2,11 +2,8 @@
 
 from __future__ import annotations
 
-import sys
-import os
 from pathlib import Path
 
-import pytest
 
 from zh_en_translator.config import Config, load_config, save_config, get_config_path
 
@@ -110,18 +107,19 @@ def test_load_partial_toml(tmp_path):
 # test_load_invalid_toml
 # ---------------------------------------------------------------------------
 
-def test_load_invalid_toml(tmp_path, capsys):
+def test_load_invalid_toml(tmp_path, caplog):
     """Garbage TOML file returns defaults and does not raise an exception."""
+    import logging
     config_file = tmp_path / "config.toml"
     config_file.write_text("this is not valid toml ][[ !!!", encoding="utf-8")
 
-    cfg = load_config(config_path=config_file)
+    with caplog.at_level(logging.WARNING, logger="zh_en_translator.config"):
+        cfg = load_config(config_path=config_file)
 
     assert cfg == Config()
 
-    # A warning should have been printed to stderr
-    captured = capsys.readouterr()
-    assert "Warning" in captured.err or "warning" in captured.err.lower()
+    # A warning should have been logged
+    assert any("Failed to parse" in r.message for r in caplog.records)
 
 
 # ---------------------------------------------------------------------------

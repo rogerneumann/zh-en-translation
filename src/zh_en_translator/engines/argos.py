@@ -6,7 +6,10 @@ requires downloading Chinese NLP models that are unavailable on restricted netwo
 """
 
 from __future__ import annotations
+import logging
 from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 
 def _find_pack_dir() -> Path | None:
@@ -87,7 +90,7 @@ def translate_sentence(text: str) -> str | None:
 
     pack_dir = _find_pack_dir()
     if not pack_dir:
-        print("[argos] pack directory not found")
+        logger.debug("pack directory not found")
         return None
 
     try:
@@ -97,14 +100,14 @@ def translate_sentence(text: str) -> str | None:
         model_dir = str(pack_dir / "model")
         spm_path = str(pack_dir / "sentencepiece.model")
 
-        print(f"[argos] model: {pack_dir.name}")
+        logger.debug("model: %s", pack_dir.name)
 
         translator = ctranslate2.Translator(model_dir, device="cpu")
         sp_model = spm.SentencePieceProcessor()
         sp_model.Load(spm_path)
 
         tokens = sp_model.encode(text, out_type=str)
-        print(f"[argos] encoded {len(tokens)} tokens")
+        logger.debug("encoded %d tokens", len(tokens))
 
         results = translator.translate_batch([tokens])
         target_tokens = results[0].hypotheses[0]
@@ -115,12 +118,11 @@ def translate_sentence(text: str) -> str | None:
         # Collapse any double-spaces left by the substitution
         while "  " in translation:
             translation = translation.replace("  ", " ")
-        print(f"[argos] translation: {translation!r}")
+        logger.debug("translation: %r", translation)
 
         return translation if translation else None
 
     except Exception as e:
-        print(f"[argos] exception: {e}")
-        import traceback
-        traceback.print_exc()
+        logger.debug("exception: %s", e)
+        logger.debug("traceback", exc_info=True)
         return None

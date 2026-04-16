@@ -338,7 +338,8 @@ class PreferencesDialog(QDialog):
         mode = "sidebar" if self._mode_sidebar.isChecked() else "popup"
         side = "left" if self._side_left.isChecked() else "right"
 
-        font_family = self._font_combo.lineEdit().text().strip() if self._font_combo.lineEdit() else ""
+        line_edit = self._font_combo.lineEdit()
+        font_family = line_edit.text().strip() if line_edit else ""
 
         ocr_engine = self._ocr_combo.currentData() or "auto"
 

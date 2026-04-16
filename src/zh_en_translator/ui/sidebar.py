@@ -454,14 +454,18 @@ class TranslatorSidebar(QWidget):
         #   left  expanded  → leftmost  STRIP_WIDTH px (near screen-left edge)
         if self._expanded:
             if self._side == "right":
-                strip_rect = QRectF(self.WIDTH - self.STRIP_WIDTH, 0, self.STRIP_WIDTH, self.height())
+                strip_rect = QRectF(
+                    self.WIDTH - self.STRIP_WIDTH, 0, self.STRIP_WIDTH, self.height()
+                )
             else:
                 strip_rect = QRectF(0, 0, self.STRIP_WIDTH, self.height())
         else:
             if self._side == "right":
                 strip_rect = QRectF(0, 0, self.STRIP_WIDTH, self.height())
             else:
-                strip_rect = QRectF(self.WIDTH - self.STRIP_WIDTH, 0, self.STRIP_WIDTH, self.height())
+                strip_rect = QRectF(
+                    self.WIDTH - self.STRIP_WIDTH, 0, self.STRIP_WIDTH, self.height()
+                )
 
         strip_path = QPainterPath()
         strip_path.addRoundedRect(strip_rect, 4, 4)

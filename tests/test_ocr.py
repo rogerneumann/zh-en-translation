@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 import types
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 
 # ---------------------------------------------------------------------------
@@ -185,7 +185,6 @@ def test_windows_ocr_not_available_without_winsdk(monkeypatch):
 
 def test_has_chinese_language_returns_false_on_exception(monkeypatch):
     """has_chinese_language() returns False when _imports() raises."""
-    import importlib
     import zh_en_translator.engines.ocr.windows_ocr as win_mod
 
     # Make _imports raise so has_chinese_language returns False gracefully
@@ -195,7 +194,6 @@ def test_has_chinese_language_returns_false_on_exception(monkeypatch):
 
 def test_has_chinese_language_true_when_zh_available(monkeypatch):
     """has_chinese_language() returns True when OcrEngine lists a zh-* language."""
-    import importlib
     import zh_en_translator.engines.ocr.windows_ocr as win_mod
 
     fake_lang = MagicMock()
@@ -203,9 +201,8 @@ def test_has_chinese_language_true_when_zh_available(monkeypatch):
     fake_engine_cls = MagicMock()
     fake_engine_cls.get_available_recognizer_languages.return_value = [fake_lang]
 
-    monkeypatch.setattr(win_mod, "_imports", lambda: (
-        fake_engine_cls, MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock()
-    ))
+    _extra = [MagicMock()] * 7
+    monkeypatch.setattr(win_mod, "_imports", lambda: (fake_engine_cls, *_extra))
     assert win_mod.has_chinese_language() is True
 
 
@@ -218,9 +215,8 @@ def test_has_chinese_language_false_when_no_zh(monkeypatch):
     fake_engine_cls = MagicMock()
     fake_engine_cls.get_available_recognizer_languages.return_value = [fake_lang]
 
-    monkeypatch.setattr(win_mod, "_imports", lambda: (
-        fake_engine_cls, MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock(), MagicMock()
-    ))
+    _extra = [MagicMock()] * 7
+    monkeypatch.setattr(win_mod, "_imports", lambda: (fake_engine_cls, *_extra))
     assert win_mod.has_chinese_language() is False
 
 

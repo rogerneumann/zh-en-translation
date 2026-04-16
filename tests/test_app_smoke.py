@@ -241,7 +241,6 @@ def test_popup_effective_bg_returns_color():
 
 def test_popup_effective_bg_uses_config_color():
     """_effective_bg() returns config bg_color when set."""
-    from PyQt6.QtGui import QColor
     from zh_en_translator.config import Config
     _ = QApplication.instance() or QApplication(sys.argv)
     cfg = Config(bg_color="#ff0000")
