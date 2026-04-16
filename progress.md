@@ -269,10 +269,44 @@ Bugs found and fixed during first Windows 11 testing pass.
 
 ---
 
+## M2 update — jieba + full CC-CEDICT
+
+**Added in branch `claude/review-plan-implementation-C0Fix`**:
+
+- **jieba segmentation** (`src/zh_en_translator/engines/segmentation.py`):
+  - `try: import jieba` at module load; sets `_JIEBA_AVAILABLE = True/False`.
+  - `jieba.setLogLevel(logging.WARNING)` silences noisy stderr output.
+  - `segment()` uses `jieba.cut(text, cut_all=False)` when jieba is available; filters empty tokens.
+  - Old character-run logic preserved as `_segment_fallback(text)` for no-jieba environments.
+  - `jieba>=0.42.1` added to `pyproject.toml` main dependencies.
+
+- **Full CC-CEDICT download on first run** (`src/zh_en_translator/engines/dictionary.py`):
+  - `CEDICT_URL` constant pointing to the MDBG ZIP distribution.
+  - `get_cedict_path()` returns `platformdirs.user_data_dir("zh-en-translator") / "cedict_ts.u8"`.
+  - `ensure_cedict()` checks for existing file; downloads the ZIP via `urllib.request.urlopen`,
+    extracts `cedict_ts.u8`, and saves it. On any failure logs a warning and returns the bundled
+    sample so the app stays functional offline.
+
+- **Background warm-up** (`src/zh_en_translator/app.py`):
+  - `_ensure_cedict_background()` module-level helper calls `ensure_cedict()` and logs the result.
+  - `TranslatorApp.__init__` launches it as a daemon thread immediately after `load_config()`,
+    so the dictionary is ready before the first popup lookup.
+
+- **Tests** (88 → 91):
+  - `test_segmentation.py`: updated `test_segment_english_only` to allow jieba's word-level
+    splitting of English text (was hardcoded to fallback single-token behaviour); added mock tests
+    for jieba path, empty-token filtering, and fallback path.
+  - `test_dictionary.py`: added `TestEnsureCedict` class with three tests —
+    download-and-extract success path, returns-existing-file (no re-download), and
+    fallback-to-bundled-sample on network failure.
+
+**Deviations**: none — jieba wheel fails to build in the sandbox via pip but is pure Python;
+copied the extracted source tree directly to site-packages as a workaround.
+
+---
+
 ## Open questions / risks
 
-- **Full CC-CEDICT distribution** — sample is only 50 entries. Bundle full ~2 MB file or download on first run?
-- **jieba re-introduction** — opt-in in future milestone?
 - **MSI code signing** — deferred; SmartScreen warning until cert available.
 - **Sidebar translation history** — currently shows only last translation; future: scrollable history.
 - **Theme support** (system/dark/light/sepia) — deferred to M9 alongside accessibility work.

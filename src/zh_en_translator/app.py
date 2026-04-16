@@ -2,6 +2,7 @@
 
 import logging
 import sys
+import threading
 
 import pyperclip
 from PyQt6.QtCore import Qt, QObject, pyqtSignal, QThread
@@ -9,6 +10,7 @@ from PyQt6.QtGui import QIcon, QColor
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 
 from zh_en_translator.config import load_config, save_config, Config
+from zh_en_translator.engines.dictionary import ensure_cedict
 from zh_en_translator.hotkey import HotKeyManager
 from zh_en_translator.capture import TextCapture
 from zh_en_translator.ui.popup import TranslatorPopup
@@ -16,6 +18,15 @@ from zh_en_translator.ui.sidebar import TranslatorSidebar
 from zh_en_translator.engines.translation_worker import TranslationWorker
 
 logger = logging.getLogger(__name__)
+
+
+def _ensure_cedict_background() -> None:
+    """Download full CC-CEDICT in background so it is ready on first popup use."""
+    try:
+        path = ensure_cedict()
+        logger.info("CC-CEDICT ready at %s", path)
+    except Exception as exc:
+        logger.warning("Background CC-CEDICT initialisation failed: %s", exc)
 
 
 class _OCRWorker(QThread):
@@ -68,6 +79,9 @@ class TranslatorApp(QObject):
         super().__init__()
 
         self.config: Config = load_config()
+
+        # Warm CC-CEDICT cache in background so it is ready before first lookup
+        threading.Thread(target=_ensure_cedict_background, daemon=True).start()
 
         self.tray_icon = None
         self.popup = None
