@@ -197,6 +197,11 @@ class TranslatorSidebar(QWidget):
         """Safe background colour — immune to WA_TranslucentBackground palette corruption."""
         if self._config and getattr(self._config, "bg_color", None):
             return QColor(self._config.bg_color)
+        if self._config and getattr(self._config, "theme", "system") != "system":
+            from zh_en_translator.engines.themes import THEMES
+            palette = THEMES.get(self._config.theme)
+            if palette:
+                return QColor(palette.bg)
         app_bg = QApplication.palette().color(self.backgroundRole())
         # Lightness < 10 almost certainly means the palette was corrupted to
         # transparent-black by DWM after WA_TranslucentBackground was set.
@@ -209,14 +214,32 @@ class TranslatorSidebar(QWidget):
 
         palette(text) / palette(mid) resolve from the per-widget palette which
         WA_TranslucentBackground can corrupt on Windows — making all text
-        invisible.  Computing colours once from _effective_bg() and baking
-        them as hex strings avoids the problem.
+        invisible.  Computing colours once from the resolved theme palette and
+        baking them as hex strings avoids the problem.
         """
-        bg = self._effective_bg()
-        is_dark = bg.lightness() < 128
-        text_color  = "#e8e8e8" if is_dark else "#111111"
-        muted_color = "#aaaaaa" if is_dark else "#666666"
-        btn_hover   = "rgba(255,255,255,0.08)" if is_dark else "rgba(0,0,0,0.06)"
+        from zh_en_translator.engines.themes import resolve_palette
+
+        sys_bg = QApplication.palette().color(self.backgroundRole())
+        system_is_dark = sys_bg.lightness() < 128
+
+        theme = getattr(self._config, "theme", "system") if self._config else "system"
+        theme_palette = resolve_palette(theme, system_is_dark)
+
+        # bg_color override: re-resolve palette based on override bg's darkness
+        if self._config and getattr(self._config, "bg_color", None):
+            from PyQt6.QtGui import QColor as _QColor
+            bg = _QColor(self._config.bg_color)
+            is_dark = bg.lightness() < 128
+            theme_palette = resolve_palette("dark" if is_dark else "light", system_is_dark)
+        else:
+            bg = self._effective_bg()
+            is_dark = bg.lightness() < 128
+            if is_dark != (theme_palette.text == "#E8E8E8"):
+                theme_palette = resolve_palette("dark" if is_dark else "light", system_is_dark)
+
+        text_color  = theme_palette.text
+        muted_color = theme_palette.muted
+        btn_hover   = theme_palette.btn_hover
 
         self._title_label.setStyleSheet(
             f"color: {muted_color}; background: transparent;"
@@ -276,6 +299,7 @@ class TranslatorSidebar(QWidget):
     def apply_config(self, config) -> None:
         """Apply a Config object: update colors, side, and Y position."""
         old_bg = getattr(self._config, "bg_color", None) if self._config else None
+        old_theme = getattr(self._config, "theme", "system") if self._config else "system"
         self._config = config
 
         # Compare against OLD colors before updating, then re-point indicator
@@ -295,8 +319,9 @@ class TranslatorSidebar(QWidget):
         self._pos_y = config.sidebar_y
         self.set_side(config.side)
 
-        # Re-apply text colours if bg changed (or on first apply)
-        if getattr(config, "bg_color", None) != old_bg:
+        # Re-apply text colours if bg or theme changed (or on first apply)
+        new_theme = getattr(config, "theme", "system")
+        if getattr(config, "bg_color", None) != old_bg or new_theme != old_theme:
             self._apply_styling()
 
         self.update()

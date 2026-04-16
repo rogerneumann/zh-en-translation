@@ -84,6 +84,7 @@ class PreferencesDialog(QDialog):
             font_family=config.font_family,
             font_size=config.font_size,
             bg_color=config.bg_color,
+            theme=config.theme,
             side=config.side,
             sidebar_y=config.sidebar_y,
             color_fresh=config.color_fresh,
@@ -178,6 +179,22 @@ class PreferencesDialog(QDialog):
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setSpacing(12)
+
+        # Theme
+        theme_group = QGroupBox("Theme")
+        theme_layout = QHBoxLayout(theme_group)
+        theme_layout.addWidget(QLabel("Theme:"))
+        self._theme_combo = QComboBox()
+        for label, value in [
+            ("System default", "system"),
+            ("Light", "light"),
+            ("Dark", "dark"),
+            ("Sepia", "sepia"),
+        ]:
+            self._theme_combo.addItem(label, userData=value)
+        theme_layout.addWidget(self._theme_combo)
+        theme_layout.addStretch()
+        layout.addWidget(theme_group)
 
         # Font family
         font_group = QGroupBox("Font")
@@ -346,6 +363,8 @@ class PreferencesDialog(QDialog):
         self._trad_to_simp_check.setChecked(cfg.traditional_to_simplified)
 
         # Display
+        theme_index = self._theme_combo.findData(cfg.theme)
+        self._theme_combo.setCurrentIndex(max(0, theme_index))
         if cfg.font_family:
             self._font_combo.setCurrentFont(QFont(cfg.font_family))
         else:
@@ -387,6 +406,7 @@ class PreferencesDialog(QDialog):
             font_family=font_family,
             font_size=self._font_size_spin.value(),
             bg_color=self._bg_color_btn.get_color_str(),
+            theme=self._theme_combo.currentData() or "system",
             side=side,
             sidebar_y=self._sidebar_y_spin.value(),
             color_fresh=self._color_fresh_btn.get_color_str(),

@@ -175,49 +175,65 @@ class TranslatorPopup(QWidget):
         self.resize(420, 190)
 
     def _apply_styling(self):
-        # Determine readable text/muted colours that work on both light and dark
-        # backgrounds, regardless of what WA_TranslucentBackground did to the
-        # per-widget palette on Windows.
-        bg = self._effective_bg()
-        is_dark = bg.lightness() < 128
-        text_color   = "#e8e8e8" if is_dark else "#111111"
-        muted_color  = "#aaaaaa" if is_dark else "#666666"
-        btn_border   = "rgba(255,255,255,0.15)" if is_dark else "rgba(0,0,0,0.15)"
-        btn_hover    = "rgba(255,255,255,0.08)" if is_dark else "rgba(0,0,0,0.06)"
-        btn_pressed  = "rgba(255,255,255,0.14)" if is_dark else "rgba(0,0,0,0.12)"
-        self.setStyleSheet(
-            f"""
+        from zh_en_translator.engines.themes import resolve_palette
+
+        # Determine if system is in dark mode
+        sys_bg = QApplication.palette().color(self.backgroundRole())
+        system_is_dark = sys_bg.lightness() < 128
+
+        theme = "system"
+        if self._config:
+            theme = self._config.theme
+
+        palette = resolve_palette(theme, system_is_dark)
+
+        # bg_color override takes priority over theme background
+        if self._config and self._config.bg_color:
+            from PyQt6.QtGui import QColor
+            bg = QColor(self._config.bg_color)
+            is_dark = bg.lightness() < 128
+            # Re-resolve using the overridden bg's darkness
+            palette = resolve_palette("dark" if is_dark else "light", system_is_dark)
+            bg_hex = self._config.bg_color
+        else:
+            bg_hex = palette.bg
+            # Update the widget's palette so paintEvent uses the theme bg
+            from PyQt6.QtGui import QColor, QPalette
+            qpalette = self.palette()
+            qpalette.setColor(QPalette.ColorRole.Window, QColor(bg_hex))
+            self.setPalette(qpalette)
+
+        self.setStyleSheet(f"""
             QTextEdit {{
                 border: none;
                 background: transparent;
                 font-size: 11pt;
-                color: {muted_color};
+                color: {palette.muted};
             }}
             QLabel {{
                 border: none;
                 background: transparent;
-                color: {text_color};
+                color: {palette.text};
                 padding: 4px 0;
             }}
             QLabel#pinyinLabel {{
-                color: {muted_color};
+                color: {palette.muted};
                 font-size: 9pt;
                 padding: 0;
             }}
             QFrame {{ background: transparent; }}
             QPushButton {{
                 background: transparent;
-                border: 1px solid {btn_border};
+                border: 1px solid {palette.border};
                 border-radius: 4px;
                 padding: 3px 10px;
                 font-size: 10pt;
-                color: {text_color};
+                color: {palette.text};
             }}
-            QPushButton:hover  {{ background: {btn_hover}; }}
-            QPushButton:pressed {{ background: {btn_pressed}; }}
-            QPushButton:disabled {{ color: {muted_color}; border-color: {btn_border}; }}
-            """
-        )
+            QPushButton:hover  {{ background: {palette.btn_hover}; }}
+            QPushButton:pressed {{ background: {palette.btn_pressed}; }}
+            QPushButton:disabled {{ color: {palette.muted}; border-color: {palette.border}; }}
+        """)
 
     def _apply_config(self, config):
         """Apply config settings to font and background color."""
@@ -248,6 +264,11 @@ class TranslatorPopup(QWidget):
         """Safe background colour for both light and dark mode on Windows."""
         if self._config and self._config.bg_color:
             return QColor(self._config.bg_color)
+        if self._config and self._config.theme != "system":
+            from zh_en_translator.engines.themes import THEMES
+            palette = THEMES.get(self._config.theme)
+            if palette:
+                return QColor(palette.bg)
         app_bg = QApplication.palette().color(self.backgroundRole())
         # Near-pure-black (lightness < 10) almost certainly indicates the
         # WA_TranslucentBackground palette corruption rather than intentional

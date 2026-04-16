@@ -40,6 +40,7 @@ class Config:
     font_family: str = ""         # empty = system default
     font_size: int = 13
     bg_color: str = ""            # empty = system palette; hex like "#FFFFFF"
+    theme: str = "system"         # "system" | "dark" | "light" | "sepia"
 
     # [sidebar]
     side: str = "right"           # "left" | "right"
@@ -91,6 +92,7 @@ def load_config(config_path: Path | None = None) -> Config:
         font_family=_get("display", "font_family", defaults.font_family),
         font_size=_get("display", "font_size", defaults.font_size),
         bg_color=_get("display", "bg_color", defaults.bg_color),
+        theme=_get("display", "theme", defaults.theme),
         side=_get("sidebar", "side", defaults.side),
         sidebar_y=_get("sidebar", "sidebar_y", defaults.sidebar_y),
         color_fresh=_get("sidebar", "color_fresh", defaults.color_fresh),
@@ -121,6 +123,7 @@ mode = {_toml_str(cfg.mode)}
 font_family = {_toml_str(cfg.font_family)}
 font_size = {cfg.font_size}
 bg_color = {_toml_str(cfg.bg_color)}
+theme = {_toml_str(cfg.theme)}
 
 [sidebar]
 side = {_toml_str(cfg.side)}

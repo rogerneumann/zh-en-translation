@@ -337,6 +337,30 @@ traditional_to_simplified = true
 
 ---
 
+## M9 — Part 2: Theme support
+
+**Scope**: Add `theme` config field (system/dark/light/sepia) controlling the overall color palette of both the popup and sidebar.
+
+**Delivered**:
+- `src/zh_en_translator/engines/themes.py` — `ThemePalette` frozen dataclass + `THEMES` dict (light, dark, sepia palettes) + `resolve_palette(theme, system_is_dark)` helper.
+- `src/zh_en_translator/config.py` — `theme: str = "system"` field added to `Config`; saved/loaded from `[display]` TOML section.
+- `src/zh_en_translator/ui/popup.py` — `_apply_styling()` replaced with theme-aware version that calls `resolve_palette()`; `_effective_bg()` updated to respect non-system theme when no `bg_color` override is set.
+- `src/zh_en_translator/ui/sidebar.py` — `_apply_styling()` and `_effective_bg()` updated similarly; indicator strip colors (`COLOUR_FRESH` / `COLOUR_IDLE`) unchanged.
+- `src/zh_en_translator/ui/preferences.py` — "Theme" group box added above Font in the Display tab (`_theme_combo` QComboBox with System default / Light / Dark / Sepia); wired in `_load_config_into_ui()` and `_collect_config()`.
+- `tests/test_themes.py` — 11 new tests covering `resolve_palette`, config roundtrip, and preferences combo.
+
+**Behavior**: `bg_color` override still takes priority over theme background — when set, the palette is re-resolved based on the override color's lightness.
+
+**Config field**:
+```
+[display]
+theme = "system"   # "system" | "dark" | "light" | "sepia"
+```
+
+**Tests**: 112 → 123 (+11).
+
+---
+
 ## Open questions / risks
 
 - **MSI code signing** — deferred; SmartScreen warning until cert available.
