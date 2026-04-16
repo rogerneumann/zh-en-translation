@@ -45,6 +45,7 @@ class Config:
     # [sidebar]
     side: str = "right"           # "left" | "right"
     sidebar_y: int = 200
+    sidebar_width: int = 280
     color_fresh: str = "#00C9CC"
     color_idle: str = "#9E8080"
 
@@ -100,6 +101,7 @@ def load_config(config_path: Path | None = None) -> Config:
         theme=_get("display", "theme", defaults.theme),
         side=_get("sidebar", "side", defaults.side),
         sidebar_y=_get("sidebar", "sidebar_y", defaults.sidebar_y),
+        sidebar_width=_get("sidebar", "sidebar_width", defaults.sidebar_width),
         color_fresh=_get("sidebar", "color_fresh", defaults.color_fresh),
         color_idle=_get("sidebar", "color_idle", defaults.color_idle),
         external_lookup_url=_get("lookup", "external_lookup_url", defaults.external_lookup_url),
@@ -136,6 +138,7 @@ theme = {_toml_str(cfg.theme)}
 [sidebar]
 side = {_toml_str(cfg.side)}
 sidebar_y = {cfg.sidebar_y}
+sidebar_width = {cfg.sidebar_width}
 color_fresh = {_toml_str(cfg.color_fresh)}
 color_idle = {_toml_str(cfg.color_idle)}
 
