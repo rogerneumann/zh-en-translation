@@ -9,18 +9,39 @@ logger = logging.getLogger(__name__)
 
 
 class TranslationWorker(QThread):
-    """Background thread: runs ensure_pack() + translate_sentence() and emits the result."""
+    """Background thread: translates text and emits the result.
+
+    Uses Azure Translator (MS Cloud) when enabled and configured, with
+    automatic fallback to the local Argos offline engine on any failure.
+    """
 
     result_ready = pyqtSignal(str)
 
-    def __init__(self, text: str):
+    def __init__(self, text: str, config=None):
         super().__init__()
         self.text = text
+        self.config = config  # Config | None
 
     def run(self):
-        from zh_en_translator.engines.argos import ensure_pack, translate_sentence
-
         logger.debug("input (%d chars): %r", len(self.text), self.text[:80])
+
+        # Try MS Cloud first when the user has explicitly enabled it
+        if self.config and self.config.ms_translator_enabled:
+            from zh_en_translator.engines.ms_cloud import is_configured, translate_sentence as ms_translate
+            if is_configured(self.config.ms_translator_api_key):
+                result = ms_translate(
+                    self.text,
+                    self.config.ms_translator_api_key,
+                    self.config.ms_translator_region,
+                )
+                if result:
+                    logger.debug("ms_cloud result: %r", result[:80])
+                    self.result_ready.emit(result)
+                    return
+                logger.warning("MS Cloud translation failed — falling back to Argos")
+
+        # Offline fallback: local Argos / ctranslate2
+        from zh_en_translator.engines.argos import ensure_pack, translate_sentence
 
         if not ensure_pack():
             logger.warning("ensure_pack() failed")

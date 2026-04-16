@@ -411,7 +411,7 @@ class TranslatorPopup(QWidget):
     # ------------------------------------------------------------------
 
     def _start_translation(self):
-        self._worker = TranslationWorker(self.captured_text)
+        self._worker = TranslationWorker(self.captured_text, config=self._config)
         self._worker.result_ready.connect(self._on_translation_ready)
         self._worker.start()
 
