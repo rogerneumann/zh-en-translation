@@ -172,7 +172,52 @@ class TranslatorPopup(QWidget):
         layout.addLayout(btn_row)
 
         self.setLayout(layout)
+        self._setup_accessibility()
         self.resize(420, 190)
+
+    def _setup_accessibility(self):
+        """Set accessible names, descriptions, and logical tab order for screen readers."""
+        # Pinyin label
+        self._pinyin_label.setAccessibleName("Pinyin romanisation")
+        self._pinyin_label.setAccessibleDescription(
+            "Pinyin phonetic reading of the source text"
+        )
+
+        # Source text
+        self.text_display.setAccessibleName("Source text")
+        self.text_display.setAccessibleDescription(
+            "Original Chinese text being translated. Editable."
+        )
+
+        # Translation
+        self.translation_label.setAccessibleName("Translation")
+        self.translation_label.setAccessibleDescription(
+            "English translation of the source text"
+        )
+
+        # Buttons (accessible names are already implied by button text, but add descriptions)
+        self.btn_copy.setAccessibleDescription(
+            "Copy the English translation to the clipboard"
+        )
+        self.btn_lookup.setAccessibleDescription(
+            "Open the source text in an external dictionary"
+        )
+        self.btn_replace.setAccessibleDescription(
+            "Replace the original selected text with the English translation"
+        )
+        self.btn_pin.setAccessibleDescription(
+            "Pin this translation to the persistent sidebar panel"
+        )
+        self.btn_lang_settings.setAccessibleDescription(
+            "Open Windows Language Settings to install the Chinese OCR language pack"
+        )
+
+        # Logical tab order: source → translation → copy → lookup → replace → pin
+        QWidget.setTabOrder(self.text_display, self.translation_label)
+        QWidget.setTabOrder(self.translation_label, self.btn_copy)
+        QWidget.setTabOrder(self.btn_copy, self.btn_lookup)
+        QWidget.setTabOrder(self.btn_lookup, self.btn_replace)
+        QWidget.setTabOrder(self.btn_replace, self.btn_pin)
 
     def _apply_styling(self):
         from zh_en_translator.engines.themes import resolve_palette

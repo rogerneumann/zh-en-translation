@@ -21,7 +21,7 @@ Source of truth for plan/scope: `PLAN.md`.
 | M7 — Preferences | ✅ Done | In-app dialog + TOML config; font, colors, sidebar, hotkey, OCR engine |
 | Windows testing fixes | ✅ Done | Black popup/sidebar, OCR routing, clipboard wipe, strip click, mode sync — see below |
 | M8 — Packaging (MSI) | ⏳ Pending | |
-| M9 — Accessibility + Traditional | 🔄 Part 1 done | OpenCC converter + config toggle + preferences UI |
+| M9 — Accessibility + Traditional | ✅ Done | OpenCC converter, theme support, Qt accessibility (names, descriptions, tab order) |
 | M10 — Optional MS Cloud | ⏳ Pending | |
 
 All fixes merged to `main`.
@@ -358,6 +358,28 @@ theme = "system"   # "system" | "dark" | "light" | "sepia"
 ```
 
 **Tests**: 112 → 123 (+11).
+
+---
+
+## M9 — Part 3: Qt Accessibility
+
+**Scope**: Screen-reader support via Qt accessible names, descriptions, and logical tab order for the popup and sidebar.
+
+**Delivered**:
+- `src/zh_en_translator/ui/popup.py` — new `_setup_accessibility()` method called at the end of `_setup_ui()`:
+  - `setAccessibleName()` on `_pinyin_label`, `text_display`, `translation_label`
+  - `setAccessibleDescription()` on all five buttons (`btn_copy`, `btn_lookup`, `btn_replace`, `btn_pin`, `btn_lang_settings`) and all informational widgets
+  - Logical tab order: source text → translation → Copy → Look up → Replace text → Pin
+- `src/zh_en_translator/ui/sidebar.py` — new `_setup_accessibility()` method called in `__init__`:
+  - `setAccessibleName("Translation sidebar")` on the sidebar itself
+  - `setAccessibleName("Source text")` on `source_label`
+  - `setAccessibleName("Translation")` on `translation_label`
+  - `setAccessibleDescription()` on `btn_pin` and `_close_btn`
+- `tests/test_accessibility.py` — 15 new tests covering popup and sidebar accessible names/descriptions; all use `qapp` fixture and `_cleanup` pattern
+
+**Tests**: 123 → 138 (+15).
+
+**Manual verification needed**: NVDA screen reader navigation, DPI scaling on 4K displays.
 
 ---
 

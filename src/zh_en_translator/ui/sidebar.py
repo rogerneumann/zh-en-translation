@@ -102,6 +102,7 @@ class TranslatorSidebar(QWidget):
 
         self._setup_ui()
         self._apply_styling()
+        self._setup_accessibility()
         self._reposition()
 
     # ──────────────────────────────────────────────────────────────────────────
@@ -261,6 +262,20 @@ class TranslatorSidebar(QWidget):
             f"QPushButton {{ background: transparent; border: none;"
             f" color: {muted_color}; font-size: 11pt; }}"
             f"QPushButton:hover {{ color: {text_color}; }}"
+        )
+
+    def _setup_accessibility(self) -> None:
+        """Set accessible names and descriptions for screen readers."""
+        self.setAccessibleName("Translation sidebar")
+
+        self.source_label.setAccessibleName("Source text")
+
+        self.translation_label.setAccessibleName("Translation")
+
+        self.btn_pin.setAccessibleDescription("Keep the sidebar expanded")
+
+        self._close_btn.setAccessibleDescription(
+            "Close sidebar and return to popup mode"
         )
 
     # ──────────────────────────────────────────────────────────────────────────
