@@ -311,12 +311,11 @@ class TranslatorPopup(QWidget):
         self._worker.start()
 
     def _start_pinyin(self, text: str):
-        """Start PinyinWorker if config allows it for this text length."""
-        if self._config is not None:
-            if not self._config.show_pinyin:
-                return
-            if len(text) > self._config.pinyin_max_chars:
-                return
+        """Start PinyinWorker if config enables it for this text length."""
+        if self._config is None or not self._config.show_pinyin:
+            return
+        if len(text) > self._config.pinyin_max_chars:
+            return
         self._pinyin_worker = PinyinWorker(text)
         self._pinyin_worker.result_ready.connect(self._on_pinyin_ready)
         self._pinyin_worker.start()
