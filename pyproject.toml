@@ -1,0 +1,50 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "zh-en-translator"
+version = "0.1.0"
+description = "Offline-first Chinese→English popup translator"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "zh-en-translator team" }]
+dependencies = [
+    "PyQt6>=6.0.0",
+    "pynput>=1.7.6",
+    "pyperclip>=1.8.2",
+    "platformdirs>=4.0.0",
+    "argostranslate>=1.9.0,<1.10.0",
+    "jieba>=0.42.1",
+]
+
+[project.optional-dependencies]
+dev = ["pytest>=7.0.0", "pytest-qt>=4.0.0", "ruff>=0.2.0"]
+ocr-windows = [
+    "winrt-runtime",
+    "winrt-Windows.Media.Ocr",
+    "winrt-Windows.Graphics.Imaging",
+    "winrt-Windows.Storage.Streams",
+    "winrt-Windows.Globalization",
+]
+ocr-windows-legacy = ["winsdk"]
+ocr-tesseract = ["pytesseract", "Pillow"]
+ocr-paddle = ["paddleocr", "Pillow"]
+traditional = ["opencc-python-reimplemented>=1.1.0"]
+
+[project.scripts]
+zh-en-translator = "zh_en_translator.app:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+
+[tool.pytest.ini_options]
+addopts = "--tb=short"
