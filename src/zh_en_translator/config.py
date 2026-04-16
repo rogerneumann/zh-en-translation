@@ -53,6 +53,10 @@ class Config:
     # [ocr]
     ocr_engine: str = "auto"      # "auto" | "windows" | "tesseract" | "paddle"
 
+    # [pinyin]
+    show_pinyin: bool = True
+    pinyin_max_chars: int = 80
+
 
 def load_config(config_path: Path | None = None) -> Config:
     """Read config from TOML file and return a Config instance.
@@ -90,6 +94,8 @@ def load_config(config_path: Path | None = None) -> Config:
         color_idle=_get("sidebar", "color_idle", defaults.color_idle),
         external_lookup_url=_get("lookup", "external_lookup_url", defaults.external_lookup_url),
         ocr_engine=_get("ocr", "ocr_engine", defaults.ocr_engine),
+        show_pinyin=_get("pinyin", "show_pinyin", defaults.show_pinyin),
+        pinyin_max_chars=_get("pinyin", "pinyin_max_chars", defaults.pinyin_max_chars),
     )
 
 
@@ -121,8 +127,17 @@ external_lookup_url = {_toml_str(cfg.external_lookup_url)}
 
 [ocr]
 ocr_engine = {_toml_str(cfg.ocr_engine)}
+
+[pinyin]
+show_pinyin = {_toml_bool(cfg.show_pinyin)}
+pinyin_max_chars = {cfg.pinyin_max_chars}
 """
     config_path.write_text(toml_content, encoding="utf-8")
+
+
+def _toml_bool(value: bool) -> str:
+    """Format a Python bool as a TOML boolean literal (lowercase true/false)."""
+    return "true" if value else "false"
 
 
 def _toml_str(value: str) -> str:

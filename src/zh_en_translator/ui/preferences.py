@@ -22,6 +22,7 @@ from PyQt6.QtWidgets import (
     QComboBox,
     QGroupBox,
     QSizePolicy,
+    QCheckBox,
 )
 
 from zh_en_translator.config import Config, save_config
@@ -89,6 +90,8 @@ class PreferencesDialog(QDialog):
             color_idle=config.color_idle,
             external_lookup_url=config.external_lookup_url,
             ocr_engine=config.ocr_engine,
+            show_pinyin=config.show_pinyin,
+            pinyin_max_chars=config.pinyin_max_chars,
         )
 
         self.setWindowTitle("Preferences")
@@ -204,6 +207,27 @@ class PreferencesDialog(QDialog):
         bg_layout.addStretch()
 
         layout.addWidget(bg_group)
+
+        # Pinyin
+        pinyin_group = QGroupBox("Pinyin")
+        pinyin_layout = QVBoxLayout(pinyin_group)
+
+        self._show_pinyin_check = QCheckBox("Show pinyin")
+        pinyin_layout.addWidget(self._show_pinyin_check)
+
+        pinyin_max_row = QHBoxLayout()
+        pinyin_max_row.addWidget(QLabel("Max chars for pinyin:"))
+        self._pinyin_max_spin = QSpinBox()
+        self._pinyin_max_spin.setRange(10, 500)
+        self._pinyin_max_spin.setSingleStep(10)
+        self._pinyin_max_spin.setValue(80)
+        pinyin_max_row.addWidget(self._pinyin_max_spin)
+        pinyin_max_row.addStretch()
+        pinyin_layout.addLayout(pinyin_max_row)
+
+        self._show_pinyin_check.toggled.connect(self._pinyin_max_spin.setEnabled)
+
+        layout.addWidget(pinyin_group)
         layout.addStretch()
         return widget
 
@@ -317,6 +341,9 @@ class PreferencesDialog(QDialog):
             self._font_combo.lineEdit().setText("")
         self._font_size_spin.setValue(cfg.font_size)
         self._bg_color_btn.set_color_str(cfg.bg_color)
+        self._show_pinyin_check.setChecked(cfg.show_pinyin)
+        self._pinyin_max_spin.setValue(cfg.pinyin_max_chars)
+        self._pinyin_max_spin.setEnabled(cfg.show_pinyin)
 
         # Sidebar
         if cfg.side == "left":
@@ -356,6 +383,8 @@ class PreferencesDialog(QDialog):
             external_lookup_url=self._lookup_url_edit.text().strip()
                 or self.config.external_lookup_url,
             ocr_engine=ocr_engine,
+            show_pinyin=self._show_pinyin_check.isChecked(),
+            pinyin_max_chars=self._pinyin_max_spin.value(),
         )
 
     # ------------------------------------------------------------------

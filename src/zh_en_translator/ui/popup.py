@@ -19,7 +19,7 @@ from PyQt6.QtWidgets import (
 )
 
 from zh_en_translator.engines.dictionary import Dictionary
-from zh_en_translator.engines.translation_worker import TranslationWorker
+from zh_en_translator.engines.translation_worker import TranslationWorker, PinyinWorker
 
 logger = logging.getLogger(__name__)
 
@@ -54,6 +54,7 @@ class TranslatorPopup(QWidget):
         self._on_pin = on_pin
         self._dismissed = False
         self._worker: TranslationWorker | None = None
+        self._pinyin_worker: PinyinWorker | None = None
         self._is_ocr_pending = is_ocr_pending
         self._config = config
 
@@ -63,6 +64,7 @@ class TranslatorPopup(QWidget):
         self._position_near_cursor()
         if not is_ocr_pending:
             self._start_translation()
+            self._start_pinyin(text)
         else:
             self.translation_label.setText("Waiting for OCR…")
 
@@ -87,6 +89,13 @@ class TranslatorPopup(QWidget):
         layout = QVBoxLayout()
         layout.setContentsMargins(18, 14, 18, 14)
         layout.setSpacing(10)
+
+        # ── Pinyin label (hidden until PinyinWorker returns a result) ────
+        self._pinyin_label = QLabel("")
+        self._pinyin_label.setObjectName("pinyinLabel")
+        self._pinyin_label.setWordWrap(True)
+        self._pinyin_label.setVisible(False)
+        layout.addWidget(self._pinyin_label)
 
         # ── Source text (small, muted, selectable) ──────────────────────
         self.text_display = QTextEdit()
@@ -189,6 +198,11 @@ class TranslatorPopup(QWidget):
                 background: transparent;
                 color: {text_color};
                 padding: 4px 0;
+            }}
+            QLabel#pinyinLabel {{
+                color: {muted_color};
+                font-size: 9pt;
+                padding: 0;
             }}
             QFrame {{ background: transparent; }}
             QPushButton {{
@@ -296,6 +310,25 @@ class TranslatorPopup(QWidget):
         self._worker.result_ready.connect(self._on_translation_ready)
         self._worker.start()
 
+    def _start_pinyin(self, text: str):
+        """Start PinyinWorker if config allows it for this text length."""
+        if self._config is not None:
+            if not self._config.show_pinyin:
+                return
+            if len(text) > self._config.pinyin_max_chars:
+                return
+        self._pinyin_worker = PinyinWorker(text)
+        self._pinyin_worker.result_ready.connect(self._on_pinyin_ready)
+        self._pinyin_worker.start()
+
+    def _on_pinyin_ready(self, pinyin_str: str):
+        """Show pinyin label when worker returns a non-empty result."""
+        if self._dismissed or not pinyin_str:
+            return
+        self._pinyin_label.setText(pinyin_str)
+        self._pinyin_label.setVisible(True)
+        self._position_near_cursor()
+
     def set_ocr_result(self, text: str):
         """Called by app after OCR completes — either start translation or show error."""
         if self._dismissed:
@@ -339,6 +372,20 @@ class TranslatorPopup(QWidget):
         if self._on_pin is not None:
             self.btn_pin.setEnabled(is_real)
 
+    def _on_pinyin_ready(self, pinyin_str: str):
+        """Show pinyin label when PinyinWorker returns a non-empty result."""
+        if self._dismissed:
+            return
+        if not pinyin_str:
+            return
+        self._pinyin_label.setText(pinyin_str)
+        self._pinyin_label.setVisible(True)
+        self._pinyin_label.adjustSize()
+        # Expand popup height slightly to accommodate the new label
+        extra = self._pinyin_label.sizeHint().height() + 4
+        self.resize(self.width(), min(580, self.height() + extra))
+        self._position_near_cursor()
+
     # ------------------------------------------------------------------
     # Action buttons
     # ------------------------------------------------------------------
@@ -359,6 +406,9 @@ class TranslatorPopup(QWidget):
         if self._worker and self._worker.isRunning():
             self._worker.quit()
             self._worker.wait(500)
+        if self._pinyin_worker and self._pinyin_worker.isRunning():
+            self._pinyin_worker.quit()
+            self._pinyin_worker.wait(500)
         self.close()
 
         # Give the source app ~120 ms to regain focus before we paste.
@@ -441,6 +491,9 @@ class TranslatorPopup(QWidget):
         if self._worker and self._worker.isRunning():
             self._worker.quit()
             self._worker.wait(500)
+        if self._pinyin_worker and self._pinyin_worker.isRunning():
+            self._pinyin_worker.quit()
+            self._pinyin_worker.wait(500)
         self.close()
 
     def mousePressEvent(self, event):
