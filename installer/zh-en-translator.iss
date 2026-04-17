@@ -42,6 +42,8 @@ MinVersion=10.0.17763
 WizardStyle=modern
 SetupIconFile=
 ; No icon file yet — omit to use default Inno Setup icon
+; Getting-started page shown after install, before the Finish page
+InfoAfterFile=after_install.txt
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
