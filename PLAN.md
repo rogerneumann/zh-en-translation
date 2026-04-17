@@ -131,7 +131,8 @@ separate Python process.
 - **Indicator colours** (configurable in M7):
   - Cyan `#00C9CC` — fresh translation ready (not yet viewed).
   - Muted rose `#9E8080` — idle / no translation / stale.
-- **Draggable** up/down along the screen edge; position persists via config.
+- **Draggable** up/down along the screen edge — drag the indicator strip (both collapsed and expanded) or the ⠿ grip in the header; position persists via config.
+- **Resizable** — drag the inner edge (SizeHorCursor) to change panel width (180–600 px); width persists via config.
 - **Left/right**: toggled from tray menu or preferences.
 - **Sidebar mode** (activated on first Pin, or via tray toggle):
   hotkey captures text → translation goes directly to sidebar in background

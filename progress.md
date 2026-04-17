@@ -518,6 +518,53 @@ ms_translator_region = ""   # e.g. "eastus", "westeurope"; optional
 
 ---
 
+## UI Overhaul (post-M10)
+
+**Scope**: Compact popup, resizable sidebar with interactive drag, live preferences preview.
+
+**Delivered**:
+
+### Popup
+- Header pin (📌) and close (✕) buttons shrunk from 32×32 to 22×22 px; styled as borderless icon buttons with subtle hover highlight.
+- Layout margins reduced (18 → 14 px sides, 14 → 8 px top); inter-widget spacing 10 → 7 px.
+- Initial size 400×160 (was 420×190); max height 520 px; height is fully content-driven.
+- Action button "Replace text" shortened to "Replace"; buttons now pill-shaped (`border-radius: 10px`) with refined hover/disabled states.
+- Removed duplicate `_on_pinyin_ready` method that was silently shadowing the real implementation.
+
+### Sidebar
+- **Resizable** — `_ResizeHandle` child widget (6 px, `SizeHorCursor`) sits at the inner edge of the expanded panel. Drag it to resize between 180 and 600 px. Right-docked: handle at left edge; left-docked: handle at right edge.
+- **Free drag** — strip drag (Y repositioning) now works in **both** collapsed and expanded states. When expanded, a ⠿ grip icon in the header also initiates Y drag.
+- **Auto-save** — width and Y position written to `config.toml` automatically on drag/resize release (no apply button needed).
+- Panel width is now a per-instance variable (`self._width`, default 280 px); class constant `WIDTH` removed.
+- New `sidebar_width: int = 280` field in `Config`, `load_config`, and `save_config`.
+- Rounded corners 12 px (was 10); header buttons 22×22.
+
+### Preferences
+- **Sidebar tab**: Y-position spinbox removed; replaced with a hint explaining interactive drag/resize.
+- **Display tab**: live **Preview** panel added below Pinyin settings — a mini styled frame that re-renders in real-time as theme, font family, font size, or background colour changes.
+- **Unsaved-changes guard**: closing the dialog with unapplied edits shows a *Save / Discard / Cancel* message box. OK and Cancel buttons bypass the check (`_skip_close_check` flag). All settings widgets connected to `_mark_dirty`; flag cleared on Apply/OK.
+
+**Config fields added**:
+```toml
+[sidebar]
+sidebar_width = 280
+```
+
+**Tests**: no regressions (152 tests; PyQt6 UI-only changes not covered by sandbox tests).
+
+**Manual test checklist for Windows 11**:
+- [ ] Popup appears at ~400×160, grows to fit translation text (no fixed height)
+- [ ] Pin and close buttons in header are small and unobtrusive; hover shows highlight
+- [ ] Sidebar inner edge shows SizeHorCursor when expanded; drag resizes smoothly
+- [ ] Drag indicator strip (collapsed or expanded) moves sidebar up/down; saves on release
+- [ ] Drag ⠿ icon in expanded header also moves sidebar vertically
+- [ ] Width and Y position survive app restart (written to config.toml)
+- [ ] Preferences → Display: changing theme/font/size updates Preview panel instantly
+- [ ] Close Preferences with unsaved changes → Save/Discard/Cancel dialog appears
+- [ ] Cancel button closes without prompting; OK saves without prompting
+
+---
+
 ## Open questions / risks
 
 - **MSI code signing** — deferred; SmartScreen warning until cert available.
