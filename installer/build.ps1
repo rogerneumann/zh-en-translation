@@ -68,6 +68,20 @@ try {
 }
 
 # ---------------------------------------------------------------------------
+# Step 1.5 — Install package dependencies
+# ---------------------------------------------------------------------------
+Write-Step "Step 1.5: Installing package dependencies (pip install -e .)"
+Write-Host "    This ensures PyQt6, ctranslate2 etc. are present for PyInstaller to bundle." -ForegroundColor Gray
+
+& pip install -e . --quiet
+if ($LASTEXITCODE -ne 0) {
+    Write-Fail "pip install -e . failed (exit code $LASTEXITCODE)"
+    Write-Host "    Fix the install error above, then re-run this script." -ForegroundColor Yellow
+    exit $LASTEXITCODE
+}
+Write-Ok "Dependencies installed"
+
+# ---------------------------------------------------------------------------
 # Step 2 — Run PyInstaller
 # ---------------------------------------------------------------------------
 if (-not $SkipPyInstaller) {

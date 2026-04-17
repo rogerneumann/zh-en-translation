@@ -13,7 +13,7 @@
 
 import sys
 from pathlib import Path
-from PyInstaller.utils.hooks import collect_data_files, collect_all
+from PyInstaller.utils.hooks import collect_data_files, collect_all, collect_submodules
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -25,7 +25,17 @@ src_root  = repo_root / "src"
 # Hidden imports
 # ---------------------------------------------------------------------------
 hidden_imports = [
+    # PyQt6 — explicit core modules (collect_all alone sometimes misses these on Windows)
     "PyQt6.sip",
+    "PyQt6.QtCore",
+    "PyQt6.QtGui",
+    "PyQt6.QtWidgets",
+    "PyQt6.QtNetwork",
+    "PyQt6.QtOpenGL",
+    "PyQt6.QtOpenGLWidgets",
+    "PyQt6.QtPrintSupport",
+    "PyQt6.QtSvg",
+    "PyQt6.QtXml",
     "pynput.keyboard",
     "pynput.mouse",
     "pyperclip",
@@ -40,6 +50,9 @@ hidden_imports = [
     # winreg is built-in on Windows; keep as fallback import guard
     "winreg",
 ]
+
+# Collect all PyQt6 submodules so no Qt binding is accidentally omitted
+hidden_imports += collect_submodules("PyQt6")
 
 # ---------------------------------------------------------------------------
 # Data files
