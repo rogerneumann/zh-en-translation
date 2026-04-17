@@ -36,7 +36,9 @@ Write-Host "==> Installing dev extras (pytest, ruff)..." -ForegroundColor Cyan
 pip install pytest pytest-qt ruff
 
 Write-Host "==> Installing project (editable, no-deps)..." -ForegroundColor Cyan
-pip install -e . --no-deps
+# Resolve repo root regardless of where the script was invoked from
+$RepoRoot = Split-Path -Parent $PSScriptRoot
+pip install -e $RepoRoot --no-deps
 
 if ($OCR) {
     Write-Host "==> Installing Windows OCR support (winrt namespace packages)..." -ForegroundColor Cyan
