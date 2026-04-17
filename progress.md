@@ -565,6 +565,37 @@ sidebar_width = 280
 
 ---
 
+## Post-overhaul fixes
+
+### Popup header buttons not rendering on Windows (fix)
+
+**Root cause**: `setObjectName("headerBtn")` was called *after* `setStyleSheet()`. Qt skips
+stylesheet re-evaluation when the string is unchanged, so the `#headerBtn` CSS rules never
+fired. Additionally, `min-height: 0` in the CSS can override `setFixedSize` on Windows and
+collapse button height to 0 px.
+
+**Fix**: removed the objectName approach entirely; call `setStyleSheet()` directly on
+`btn_pin` and `btn_close` — the same pattern already used reliably in `sidebar.py`.
+
+### Draggable popup
+
+Users can now click-and-drag the popup to any position on screen:
+- **`⠿` grip icon** added to the left of the header row — shows `SizeAllCursor` as a visible affordance.
+- Drag starts from any non-interactive area that propagates mouse events to the parent:
+  the grip, header stretch, margins, separator, pinyin label.
+- Buttons and text fields (`QPushButton`, `QTextEdit`, selectable `QLabel`) absorb their
+  own mouse events and are excluded automatically — no explicit blocklist needed.
+- Cursor changes to `SizeAllCursor` during drag and is restored on release.
+
+**Manual test checklist for Windows 11**:
+- [ ] Pin (📌) and close (✕) icons visible in popup header immediately on open
+- [ ] Hover over header buttons shows highlight; click works correctly
+- [ ] Grab ⠿ grip or any margin area → cursor becomes move cursor → popup follows mouse
+- [ ] Release → cursor restores; popup stays at new position
+- [ ] Clicking buttons and selecting text still works normally (not intercepted by drag)
+
+---
+
 ## Open questions / risks
 
 - **MSI code signing** — deferred; SmartScreen warning until cert available.
