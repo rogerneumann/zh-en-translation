@@ -95,6 +95,7 @@ class PreferencesDialog(QDialog):
         self.config = Config(
             hotkey=config.hotkey,
             mode=config.mode,
+            startup=config.startup,
             font_family=config.font_family,
             font_size=config.font_size,
             bg_color=config.bg_color,
@@ -606,6 +607,7 @@ class PreferencesDialog(QDialog):
         return Config(
             hotkey=self._hotkey_edit.text().strip() or self.config.hotkey,
             mode=mode,
+            startup=self.config.startup,
             font_family=font_family,
             font_size=self._font_size_spin.value(),
             bg_color=self._bg_color_btn.get_color_str(),

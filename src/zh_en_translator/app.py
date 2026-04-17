@@ -111,6 +111,8 @@ class TranslatorApp(QObject):
     def __init__(self):
         # QApplication must exist before QObject.__init__
         self.app = QApplication.instance() or QApplication(sys.argv)
+        # Tray apps must not quit when the last window (popup, prefs dialog) closes.
+        self.app.setQuitOnLastWindowClosed(False)
         super().__init__()
 
         self.config: Config = load_config()
@@ -392,15 +394,20 @@ class TranslatorApp(QObject):
         current = _Config(
             hotkey=self.config.hotkey,
             mode="sidebar" if self.sidebar_mode else "popup",
+            startup=self.config.startup,
             font_family=self.config.font_family,
             font_size=self.config.font_size,
             bg_color=self.config.bg_color,
+            theme=self.config.theme,
             side=self.config.side,
             sidebar_y=self.config.sidebar_y,
+            sidebar_width=self.config.sidebar_width,
             color_fresh=self.config.color_fresh,
             color_idle=self.config.color_idle,
             external_lookup_url=self.config.external_lookup_url,
             ocr_engine=self.config.ocr_engine,
+            show_pinyin=self.config.show_pinyin,
+            pinyin_max_chars=self.config.pinyin_max_chars,
             traditional_to_simplified=self.config.traditional_to_simplified,
             ms_translator_enabled=self.config.ms_translator_enabled,
             ms_translator_api_key=self.config.ms_translator_api_key,
