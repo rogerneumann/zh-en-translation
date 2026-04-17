@@ -35,6 +35,7 @@ class Config:
     # [general]
     hotkey: str = "<ctrl>+<shift>+t"
     mode: str = "popup"           # "popup" | "sidebar"
+    startup: bool = True          # launch at Windows login
 
     # [display]
     font_family: str = ""         # empty = system default
@@ -95,6 +96,7 @@ def load_config(config_path: Path | None = None) -> Config:
     return Config(
         hotkey=_get("general", "hotkey", defaults.hotkey),
         mode=_get("general", "mode", defaults.mode),
+        startup=_get("general", "startup", defaults.startup),
         font_family=_get("display", "font_family", defaults.font_family),
         font_size=_get("display", "font_size", defaults.font_size),
         bg_color=_get("display", "bg_color", defaults.bg_color),
@@ -128,6 +130,7 @@ def save_config(cfg: Config, config_path: Path | None = None) -> None:
 [general]
 hotkey = {_toml_str(cfg.hotkey)}
 mode = {_toml_str(cfg.mode)}
+startup = {_toml_bool(cfg.startup)}
 
 [display]
 font_family = {_toml_str(cfg.font_family)}

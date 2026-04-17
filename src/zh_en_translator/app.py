@@ -55,6 +55,43 @@ def _render_icon_pixmap(size: int):
     return pixmap
 
 
+def _apply_startup_setting(enabled: bool, exe_path: str) -> None:
+    """Set or clear the Windows run-at-login registry entry for zh-en-translator.
+
+    Only operates on Windows and only when running as a frozen (PyInstaller) exe.
+    Safe to call from dev mode — it becomes a no-op.
+    """
+    if sys.platform != "win32":
+        return
+    if not exe_path:
+        return  # dev mode — skip
+    try:
+        import winreg
+        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+        app_name = "zh-en-translator"
+        with winreg.OpenKey(
+            winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE
+        ) as key:
+            if enabled:
+                winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, exe_path)
+                logger.info("Startup registry entry set: %s → %s", app_name, exe_path)
+            else:
+                try:
+                    winreg.DeleteValue(key, app_name)
+                    logger.info("Startup registry entry removed: %s", app_name)
+                except FileNotFoundError:
+                    pass  # already absent — that's fine
+    except Exception as e:
+        logger.warning("Could not update startup registry entry: %s", e)
+
+
+def _get_frozen_exe_path() -> str:
+    """Return the path to the packaged .exe, or '' when running from source."""
+    if getattr(sys, "frozen", False):
+        return sys.executable
+    return ""
+
+
 def _ensure_cedict_background() -> None:
     """Download full CC-CEDICT in background so it is ready on first popup use."""
     try:
@@ -114,6 +151,9 @@ class TranslatorApp(QObject):
         super().__init__()
 
         self.config: Config = load_config()
+
+        # Apply startup-on-login setting (Windows packaged exe only)
+        _apply_startup_setting(self.config.startup, _get_frozen_exe_path())
 
         # Warm CC-CEDICT cache in background so it is ready before first lookup
         threading.Thread(target=_ensure_cedict_background, daemon=True).start()
@@ -392,6 +432,7 @@ class TranslatorApp(QObject):
         current = _Config(
             hotkey=self.config.hotkey,
             mode="sidebar" if self.sidebar_mode else "popup",
+            startup=self.config.startup,
             font_family=self.config.font_family,
             font_size=self.config.font_size,
             bg_color=self.config.bg_color,
@@ -414,6 +455,9 @@ class TranslatorApp(QObject):
         old_hotkey = self.config.hotkey
         self.config = cfg
         save_config(cfg)
+
+        # Re-apply startup registry entry whenever settings change
+        _apply_startup_setting(cfg.startup, _get_frozen_exe_path())
 
         # Re-register hotkey if changed
         if cfg.hotkey != old_hotkey:
