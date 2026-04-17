@@ -30,10 +30,8 @@ hooks_dir  = Path(SPECPATH) / "runtime_hooks"
 # This is the most reliable approach for PyQt6 6.x where collect_all()
 # may miss DLLs due to changed package layout between minor versions.
 # ---------------------------------------------------------------------------
-import PyQt6 as _pyqt6_pkg
-_pyqt6_root = Path(_pyqt6_pkg.__file__).parent
-print(f"[spec] PyQt6 root: {_pyqt6_root}")
-print(f"[spec] PyQt6 version: {_pyqt6_pkg.QtCore.PYQT_VERSION_STR if hasattr(_pyqt6_pkg, 'QtCore') else 'unknown'}")
+import PyQt6.QtCore as _pyqt6_qtcore
+_pyqt6_root = Path(_pyqt6_qtcore.__file__).parent  # e.g. .../site-packages/PyQt6/
 
 # Walk PyQt6 tree: collect every file as a (src, dest_dir) tuple for datas.
 # This guarantees .pyd files, Qt DLLs, plugins, and translations all arrive.
