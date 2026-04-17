@@ -1,10 +1,12 @@
 """
 Runtime hook: extend Windows DLL search path before any imports.
 
-PyQt6 6.x places Qt DLLs in PyQt6/Qt6/bin/ (relative to the bundle root).
-In a PyInstaller onedir bundle on Windows, os.add_dll_directory() must be
-called early enough — before the first Qt import — otherwise Python raises
-ModuleNotFoundError for PyQt6.QtCore even though the .pyd file is present.
+PyQt6 6.x places Qt DLLs inside subdirectories of the PyQt6 package
+(e.g. PyQt6/Qt6/bin/). Windows doesn't search subdirectories automatically,
+so os.add_dll_directory() must be called before the first Qt import or
+Python raises ModuleNotFoundError even though the .pyd and DLLs are present.
+
+This hook runs before any user code (including PyQt6 imports).
 """
 import os
 import sys
@@ -12,14 +14,14 @@ import sys
 if sys.platform == "win32" and getattr(sys, "frozen", False):
     base = sys._MEIPASS
 
-    # The bundle root always needs to be on the DLL path
+    # Always add the bundle root
     os.add_dll_directory(base)
 
-    # PyQt6 6.x: Qt6 binaries live in PyQt6/Qt6/bin/
-    for candidate in (
-        os.path.join(base, "PyQt6", "Qt6", "bin"),
-        os.path.join(base, "PyQt6", "Qt6"),
-        os.path.join(base, "PyQt6"),
-    ):
-        if os.path.isdir(candidate):
-            os.add_dll_directory(candidate)
+    # Walk every subdirectory of the bundle and add any that contain DLLs.
+    # This covers all possible PyQt6 layouts across 6.x minor versions.
+    for root, dirs, files in os.walk(base):
+        if any(f.lower().endswith(".dll") for f in files):
+            try:
+                os.add_dll_directory(root)
+            except Exception:
+                pass
