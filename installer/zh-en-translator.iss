@@ -51,8 +51,8 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 ; Launch at Windows startup — default checked
 Name: "startup"; Description: "Launch {#MyAppName} when Windows starts"; GroupDescription: "Windows startup:"; Flags: checkedonce
-; Optional: Download and install Tesseract OCR as a fallback
-Name: "tesseract"; Description: "Download & install Tesseract OCR (Chinese Simplified)"; \
+; Optional: Tesseract OCR fallback — auto-checked if Windows OCR unavailable (see [Code])
+Name: "tesseract"; Description: "Download && install Tesseract OCR as Chinese OCR fallback (~30 MB)"; \
   GroupDescription: "Optional components:"; Flags: unchecked
 
 [Files]
@@ -78,20 +78,21 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
   Tasks: startup; Flags: uninsdeletevalue
 
 [Run]
-; 1. Download Argos zh→en translation model pack post-install (background)
+; 1. Download Argos zh->en translation model (Full install only — Check: IsFullInstall)
 Filename: "powershell.exe"; \
   Parameters: "-ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\download_packs.ps1"" ""{app}"""; \
-  Description: "Download translation model pack (required for offline translation)"; \
+  Description: "Download offline sentence translation model (~50-100 MB)"; \
+  Check: IsFullInstall; \
   Flags: postinstall runhidden nowait; \
-  StatusMsg: "Downloading translation model pack..."
+  StatusMsg: "Launching translation model download..."
 
-; 2. Download & install Tesseract (only if tesseract task is checked)
+; 2. Download & install Tesseract OCR (only if tesseract task is checked)
 Filename: "powershell.exe"; \
   Parameters: "-ExecutionPolicy Bypass -File ""{tmp}\install_tesseract.ps1"""; \
-  Description: "Installing Tesseract OCR..."; \
+  Description: "Download and install Tesseract OCR (~30 MB)"; \
   Tasks: tesseract; \
   Flags: postinstall nowait; \
-  StatusMsg: "Downloading and installing Tesseract OCR (~30 MB)..."
+  StatusMsg: "Downloading and installing Tesseract OCR..."
 
 ; 3. Launch the app after install (optional, user choice)
 Filename: "{app}\{#MyAppExeName}"; \
@@ -99,22 +100,129 @@ Filename: "{app}\{#MyAppExeName}"; \
   Flags: postinstall nowait skipifsilent
 
 [UninstallRun]
-; Remove startup registry entry on uninstall (belt-and-suspenders alongside [Registry] Flags)
+; Remove startup registry entry on uninstall
 Filename: "reg.exe"; \
   Parameters: "delete ""HKCU\Software\Microsoft\Windows\CurrentVersion\Run"" /v ""{#MyAppName}"" /f"; \
   Flags: runhidden; RunOnceId: "RemoveStartupEntry"
 
 [Code]
-// Provide a summary note on the Ready to Install page
+// ---------------------------------------------------------------------------
+// Install type radio-button page + Windows OCR check
+// ---------------------------------------------------------------------------
+
+var
+  InstallTypePage: TInputOptionWizardPage;
+  WinOcrAvailable: Boolean;
+  TesseractAutoChecked: Boolean;
+
+// ---------------------------------------------------------------------------
+// Check whether Windows.Media.Ocr has a Chinese recogniser installed.
+// Shells out to PowerShell; returns True if zh* language found.
+// ---------------------------------------------------------------------------
+function CheckWindowsOcrAvailable: Boolean;
+var
+  TempFile: String;
+  Script: String;
+  ResultCode: Integer;
+begin
+  TempFile := ExpandConstant('{tmp}\check_ocr.ps1');
+  Script :=
+    '[Windows.Media.Ocr.OcrEngine, Windows.Foundation, ContentType=WindowsRuntime] | Out-Null; ' +
+    '$langs = [Windows.Media.Ocr.OcrEngine]::AvailableRecognizerLanguages; ' +
+    '$zh = $langs | Where-Object { $_.LanguageTag -like "zh*" }; ' +
+    'if ($zh) { exit 0 } else { exit 1 }';
+  SaveStringToFile(TempFile, Script, False);
+  Result := Exec(
+    'powershell.exe',
+    '-ExecutionPolicy Bypass -NonInteractive -File "' + TempFile + '"',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode
+  ) and (ResultCode = 0);
+end;
+
+// ---------------------------------------------------------------------------
+// Called by [Run] Check: parameter — determines whether to download Argos
+// ---------------------------------------------------------------------------
+function IsFullInstall: Boolean;
+begin
+  Result := InstallTypePage.Values[0];
+end;
+
+// ---------------------------------------------------------------------------
+// Set up custom pages during wizard initialisation
+// ---------------------------------------------------------------------------
+procedure InitializeWizard;
+begin
+  TesseractAutoChecked := False;
+
+  // Check Windows OCR availability early (before wizard pages are shown)
+  WinOcrAvailable := CheckWindowsOcrAvailable();
+
+  // Create radio-button install-type page, inserted after the directory page
+  InstallTypePage := CreateInputOptionPage(
+    wpSelectDir,
+    'Installation Type',
+    'Choose the type of installation',
+    'Select the installation that best suits your needs:',
+    True,   // Exclusive = True renders as radio buttons
+    False   // ListBox = False (standard radio group, not list box)
+  );
+
+  InstallTypePage.Add(
+    'Full install (recommended)' + #13#10 +
+    '    Includes offline sentence translation. After install, the Argos ' +
+    'zh' + #226#134#146 + 'en model (~50-100 MB) is downloaded automatically.'
+  );
+  InstallTypePage.Add(
+    'Lite install' + #13#10 +
+    '    Dictionary lookup and pinyin only — no sentence translation. ' +
+    'No additional downloads required after install.'
+  );
+
+  // Default: Full install
+  InstallTypePage.Values[0] := True;
+end;
+
+// ---------------------------------------------------------------------------
+// When the Tasks page appears, auto-check Tesseract if Windows OCR is absent
+// ---------------------------------------------------------------------------
+procedure CurPageChanged(CurPageID: Integer);
+begin
+  if CurPageID = wpSelectTasks then
+  begin
+    if (not WinOcrAvailable) and (not TesseractAutoChecked) then
+    begin
+      // Pre-select Tesseract since Windows OCR won't handle Chinese
+      WizardSelectTasks('tesseract');
+      TesseractAutoChecked := True;
+    end;
+  end;
+end;
+
+// ---------------------------------------------------------------------------
+// Customise the "Ready to Install" summary memo
+// ---------------------------------------------------------------------------
 function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo,
   MemoTypeInfo, MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
+var
+  InstallType: String;
+  OcrNote: String;
 begin
-  Result := MemoDirInfo + NewLine + NewLine +
-    MemoGroupInfo + NewLine + NewLine +
-    MemoTasksInfo + NewLine + NewLine +
-    'Next steps:' + NewLine +
-    Space + '• Argos translation model (~50-100 MB) downloads after install' + NewLine +
-    Space + '• If Tesseract is checked, it will install as an OCR fallback' + NewLine +
-    Space + '• Internet connection required for initial downloads' + NewLine +
-    Space + '• Windows OCR will be used if available; Tesseract is optional.';
+  if IsFullInstall then
+    InstallType := 'Full install — dictionary, pinyin + offline sentence translation'
+  else
+    InstallType := 'Lite install — dictionary and pinyin only';
+
+  if not WinOcrAvailable then
+    OcrNote := NewLine +
+      'Note: Windows OCR for Chinese not detected. ' +
+      'Tesseract is recommended for OCR support.'
+  else
+    OcrNote := '';
+
+  Result :=
+    MemoDirInfo + NewLine + NewLine +
+    'Install type:' + NewLine +
+    Space + InstallType + NewLine + NewLine +
+    MemoTasksInfo +
+    OcrNote;
 end;
