@@ -69,21 +69,26 @@ if ($PyVer -ne "3.11") {
 }
 
 # ---------------------------------------------------------------------------
-# Step 1 — Verify PyInstaller is available
+# Step 1 — Verify PyInstaller is available via the active Python
+# Use "python -m PyInstaller" instead of the bare "pyinstaller" command so
+# we always use the interpreter that is currently active (venv or system).
 # ---------------------------------------------------------------------------
 Write-Step "Step 1: Checking PyInstaller availability"
 
-$PyInstaller = $null
-try {
-    $PyInstaller = (Get-Command pyinstaller -ErrorAction Stop).Source
-    Write-Ok "pyinstaller found at: $PyInstaller"
-} catch {
-    Write-Fail "pyinstaller not found in PATH."
+$PythonExe = (Get-Command python -ErrorAction Stop).Source
+Write-Ok "Python: $PythonExe"
+
+& python -m PyInstaller --version 2>&1 | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Write-Fail "PyInstaller not found in the active Python environment."
     Write-Host ""
     Write-Host "Install it with:" -ForegroundColor Yellow
     Write-Host "    pip install pyinstaller" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Make sure your venv is activated before running this script." -ForegroundColor Yellow
     exit 1
 }
+Write-Ok "PyInstaller found (via python -m PyInstaller)"
 
 # ---------------------------------------------------------------------------
 # Step 1.5 — Install package dependencies
@@ -129,8 +134,8 @@ if (-not $SkipPyInstaller) {
         "--noconfirm"
     )
 
-    Write-Host "    Command: pyinstaller $($PyInstallerArgs -join ' ')" -ForegroundColor Gray
-    & pyinstaller @PyInstallerArgs
+    Write-Host "    Command: python -m PyInstaller $($PyInstallerArgs -join ' ')" -ForegroundColor Gray
+    & python -m PyInstaller @PyInstallerArgs
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "PyInstaller exited with code $LASTEXITCODE"
         exit $LASTEXITCODE
