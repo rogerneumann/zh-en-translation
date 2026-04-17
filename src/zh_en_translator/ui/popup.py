@@ -54,6 +54,7 @@ class TranslatorPopup(QWidget):
         self._on_pin = on_pin
         self._dismissed = False
         self._pinned = False
+        self._drag_pos: QPoint | None = None
         self._worker: TranslationWorker | None = None
         self._pinyin_worker: PinyinWorker | None = None
         self._is_ocr_pending = is_ocr_pending
@@ -88,9 +89,17 @@ class TranslatorPopup(QWidget):
         layout.setContentsMargins(14, 8, 14, 12)
         layout.setSpacing(7)
 
-        # ── Header row (pin + close) ─────────────────────────────────────
+        # ── Header row (drag grip · stretch · pin · close) ───────────────
         header = QHBoxLayout()
         header.setSpacing(2)
+
+        self._drag_grip = QLabel("⠿")
+        self._drag_grip.setFixedSize(20, 20)
+        self._drag_grip.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._drag_grip.setCursor(Qt.CursorShape.SizeAllCursor)
+        self._drag_grip.setToolTip("Drag to move")
+        header.addWidget(self._drag_grip)
+
         header.addStretch()
 
         self.btn_pin = QPushButton("📌")
@@ -309,6 +318,9 @@ class TranslatorPopup(QWidget):
         )
         self.btn_pin.setStyleSheet(_hdr_pin)
         self.btn_close.setStyleSheet(_hdr)
+        self._drag_grip.setStyleSheet(
+            f"QLabel {{ color: {palette.muted}; background: transparent; font-size: 11pt; }}"
+        )
 
     def _apply_config(self, config):
         if config is None:
@@ -550,4 +562,25 @@ class TranslatorPopup(QWidget):
         self.close()
 
     def mousePressEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton:
+            # Start drag from any area that isn't an interactive child widget.
+            # QPushButton and QTextEdit absorb their own mouse events; QLabel with
+            # TextSelectableByMouse does too.  Everything else propagates here.
+            child = self.childAt(event.pos())
+            if not isinstance(child, (QPushButton, QTextEdit)):
+                self._drag_pos = (
+                    event.globalPosition().toPoint() - self.frameGeometry().topLeft()
+                )
+                self.setCursor(Qt.CursorShape.SizeAllCursor)
         super().mousePressEvent(event)
+
+    def mouseMoveEvent(self, event):
+        if self._drag_pos is not None and (event.buttons() & Qt.MouseButton.LeftButton):
+            self.move(event.globalPosition().toPoint() - self._drag_pos)
+        super().mouseMoveEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        if event.button() == Qt.MouseButton.LeftButton and self._drag_pos is not None:
+            self._drag_pos = None
+            self.unsetCursor()
+        super().mouseReleaseEvent(event)
