@@ -53,6 +53,24 @@ Write-Step "Working directory: $RepoRoot"
 # ---------------------------------------------------------------------------
 # Step 1 — Verify PyInstaller is available
 # ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Step 0 — Verify Python version is 3.11.x
+# ---------------------------------------------------------------------------
+Write-Step "Step 0: Checking Python version"
+
+$PyVer = python -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')" 2>&1
+if ($PyVer -ne "3.11") {
+    Write-Host "    WARNING: Python $PyVer detected. Recommended build version is 3.11." -ForegroundColor Yellow
+    Write-Host "    PyInstaller may not fully support newer Python versions for all dependencies." -ForegroundColor Yellow
+    Write-Host "    If the build fails or the app crashes with missing modules, switch to Python 3.11 x64." -ForegroundColor Yellow
+    Write-Host ""
+} else {
+    Write-Ok "Python $PyVer"
+}
+
+# ---------------------------------------------------------------------------
+# Step 1 — Verify PyInstaller is available
+# ---------------------------------------------------------------------------
 Write-Step "Step 1: Checking PyInstaller availability"
 
 $PyInstaller = $null
@@ -93,11 +111,22 @@ if (-not $SkipPyInstaller) {
         exit 1
     }
 
+    # Clean previous build to avoid stale DLLs/modules carrying over
+    $OldBundle = Join-Path $DistPath "zh-en-translator"
+    if (Test-Path $OldBundle) {
+        Write-Host "    Removing old bundle: $OldBundle" -ForegroundColor Gray
+        Remove-Item -Recurse -Force $OldBundle
+    }
+    if (Test-Path $WorkPath) {
+        Write-Host "    Removing old work dir: $WorkPath" -ForegroundColor Gray
+        Remove-Item -Recurse -Force $WorkPath
+    }
+
     $PyInstallerArgs = @(
         $SpecFile,
         "--distpath", $DistPath,
         "--workpath", $WorkPath,
-        "--noconfirm"   # overwrite existing dist without prompting
+        "--noconfirm"
     )
 
     Write-Host "    Command: pyinstaller $($PyInstallerArgs -join ' ')" -ForegroundColor Gray
