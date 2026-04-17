@@ -78,21 +78,10 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; \
   Tasks: startup; Flags: uninsdeletevalue
 
 [Run]
-; 1. Download Argos zh->en translation model (Full install only — Check: IsFullInstall)
-Filename: "powershell.exe"; \
-  Parameters: "-ExecutionPolicy Bypass -WindowStyle Hidden -File ""{app}\download_packs.ps1"" ""{app}"""; \
-  Description: "Download offline sentence translation model (~50-100 MB)"; \
-  Check: IsFullInstall; \
-  Flags: postinstall runhidden nowait; \
-  StatusMsg: "Launching translation model download..."
+; 1. Argos model download — moved to [Code] CurStepChanged(ssPostInstall)
+;    so it runs inside the installer with a visible terminal showing progress.
 
-; 2. Download & install Tesseract OCR (only if tesseract task is checked)
-Filename: "powershell.exe"; \
-  Parameters: "-ExecutionPolicy Bypass -File ""{tmp}\install_tesseract.ps1"""; \
-  Description: "Download and install Tesseract OCR (~30 MB)"; \
-  Tasks: tesseract; \
-  Flags: postinstall nowait; \
-  StatusMsg: "Downloading and installing Tesseract OCR..."
+; 2. Tesseract (only if task is checked) — runs during install phase via [Code]
 
 ; 3. Launch the app after install (optional, user choice)
 Filename: "{app}\{#MyAppExeName}"; \
@@ -194,6 +183,63 @@ begin
       // Pre-select Tesseract since Windows OCR won't handle Chinese
       WizardSelectTasks('tesseract');
       TesseractAutoChecked := True;
+    end;
+  end;
+end;
+
+
+// ---------------------------------------------------------------------------
+// Run downloads during install phase — visible terminal shows progress.
+// Both Argos and Tesseract run synchronously so Finish page only appears
+// after downloads complete (no surprise background popups).
+// ---------------------------------------------------------------------------
+procedure CurStepChanged(CurStep: TSetupStep);
+var
+  ResultCode: Integer;
+begin
+  if CurStep = ssPostInstall then
+  begin
+    // Argos translation model (Full install only)
+    if IsFullInstall then
+    begin
+      WizardForm.StatusLabel.Caption :=
+        'Downloading offline translation model (~50-100 MB)...' + #13#10 +
+        'A terminal window shows download progress. Please wait.';
+      WizardForm.FilenameLabel.Caption := '';
+      WizardForm.Update();
+      // SW_SHOWNORMAL: visible terminal so user can watch progress
+      // ewWaitUntilTerminated: installer waits here until download is done
+      Exec('powershell.exe',
+        '-ExecutionPolicy Bypass' +
+        ' -File "' + ExpandConstant('{app}\download_packs.ps1') + '"' +
+        ' "' + ExpandConstant('{app}') + '"',
+        ExpandConstant('{app}'),
+        SW_SHOWNORMAL, ewWaitUntilTerminated, ResultCode);
+      if ResultCode <> 0 then
+        MsgBox(
+          'Translation model download failed (exit code ' + IntToStr(ResultCode) + ').' + #13#10 +
+          'The app still works for dictionary and pinyin lookups.' + #13#10 +
+          'To retry later, run download_packs.ps1 from the install folder.',
+          mbInformation, MB_OK);
+    end;
+    // Tesseract OCR (only if task was checked)
+    if WizardIsTaskSelected('tesseract') then
+    begin
+      WizardForm.StatusLabel.Caption :=
+        'Downloading and installing Tesseract OCR (~30 MB)...' + #13#10 +
+        'A terminal window shows installation progress. Please wait.';
+      WizardForm.Update();
+      Exec('powershell.exe',
+        '-ExecutionPolicy Bypass' +
+        ' -File "' + ExpandConstant('{tmp}\install_tesseract.ps1') + '"',
+        '',
+        SW_SHOWNORMAL, ewWaitUntilTerminated, ResultCode);
+      if ResultCode <> 0 then
+        MsgBox(
+          'Tesseract installation failed.' + #13#10 +
+          'Install manually from https://github.com/UB-Mannheim/tesseract/wiki' + #13#10 +
+          'Select the chi_sim (Chinese Simplified) language pack during setup.',
+          mbInformation, MB_OK);
     end;
   end;
 end;
