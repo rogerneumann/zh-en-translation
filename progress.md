@@ -611,10 +611,11 @@ are untouched.
 **Scope**: Single-file Windows installer, startup-on-login, OCR fallback, post-install Argos model download.
 
 **Delivered**:
-- `installer/zh-en-translator.spec` — PyInstaller onedir spec; no UPX (breaks ctranslate2/sentencepiece DLLs); excludes stanza/torch/paddle; collects PyQt6, ctranslate2, argostranslate data files. Total bundle ~240–290 MB.
-- `installer/zh-en-translator.iss` — Inno Setup 6 script producing a single `zh-en-translator-setup.exe`. Win 10/11 x64, user-level install (no admin). Tasks: desktop shortcut (unchecked), startup-on-login (checked). Post-install: Argos zh→en pack downloaded silently; Windows OCR checked — if unavailable, offers Tesseract download.
-- `installer/build.ps1` — one-command build script: `pyinstaller → iscc`.
+- `installer/zh-en-translator.spec` — PyInstaller onedir spec; no UPX (breaks ctranslate2/sentencepiece DLLs); excludes stanza/torch/paddle; explicit PyQt6.QtCore/QtGui/QtWidgets + `collect_submodules("PyQt6")` to fix bundling on Windows; collects ctranslate2, argostranslate data files. Total bundle ~240–290 MB.
+- `installer/zh-en-translator.iss` — Inno Setup 6 script producing a single `zh-en-translator-setup.exe`. Win 10/11 x64, user-level install (no admin). **Installation directory page shown explicitly**. Tasks: desktop shortcut (unchecked), startup-on-login (checked), **Tesseract OCR (unchecked — optional)**. Post-install: Argos zh→en pack downloads silently; Tesseract downloads+installs if checkbox ticked. CRLF line endings.
+- `installer/build.ps1` — one-command build script: runs `pip install -e .` first (ensures deps), then `pyinstaller → iscc`.
 - `installer/download_packs.ps1` — post-install Argos model downloader (called by Inno Setup [Run]).
+- `installer/install_tesseract.ps1` — dedicated Tesseract downloader/installer script (new).
 - `config.py` — `startup: bool = True` field added (load + save).
 - `app.py` — `_apply_startup_setting()` writes/clears `HKCU\…\Run` on startup and on each preferences-apply; no-op in dev mode (`sys.frozen` guard).
 - `preferences.py` — "Windows Startup" checkbox in General tab; wired to dirty flag.
@@ -623,8 +624,9 @@ are untouched.
 - Output is a single `.exe` (self-extracting via Inno Setup), not MSI. Equivalent UX; no WiX needed.
 - Argos model pack is downloaded post-install (not bundled) — keeps installer ~240–290 MB instead of ~390 MB.
 - Unsigned for v1; SmartScreen warning expected until a code-signing cert is obtained.
+- Tesseract is now an **optional checkbox task** (unchecked by default), not a pop-up offer.
 
-**Build instructions** (on a Windows machine):
+**Build instructions** (on a Windows machine with Python 3.11 x64):
 ```powershell
 # Install build tools
 pip install pyinstaller
@@ -632,17 +634,20 @@ pip install pyinstaller
 
 # From repo root:
 .\installer\build.ps1
+# Runs: pip install -e . (deps) → pyinstaller → iscc
 # Output: installer\Output\zh-en-translator-setup.exe
 ```
 
 **Manual test checklist for Windows 11**:
-- [ ] `.\installer\build.ps1` completes without errors
-- [ ] `installer\Output\zh-en-translator-setup.exe` produced (~240–290 MB)
-- [ ] Installer runs on clean Win 11 VM; no runtime deps needed
-- [ ] Post-install: Argos model download runs (or offers manual install)
-- [ ] OCR: if no Chinese Windows OCR pack, Tesseract download is offered
-- [ ] Startup checkbox in installer creates HKCU Run entry; app launches on next login
-- [ ] Startup checkbox in Preferences updates Run entry live
+- [x] `.\installer\build.ps1` completes without errors
+- [x] `installer\Output\zh-en-translator-setup.exe` produced (~240–290 MB)
+- [x] Installer shows directory page; user can see installation path
+- [x] Tasks page shows: desktop shortcut, startup-on-login, Tesseract (optional)
+- [x] Argos model downloads post-install silently
+- [x] Tesseract downloads+installs when checkbox ticked (~30 MB)
+- [x] Startup checkbox creates HKCU Run entry; app launches on next login
+- [x] Startup checkbox in Preferences updates Run entry live
+- [ ] Tested on clean Win 10/11 VM (pending)
 
 ---
 
