@@ -294,30 +294,21 @@ class TranslatorPopup(QWidget):
                 border: 1px solid rgba(0,160,255,0.5);
                 color: {palette.text};
             }}
-            QPushButton#headerBtn {{
-                border: none;
-                border-radius: 5px;
-                padding: 1px;
-                min-height: 0;
-                font-size: 11pt;
-                color: {palette.muted};
-            }}
-            QPushButton#headerBtn:hover {{
-                background: {palette.btn_hover};
-                color: {palette.text};
-                border: none;
-            }}
-            QPushButton#headerBtn:checked {{
-                background: rgba(0,160,255,0.15);
-                border: 1px solid rgba(0,160,255,0.4);
-                color: {palette.text};
-            }}
         """)
-        # Tag the header buttons so they get the headerBtn style
-        self.btn_pin.setObjectName("headerBtn")
-        self.btn_close.setObjectName("headerBtn")
-        # Re-apply stylesheet to pick up object name rules
-        self.setStyleSheet(self.styleSheet())
+        # Style the small header buttons directly — avoids objectName/re-apply
+        # timing issues where Qt skips re-evaluation of an unchanged stylesheet.
+        _hdr = (
+            f"QPushButton {{ background: transparent; border: none; border-radius: 5px;"
+            f" padding: 2px; font-size: 11pt; color: {palette.muted}; }}"
+            f"QPushButton:hover {{ background: {palette.btn_hover}; color: {palette.text}; }}"
+            f"QPushButton:disabled {{ color: {palette.muted}; background: transparent; }}"
+        )
+        _hdr_pin = _hdr + (
+            f"QPushButton:checked {{ background: rgba(0,160,255,0.15);"
+            f" border: 1px solid rgba(0,160,255,0.4); color: {palette.text}; }}"
+        )
+        self.btn_pin.setStyleSheet(_hdr_pin)
+        self.btn_close.setStyleSheet(_hdr)
 
     def _apply_config(self, config):
         if config is None:
