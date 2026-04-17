@@ -1,0 +1,187 @@
+#Requires -Version 5.1
+<#
+.SYNOPSIS
+    Build zh-en-translator: PyInstaller bundle + Inno Setup installer.
+
+.DESCRIPTION
+    1. Verifies pyinstaller is available in the current Python environment.
+    2. Runs PyInstaller to build the onedir bundle under dist\zh-en-translator\.
+    3. Locates iscc.exe (Inno Setup compiler).
+    4. Runs iscc to produce installer\Output\zh-en-translator-setup.exe.
+
+.EXAMPLE
+    # From the repo root:
+    .\installer\build.ps1
+
+    # To skip PyInstaller (e.g. bundle already built) and just compile the installer:
+    .\installer\build.ps1 -SkipPyInstaller
+#>
+
+[CmdletBinding()]
+param(
+    [switch] $SkipPyInstaller,
+    [string] $DistPath  = "dist",
+    [string] $WorkPath  = "build"
+)
+
+Set-StrictMode -Version Latest
+$ErrorActionPreference = "Stop"
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+function Write-Step([string]$msg) {
+    Write-Host ""
+    Write-Host "==> $msg" -ForegroundColor Cyan
+}
+
+function Write-Ok([string]$msg) {
+    Write-Host "    OK: $msg" -ForegroundColor Green
+}
+
+function Write-Fail([string]$msg) {
+    Write-Host "    FAIL: $msg" -ForegroundColor Red
+}
+
+# ---------------------------------------------------------------------------
+# Locate repo root (script lives in installer\, repo root is one level up)
+# ---------------------------------------------------------------------------
+$RepoRoot = Split-Path -Parent $PSScriptRoot
+Set-Location $RepoRoot
+Write-Step "Working directory: $RepoRoot"
+
+# ---------------------------------------------------------------------------
+# Step 1 — Verify PyInstaller is available
+# ---------------------------------------------------------------------------
+Write-Step "Step 1: Checking PyInstaller availability"
+
+$PyInstaller = $null
+try {
+    $PyInstaller = (Get-Command pyinstaller -ErrorAction Stop).Source
+    Write-Ok "pyinstaller found at: $PyInstaller"
+} catch {
+    Write-Fail "pyinstaller not found in PATH."
+    Write-Host ""
+    Write-Host "Install it with:" -ForegroundColor Yellow
+    Write-Host "    pip install pyinstaller" -ForegroundColor Yellow
+    exit 1
+}
+
+# ---------------------------------------------------------------------------
+# Step 2 — Run PyInstaller
+# ---------------------------------------------------------------------------
+if (-not $SkipPyInstaller) {
+    Write-Step "Step 2: Running PyInstaller"
+
+    $SpecFile = Join-Path $PSScriptRoot "zh-en-translator.spec"
+    if (-not (Test-Path $SpecFile)) {
+        Write-Fail "Spec file not found: $SpecFile"
+        exit 1
+    }
+
+    $PyInstallerArgs = @(
+        $SpecFile,
+        "--distpath", $DistPath,
+        "--workpath", $WorkPath,
+        "--noconfirm"   # overwrite existing dist without prompting
+    )
+
+    Write-Host "    Command: pyinstaller $($PyInstallerArgs -join ' ')" -ForegroundColor Gray
+    & pyinstaller @PyInstallerArgs
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "PyInstaller exited with code $LASTEXITCODE"
+        exit $LASTEXITCODE
+    }
+
+    $BundleDir = Join-Path $DistPath "zh-en-translator"
+    if (-not (Test-Path $BundleDir)) {
+        Write-Fail "Expected bundle directory not found: $BundleDir"
+        exit 1
+    }
+    Write-Ok "Bundle produced at: $BundleDir"
+} else {
+    Write-Step "Step 2: Skipping PyInstaller (--SkipPyInstaller flag set)"
+    $BundleDir = Join-Path $DistPath "zh-en-translator"
+    if (-not (Test-Path $BundleDir)) {
+        Write-Fail "Bundle directory not found: $BundleDir"
+        Write-Host "    Run without -SkipPyInstaller first." -ForegroundColor Yellow
+        exit 1
+    }
+    Write-Ok "Using existing bundle at: $BundleDir"
+}
+
+# ---------------------------------------------------------------------------
+# Step 3 — Locate Inno Setup compiler (iscc.exe)
+# ---------------------------------------------------------------------------
+Write-Step "Step 3: Locating Inno Setup compiler (iscc.exe)"
+
+$IsccCandidates = @(
+    "C:\Program Files (x86)\Inno Setup 6\iscc.exe",
+    "C:\Program Files\Inno Setup 6\iscc.exe",
+    "C:\Program Files (x86)\Inno Setup 5\iscc.exe",
+    "C:\Program Files\Inno Setup 5\iscc.exe"
+)
+
+$Iscc = $null
+
+# First, try PATH
+try {
+    $Iscc = (Get-Command iscc -ErrorAction Stop).Source
+    Write-Ok "iscc.exe found in PATH: $Iscc"
+} catch {
+    # Search known installation directories
+    foreach ($candidate in $IsccCandidates) {
+        if (Test-Path $candidate) {
+            $Iscc = $candidate
+            Write-Ok "iscc.exe found at: $Iscc"
+            break
+        }
+    }
+}
+
+if (-not $Iscc) {
+    Write-Fail "Inno Setup compiler (iscc.exe) not found."
+    Write-Host ""
+    Write-Host "Install Inno Setup 6 from:" -ForegroundColor Yellow
+    Write-Host "    https://jrsoftware.org/isdl.php" -ForegroundColor Yellow
+    Write-Host ""
+    Write-Host "Searched paths:" -ForegroundColor Yellow
+    foreach ($c in $IsccCandidates) { Write-Host "    $c" -ForegroundColor Yellow }
+    exit 1
+}
+
+# ---------------------------------------------------------------------------
+# Step 4 — Run Inno Setup compiler
+# ---------------------------------------------------------------------------
+Write-Step "Step 4: Compiling installer with Inno Setup"
+
+$IssFile = Join-Path $PSScriptRoot "zh-en-translator.iss"
+if (-not (Test-Path $IssFile)) {
+    Write-Fail "Inno Setup script not found: $IssFile"
+    exit 1
+}
+
+Write-Host "    Command: $Iscc $IssFile" -ForegroundColor Gray
+& $Iscc $IssFile
+if ($LASTEXITCODE -ne 0) {
+    Write-Fail "Inno Setup compiler exited with code $LASTEXITCODE"
+    exit $LASTEXITCODE
+}
+
+# ---------------------------------------------------------------------------
+# Step 5 — Report output
+# ---------------------------------------------------------------------------
+Write-Step "Step 5: Build complete"
+
+$OutputFile = Join-Path $PSScriptRoot "Output\zh-en-translator-setup.exe"
+if (Test-Path $OutputFile) {
+    $Size = (Get-Item $OutputFile).Length
+    $SizeMB = [math]::Round($Size / 1MB, 1)
+    Write-Ok "Installer produced: $OutputFile ($SizeMB MB)"
+} else {
+    Write-Host "    WARNING: Expected output file not found: $OutputFile" -ForegroundColor Yellow
+    Write-Host "    Check Inno Setup output above for the actual output path." -ForegroundColor Yellow
+}
+
+Write-Host ""
+Write-Host "Done!" -ForegroundColor Green

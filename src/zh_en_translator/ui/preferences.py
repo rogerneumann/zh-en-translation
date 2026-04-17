@@ -95,6 +95,7 @@ class PreferencesDialog(QDialog):
         self.config = Config(
             hotkey=config.hotkey,
             mode=config.mode,
+            startup=config.startup,
             font_family=config.font_family,
             font_size=config.font_size,
             bg_color=config.bg_color,
@@ -184,6 +185,20 @@ class PreferencesDialog(QDialog):
         self._trad_to_simp_check = QCheckBox("Convert Traditional → Simplified automatically")
         trad_layout.addWidget(self._trad_to_simp_check)
         layout.addWidget(trad_group)
+
+        startup_group = QGroupBox("Windows Startup")
+        startup_layout = QVBoxLayout(startup_group)
+        self._startup_check = QCheckBox("Launch at Windows startup")
+        startup_layout.addWidget(self._startup_check)
+        startup_hint = QLabel(
+            "When enabled, zh-en-translator is added to HKCU\\...\\Run "
+            "so it starts automatically when you log in.\n"
+            "Only takes effect when running the installed .exe (not in dev mode)."
+        )
+        startup_hint.setWordWrap(True)
+        startup_hint.setStyleSheet("color: gray; font-size: 9pt;")
+        startup_layout.addWidget(startup_hint)
+        layout.addWidget(startup_group)
 
         layout.addStretch()
         return widget
@@ -532,6 +547,7 @@ class PreferencesDialog(QDialog):
         self._hotkey_edit.textChanged.connect(self._mark_dirty)
         self._mode_group.buttonClicked.connect(self._mark_dirty)
         self._trad_to_simp_check.toggled.connect(self._mark_dirty)
+        self._startup_check.toggled.connect(self._mark_dirty)
         self._side_group.buttonClicked.connect(self._mark_dirty)
         self._color_fresh_btn.color_changed.connect(self._mark_dirty)
         self._color_idle_btn.color_changed.connect(self._mark_dirty)
@@ -558,6 +574,7 @@ class PreferencesDialog(QDialog):
         else:
             self._mode_popup.setChecked(True)
         self._trad_to_simp_check.setChecked(cfg.traditional_to_simplified)
+        self._startup_check.setChecked(cfg.startup)
 
         # Display
         theme_index = self._theme_combo.findData(cfg.theme)
@@ -607,6 +624,7 @@ class PreferencesDialog(QDialog):
         return Config(
             hotkey=self._hotkey_edit.text().strip() or self.config.hotkey,
             mode=mode,
+            startup=self._startup_check.isChecked(),
             font_family=font_family,
             font_size=self._font_size_spin.value(),
             bg_color=self._bg_color_btn.get_color_str(),
