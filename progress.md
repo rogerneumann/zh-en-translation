@@ -596,8 +596,19 @@ Users can now click-and-drag the popup to any position on screen:
 
 ---
 
+## Cloud tab disabled (post-M10)
+
+Azure is the only wired-up cloud provider and requires an Azure account/API key.
+The Cloud tab has been hidden from the Preferences dialog until a better provider
+(e.g. DeepL free tier) is chosen and implemented. One line in `preferences.py`
+`_setup_ui` is commented out to re-enable it; all backend code and config fields
+are untouched.
+
+---
+
 ## Open questions / risks
 
 - **MSI code signing** — deferred; SmartScreen warning until cert available.
 - **Sidebar translation history** — currently shows only last translation; future: scrollable history.
+- **Cloud provider** — Azure requires account/CC; DeepL free tier (500K chars/month, no CC) is the leading candidate to replace or supplement it.
 

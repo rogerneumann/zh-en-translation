@@ -139,7 +139,8 @@ class PreferencesDialog(QDialog):
         self._tabs.addTab(self._build_display_tab(),    "Display")
         self._tabs.addTab(self._build_sidebar_tab(),    "Sidebar")
         self._tabs.addTab(self._build_lookup_ocr_tab(), "Lookup && OCR")
-        self._tabs.addTab(self._build_cloud_tab(),      "Cloud")
+        # Cloud tab built but not shown — re-enable when a provider is chosen
+        # self._tabs.addTab(self._build_cloud_tab(), "Cloud")
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
