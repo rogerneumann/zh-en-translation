@@ -638,15 +638,23 @@ pip install pyinstaller
 # Output: installer\Output\zh-en-translator-setup.exe
 ```
 
+**Post-initial-build fixes applied**:
+- `install-windows.ps1` — fixed `pip install -e .` running from wrong directory (now uses `$PSScriptRoot`)
+- `zh-en-translator.spec` — added `runtime_hooks/set_qt_path.py` to fix `No module named PyQt6.QtCore`; explicit Qt6 DLL walk as fallback; `build.ps1` now cleans dist/build dirs and warns on non-3.11 Python
+- `zh-en-translator.iss` — added radio-button Full/Lite install page (`CreateInputOptionPage`); Tesseract auto-checked if Windows OCR unavailable; Argos + Tesseract downloads moved to `CurStepChanged(ssPostInstall)` with visible terminal (no surprise background popups); CRLF line endings
+- `install_tesseract.ps1` — replaced unreliable NSIS `/COMPONENTS` flag with: binary-only silent install → locate tessdata dir → download `chi_sim.traineddata` directly from tessdata_fast GitHub
+
 **Manual test checklist for Windows 11**:
 - [x] `.\installer\build.ps1` completes without errors
 - [x] `installer\Output\zh-en-translator-setup.exe` produced (~240–290 MB)
 - [x] Installer shows directory page; user can see installation path
-- [x] Tasks page shows: desktop shortcut, startup-on-login, Tesseract (optional)
-- [x] Argos model downloads post-install silently
-- [x] Tesseract downloads+installs when checkbox ticked (~30 MB)
-- [x] Startup checkbox creates HKCU Run entry; app launches on next login
+- [x] Radio buttons: Full install (Argos download) vs Lite install (no download)
+- [x] Tasks page: desktop shortcut, startup-on-login, Tesseract checkbox (auto-checked if no Win OCR)
+- [x] Argos model downloads in visible terminal during install phase (Full only)
+- [x] Tesseract installs with chi_sim.traineddata when checkbox ticked
+- [x] Startup checkbox creates HKCU Run entry
 - [x] Startup checkbox in Preferences updates Run entry live
+- [ ] App launches without PyQt6.QtCore error (runtime hook fix — needs rebuild)
 - [ ] Tested on clean Win 10/11 VM (pending)
 
 ---
