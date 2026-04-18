@@ -20,15 +20,22 @@ from zh_en_translator.engines.translation_worker import TranslationWorker
 logger = logging.getLogger(__name__)
 
 
-def _svg_icon_path() -> str:
-    """Return the filesystem path to translation_icn.svg bundled in resources."""
+def _resources_dir():
+    """Return the resources/ directory, works both in source and frozen (PyInstaller) builds."""
+    import sys
     from pathlib import Path
-    return str(Path(__file__).parent / "resources" / "translation_icn.svg")
+    if getattr(sys, "frozen", False) and hasattr(sys, "_MEIPASS"):
+        # PyInstaller onedir: data files land in sys._MEIPASS/zh_en_translator/resources/
+        return Path(sys._MEIPASS) / "zh_en_translator" / "resources"
+    return Path(__file__).parent / "resources"
+
+
+def _svg_icon_path() -> str:
+    return str(_resources_dir() / "translation_icn.svg")
 
 
 def _png_icon_path(size: int) -> str:
-    from pathlib import Path
-    resources = Path(__file__).parent / "resources"
+    resources = _resources_dir()
     candidate = resources / f"icon_{size}.png"
     return str(candidate if candidate.exists() else resources / "icon.png")
 
@@ -36,16 +43,18 @@ def _png_icon_path(size: int) -> str:
 def _render_svg_icon(size: int) -> "QPixmap":
     """Render translation_icn.svg at the given pixel size.
 
-    Tries QSvgRenderer first (crisp vector), then falls back to the
-    pre-rendered PNG files bundled in resources/.
+    Tries QSvgRenderer first (crisp vector), then pre-rendered PNGs.
+    Raises RuntimeError if neither source is usable.
     """
     from pathlib import Path
     try:
         from PyQt6.QtSvg import QSvgRenderer
         from PyQt6.QtCore import QRectF as _QRectF
+        renderer = QSvgRenderer(_svg_icon_path())
+        if not renderer.isValid():
+            raise RuntimeError("SVG renderer invalid — file missing or malformed")
         pixmap = QPixmap(size, size)
         pixmap.fill(Qt.GlobalColor.transparent)
-        renderer = QSvgRenderer(_svg_icon_path())
         painter = QPainter(pixmap)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         renderer.render(painter, _QRectF(0, 0, size, size))
@@ -54,7 +63,7 @@ def _render_svg_icon(size: int) -> "QPixmap":
     except Exception:
         pass
 
-    # QtSvg unavailable — load the pre-rendered PNG
+    # QtSvg unavailable or SVG invalid — load the pre-rendered PNG
     png = _png_icon_path(size)
     if Path(png).exists():
         pm = QPixmap(png)
