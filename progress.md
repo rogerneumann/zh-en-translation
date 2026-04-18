@@ -659,6 +659,46 @@ pip install pyinstaller
 
 ---
 
+## Post-overhaul bug fixes + icon redesign
+
+### Preferences dialog kills app silently (fix)
+
+**Root cause**: `QApplication.setQuitOnLastWindowClosed` defaults to `True`. In tray-only mode
+the Preferences dialog is the only visible window; when the user closes it Qt calls `app.quit()`.
+
+**Fix**: `self.app.setQuitOnLastWindowClosed(False)` added to `TranslatorApp.__init__`.
+
+**Secondary bugs fixed in the same pass**:
+- `_open_preferences` Config snapshot was missing `theme`, `sidebar_width`, `show_pinyin`,
+  `pinyin_max_chars` — those user settings silently reverted to defaults on every prefs save.
+- `startup` was not carried through `PreferencesDialog.__init__` Config copy or `_collect_config`,
+  so saving Preferences always reset startup-on-login to `True`. Both paths now preserve
+  `startup=self.config.startup`.
+
+### 文 app icon
+
+Replaced the programmatically drawn `中` glyph icon with a custom `文` (language/writing) SVG:
+
+- `translation_icn.svg` (root + `src/zh_en_translator/resources/`) — teal rounded square
+  (`#2B6E6A`) with soft mint strokes (`#C4EDE7`).
+- Pre-rendered PNGs at 16/24/32/48/64/128/256/512 px (4× supersample + LANCZOS downsample)
+  bundled in `src/zh_en_translator/resources/`.
+- `app.py _create_icon()` resolution chain:
+  1. `QSvgRenderer` — crisp vector at any DPI (requires Qt SVG plugin)
+  2. Pre-rendered PNGs — fallback if QtSvg not bundled
+  3. Pure Qt painter — last resort, programmatically draws the same 文 design
+- `installer/build.ps1` — `"--hidden-import", "PyQt6.QtSvg"` added to `$PyInstallerArgs`.
+- `installer/zh-en-translator.spec` — `"PyQt6.QtSvg"` added to `hidden_imports`.
+- `pyproject.toml` — `package-data` entry for `*.svg`, `*.png`, `*.txt` in `resources/`.
+
+### Installer files tracked in git
+
+All `installer/` files (`build.ps1`, `zh-en-translator.spec`, `zh-en-translator.iss`,
+`install_tesseract.ps1`, `after_install.txt`, `runtime_hooks/set_qt_path.py`) were previously
+only on the Windows build machine. Now committed to the repo — full build is reproducible from git.
+
+---
+
 ## Open questions / risks
 
 - **MSI code signing** — deferred; SmartScreen warning until cert available.
