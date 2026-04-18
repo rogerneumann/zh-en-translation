@@ -128,11 +128,7 @@ if (-not $SkipPyInstaller) {
         $SpecFile,
         "--distpath", $DistPath,
         "--workpath", $WorkPath,
-        "--noconfirm",
-        # Ensure Qt SVG plugin is bundled so the app icon loads from the SVG file.
-        # The spec also declares this in hidden_imports, but passing it here too
-        # guarantees it even if the spec is regenerated or edited.
-        "--hidden-import", "PyQt6.QtSvg"
+        "--noconfirm"
     )
 
     Write-Host "    Command: python -m PyInstaller $($PyInstallerArgs -join ' ')" -ForegroundColor Gray
