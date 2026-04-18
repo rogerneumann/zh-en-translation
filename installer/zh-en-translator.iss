@@ -225,6 +225,7 @@ begin
           mbInformation, MB_OK);
     end;
     // Tesseract OCR (only if task was checked)
+    // Script always exits 0; Tesseract is optional so no error dialog shown.
     if WizardIsTaskSelected('tesseract') then
     begin
       WizardForm.StatusLabel.Caption :=
@@ -236,12 +237,7 @@ begin
         ' -File "' + ExpandConstant('{tmp}\install_tesseract.ps1') + '"',
         '',
         SW_SHOWNORMAL, ewWaitUntilTerminated, ResultCode);
-      if ResultCode <> 0 then
-        MsgBox(
-          'Tesseract installation failed.' + #13#10 +
-          'Install manually from https://github.com/UB-Mannheim/tesseract/wiki' + #13#10 +
-          'Select the chi_sim (Chinese Simplified) language pack during setup.',
-          mbInformation, MB_OK);
+      // ResultCode ignored — Tesseract is optional; failures are non-fatal.
     end;
   end;
 end;
