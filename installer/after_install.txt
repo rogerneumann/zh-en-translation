@@ -1,0 +1,66 @@
+=====================================
+ Welcome to zh-en-translator!
+=====================================
+
+SYSTEM TRAY
+-----------
+The app runs quietly in the system tray (bottom-right of your taskbar).
+Look for the teal 文 icon — right-click it for all options.
+
+The app starts automatically with Windows (if you left that option checked
+during install). You can toggle this any time in Preferences > General.
+
+
+DEFAULT HOTKEY:  Ctrl + Shift + T
+----------------------------------
+1. Select Chinese text in any application
+   (Word, browser, Notepad, email, PDF viewer — anywhere that supports copy)
+2. Press  Ctrl + Shift + T
+3. A popup appears with:
+     - Full English sentence translation
+     - Pinyin pronunciation above characters
+     - Word-by-word breakdown
+
+Press Esc or click outside the popup to dismiss it.
+
+
+CHANGING THE HOTKEY
+-------------------
+Right-click the tray icon -> Preferences -> General tab -> Hotkey field.
+Click the field, type your new shortcut (e.g. Ctrl+Alt+T), then Apply.
+
+
+TRANSLATION MODES
+-----------------
+Popup mode  (default): translation floats near your cursor.
+Sidebar mode          : a panel docks to the left or right screen edge.
+
+Switch modes via:  right-click tray icon -> Switch to Sidebar
+                   or: Preferences -> General -> Mode
+
+
+OCR (IMAGE TRANSLATION)
+-----------------------
+Copy an image containing Chinese text to your clipboard, then press the
+hotkey. The app will extract the text via OCR and translate it.
+
+Windows OCR is used by default. If you installed Tesseract during setup,
+it is available as a fallback (configurable in Preferences -> OCR).
+
+
+FIRST RUN NOTE
+--------------
+If you chose "Full install", the offline sentence translation model
+(~50-100 MB) was downloading in the background during setup.
+
+Dictionary lookup and pinyin work immediately from first launch.
+Sentence translation becomes available once the download completes.
+
+If the download was interrupted, run this from the install folder:
+  powershell -File download_packs.ps1
+
+
+MORE INFORMATION
+----------------
+GitHub: https://github.com/rogerneumann/zh-en-translation
+Issues: https://github.com/rogerneumann/zh-en-translation/issues
