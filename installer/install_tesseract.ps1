@@ -5,6 +5,9 @@
     Exits 0 in all cases — OCR is optional, failures are informational only.
 #>
 
+# Global trap: any terminating error still exits 0 (Tesseract is optional).
+trap { Write-Host "Unexpected error (non-fatal): $_" -ForegroundColor Yellow; exit 0 }
+
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Continue"
 
