@@ -17,9 +17,6 @@ AppId={{A7C3E2D1-4F8B-4A2E-9C1D-3B6F5E8A0D2C}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
-AppPublisherURL=https://github.com/{#MyAppPublisher}/zh-en-translator
-AppSupportURL=https://github.com/{#MyAppPublisher}/zh-en-translator/issues
-AppUpdatesURL=https://github.com/{#MyAppPublisher}/zh-en-translator/releases
 DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
@@ -40,8 +37,9 @@ ArchitecturesInstallIn64BitMode=x64compatible
 MinVersion=10.0.17763
 ; Visual
 WizardStyle=modern
-SetupIconFile=
-; No icon file yet — omit to use default Inno Setup icon
+SetupIconFile=icon.ico
+WizardImageFile=wizard_large.bmp
+WizardSmallImageFile=wizard_small.bmp
 ; Getting-started page shown after install, before the Finish page
 InfoAfterFile=after_install.txt
 
@@ -97,6 +95,38 @@ Filename: "reg.exe"; \
   Flags: runhidden; RunOnceId: "RemoveStartupEntry"
 
 [Code]
+// ---------------------------------------------------------------------------
+// Detect if the app is already running before the wizard starts.
+// Offers to kill it automatically so files can be overwritten cleanly.
+// ---------------------------------------------------------------------------
+function InitializeSetup: Boolean;
+var
+  ResultCode: Integer;
+begin
+  Result := True;
+  Exec('powershell.exe',
+    '-NoProfile -NonInteractive -Command ' +
+    '"if (Get-Process -Name ''zh-en-translator'' -ErrorAction SilentlyContinue) { exit 1 } else { exit 0 }"',
+    '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+  if ResultCode = 1 then
+  begin
+    if MsgBox(
+        'zh-en-translator is currently running.' + #13#10 +
+        'Click OK to close it automatically and continue,' + #13#10 +
+        'or Cancel to exit the installer.',
+        mbConfirmation, MB_OKCANCEL) = IDOK then
+    begin
+      Exec('powershell.exe',
+        '-NoProfile -NonInteractive -Command ' +
+        '"Stop-Process -Name ''zh-en-translator'' -Force -ErrorAction SilentlyContinue"',
+        '', SW_HIDE, ewWaitUntilTerminated, ResultCode);
+      Sleep(1500);
+    end
+    else
+      Result := False;
+  end;
+end;
+
 // ---------------------------------------------------------------------------
 // Install type radio-button page + Windows OCR check
 // ---------------------------------------------------------------------------

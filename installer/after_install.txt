@@ -60,7 +60,7 @@ If the download was interrupted, run this from the install folder:
   powershell -File download_packs.ps1
 
 
-MORE INFORMATION
-----------------
-GitHub: https://github.com/rogerneumann/zh-en-translation
-Issues: https://github.com/rogerneumann/zh-en-translation/issues
+SUPPORT
+-------
+For help, run the app and use right-click -> Preferences, or check the
+README included in the install folder.
