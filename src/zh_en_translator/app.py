@@ -20,37 +20,86 @@ from zh_en_translator.engines.translation_worker import TranslationWorker
 logger = logging.getLogger(__name__)
 
 
-def _render_icon_pixmap(size: int):
-    """Draw the app icon at the requested pixel size.
+def _svg_icon_path() -> str:
+    """Return the filesystem path to translation_icn.svg bundled in resources."""
+    from pathlib import Path
+    return str(Path(__file__).parent / "resources" / "translation_icn.svg")
 
-    Design: blue rounded square + white '中' character.
-    Rendered with full antialiasing so it looks crisp at every size Windows
-    requests (16 px tray, 32 px taskbar, 48 px Alt-Tab, 256 px Explorer).
+
+def _png_icon_path(size: int) -> str:
+    from pathlib import Path
+    resources = Path(__file__).parent / "resources"
+    candidate = resources / f"icon_{size}.png"
+    return str(candidate if candidate.exists() else resources / "icon.png")
+
+
+def _render_svg_icon(size: int) -> "QPixmap":
+    """Render translation_icn.svg at the given pixel size.
+
+    Tries QSvgRenderer first (crisp vector), then falls back to the
+    pre-rendered PNG files bundled in resources/.
     """
+    from pathlib import Path
+    try:
+        from PyQt6.QtSvg import QSvgRenderer
+        from PyQt6.QtCore import QRectF as _QRectF
+        pixmap = QPixmap(size, size)
+        pixmap.fill(Qt.GlobalColor.transparent)
+        renderer = QSvgRenderer(_svg_icon_path())
+        painter = QPainter(pixmap)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        renderer.render(painter, _QRectF(0, 0, size, size))
+        painter.end()
+        return pixmap
+    except Exception:
+        pass
+
+    # QtSvg unavailable — load the pre-rendered PNG
+    png = _png_icon_path(size)
+    if Path(png).exists():
+        pm = QPixmap(png)
+        if not pm.isNull():
+            return pm.scaled(
+                size, size,
+                Qt.AspectRatioMode.KeepAspectRatio,
+                Qt.TransformationMode.SmoothTransformation,
+            )
+    raise RuntimeError("no icon source available")
+
+
+def _render_icon_pixmap_fallback(size: int) -> "QPixmap":
+    """Fallback programmatic icon (teal rounded square + 文 strokes) if SVG unavailable."""
     pixmap = QPixmap(size, size)
     pixmap.fill(Qt.GlobalColor.transparent)
 
     p = QPainter(pixmap)
     p.setRenderHint(QPainter.RenderHint.Antialiasing)
-    p.setRenderHint(QPainter.RenderHint.TextAntialiasing)
 
-    # Rounded-square background
-    radius = size * 0.22
+    radius = size * 0.215
     path = QPainterPath()
     path.addRoundedRect(QRectF(0, 0, size, size), radius, radius)
-    p.fillPath(path, QBrush(QColor("#2563EB")))  # Tailwind blue-600
+    p.fillPath(path, QBrush(QColor("#2B6E6A")))
 
-    # White '中' glyph — try CJK-capable fonts in priority order
-    for family in ("Microsoft YaHei", "SimHei", "Arial Unicode MS", ""):
-        font = QFont(family, int(size * 0.52))
-        font.setBold(True)
-        p.setFont(font)
-        if p.fontMetrics().inFont("中"):
-            break
+    from PyQt6.QtCore import QLineF
+    from PyQt6.QtGui import QPen
+    pen = QPen(QColor("#C4EDE7"))
+    pen.setWidthF(size * 0.083)
+    pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+    pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+    p.setPen(pen)
 
-    p.setPen(QColor("white"))
-    p.drawText(QRectF(0, 0, size, size), Qt.AlignmentFlag.AlignCenter, "中")
+    s = size / 1024.0
+    path2 = QPainterPath()
+    path2.moveTo(512 * s, 150 * s)
+    path2.cubicTo(512 * s, 400 * s, 450 * s, 750 * s, 200 * s, 874 * s)
+    p.drawPath(path2)
 
+    path3 = QPainterPath()
+    path3.moveTo(512 * s, 150 * s)
+    path3.cubicTo(512 * s, 400 * s, 574 * s, 750 * s, 824 * s, 874 * s)
+    p.drawPath(path3)
+
+    p.drawLine(int(310 * s), int(716 * s), int(714 * s), int(716 * s))
     p.end()
     return pixmap
 
@@ -184,8 +233,12 @@ class TranslatorApp(QObject):
 
     def _create_icon(self) -> QIcon:
         icon = QIcon()
-        for size in (16, 24, 32, 48, 64, 128, 256):
-            icon.addPixmap(_render_icon_pixmap(size))
+        try:
+            for size in (16, 24, 32, 48, 64, 128, 256):
+                icon.addPixmap(_render_svg_icon(size))
+        except Exception:
+            for size in (16, 24, 32, 48, 64, 128, 256):
+                icon.addPixmap(_render_icon_pixmap_fallback(size))
         return icon
 
     def _on_hotkey_pressed(self):
