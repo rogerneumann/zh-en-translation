@@ -56,7 +56,7 @@ hidden_imports = [
     "PyQt6.QtOpenGL",
     "PyQt6.QtOpenGLWidgets",
     "PyQt6.QtPrintSupport",
-    "PyQt6.QtSvg",
+    "PyQt6.QtSvg",        # required for SVG app icon (QSvgRenderer)
     "PyQt6.QtXml",
     "pynput.keyboard",
     "pynput.mouse",

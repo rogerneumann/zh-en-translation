@@ -1,0 +1,11 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Rounded-square background -->
+  <rect x="0" y="0" width="1024" height="1024" rx="220" ry="220" fill="#2B6E6A"/>
+
+  <!-- 文 strokes in soft contrasting mint -->
+  <g fill="none" stroke="#C4EDE7" stroke-width="85" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M512 150 C 512 400, 450 750, 200 874" />
+    <path d="M512 150 C 512 400, 574 750, 824 874" />
+    <line x1="310" y1="716" x2="714" y2="716" />
+  </g>
+</svg>
