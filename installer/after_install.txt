@@ -5,7 +5,7 @@
 SYSTEM TRAY
 -----------
 The app runs quietly in the system tray (bottom-right of your taskbar).
-Look for the blue Chinese character icon — right-click it for all options.
+Look for the teal 文 icon — right-click it for all options.
 
 The app starts automatically with Windows (if you left that option checked
 during install). You can toggle this any time in Preferences > General.

@@ -39,6 +39,9 @@ zh-en-translator = "zh_en_translator.app:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"zh_en_translator.resources" = ["*.svg", "*.png", "*.txt"]
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
