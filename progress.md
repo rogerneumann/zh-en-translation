@@ -30,6 +30,20 @@ Source of truth for plan/scope: `PLAN.md` and `plan-v2.md`.
 | M2 — Sidebar History | ✅ Done | JSON-based history, scrollable list, export/clear |
 | M3 — Intelligence & A11y | ✅ Done | Inline lookup, Collapsible breakdown, High Contrast theme |
 | M4 — External Integrations | ✅ Done | DeepL support, Update Checker, Inline source editing |
+| UI Refresh | ✅ Done | Fluent-lite: Segoe UI Variable/Aptos fonts, pill buttons, soft fills |
+
+---
+
+## UI Refresh (Fluent-lite)
+
+**Scope**: Modernize the "standard Qt" look with Windows 11-native aesthetics.
+
+**Delivered**:
+- **Modern Typography**: Integrated `Segoe UI Variable Display` and `Aptos` font stack.
+- **Pill-Shaped Buttons**: Updated all buttons to 14px-16px border-radius with soft `btn_bg` fills.
+- **Spacing & Layout**: Increased margins and padding for a cleaner, more spacious "Fluent" feel.
+- **Palette Refinement**: Shifted to pure `#FFFFFF` light and `#202020` dark backgrounds.
+- **Theme Engine**: Added `btn_bg` to `ThemePalette` in `themes.py` for consistent soft-fill styling.
 
 ---
 

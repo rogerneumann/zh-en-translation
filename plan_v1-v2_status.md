@@ -23,6 +23,7 @@ Advanced features and maintenance hooks added in April 2026.
 2.  **M2: Sidebar History** — Persistence for the last 20 translations with CSV export capability.
 3.  **M3: Intelligence** — Inline word-level lookup in translations and collapsible breakdown details.
 4.  **M4: integrations** — DeepL engine support, GitHub update checker, and inline source editing.
+5.  **UI Refresh** — Modernized look with Windows 11 fonts (Segoe UI Variable/Aptos) and pill buttons.
 
 ## 🚀 Future Roadmap (v3 Proposals)
 - **Rust Core**: Rewrite performance-sensitive paths (hotkey, lookup) in Rust for minimal idle footprint.

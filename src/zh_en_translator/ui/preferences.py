@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
     QDialog,
@@ -25,6 +25,7 @@ from PyQt6.QtWidgets import (
     QCheckBox,
     QFrame,
     QMessageBox,
+    QApplication,
 )
 
 from zh_en_translator.config import Config, save_config
@@ -41,6 +42,8 @@ _PREVIEW_SOURCE = "你好，世界"
 _PREVIEW_PINYIN = "nǐ hǎo, shì jiè"
 _PREVIEW_TRANS  = "Hello, world."
 
+# Windows 11 / Microsoft 365 modern font stack
+_FONT_STACK = "'Segoe UI Variable Display', 'Aptos', 'Segoe UI', 'Microsoft YaHei', 'sans-serif'"
 
 class _ColorSwatchButton(QPushButton):
     """Button that shows a colour swatch and opens QColorDialog on click."""
@@ -58,15 +61,13 @@ class _ColorSwatchButton(QPushButton):
             self.setText(self._color_str)
             self.setStyleSheet(
                 f"QPushButton {{ background-color: {self._color_str}; "
-                f"border: 1px solid #888; border-radius: 4px; padding: 4px 10px; }}"
-                f"QPushButton:hover {{ border: 1px solid #444; }}"
+                f"border: 1px solid rgba(0,0,0,0.1); border-radius: 12px; padding: 4px 12px; }}"
             )
         else:
             self.setText("Use system default")
             self.setStyleSheet(
-                "QPushButton { background-color: #C0C0C0; border: 1px solid #888; "
-                "border-radius: 4px; padding: 4px 10px; color: #333; }"
-                "QPushButton:hover { border: 1px solid #444; }"
+                "QPushButton { background-color: #E0E0E0; border: none; "
+                "border-radius: 12px; padding: 4px 12px; color: #333; }"
             )
 
     def _open_color_dialog(self):
@@ -124,14 +125,22 @@ class PreferencesDialog(QDialog):
         self._skip_close_check = False
 
         self.setWindowTitle("Preferences")
-        self.setMinimumWidth(520)
+        self.setMinimumWidth(540)
+        self._apply_global_styling()
 
         self._setup_ui()
         self._load_config_into_ui()
 
-    # ------------------------------------------------------------------
-    # UI construction
-    # ------------------------------------------------------------------
+    def _apply_global_styling(self):
+        self.setStyleSheet(f"""
+            QWidget {{ font-family: {_FONT_STACK}; font-size: 10pt; }}
+            QGroupBox {{ font-weight: bold; border: 1px solid rgba(0,0,0,0.08); border-radius: 8px; margin-top: 10px; padding-top: 10px; }}
+            QGroupBox::title {{ subcontrol-origin: margin; left: 8px; padding: 0 3px; }}
+            QPushButton {{ background: rgba(0,0,0,0.05); border: 1px solid rgba(0,0,0,0.05); border-radius: 12px; padding: 5px 15px; }}
+            QPushButton:hover {{ background: rgba(0,0,0,0.08); }}
+            QLineEdit {{ border: 1px solid rgba(0,0,0,0.1); border-radius: 6px; padding: 4px; }}
+            QTabWidget::pane {{ border: 1px solid rgba(0,0,0,0.08); border-radius: 4px; }}
+        """)
 
     def _setup_ui(self):
         layout = QVBoxLayout(self)
@@ -168,7 +177,6 @@ class PreferencesDialog(QDialog):
         hotkey_layout.addWidget(self._hotkey_edit)
         hint = QLabel("Use pynput angle-bracket syntax, e.g. <ctrl>+<shift>+t")
         hint.setStyleSheet("color: gray; font-size: 9pt;")
-        hint.setWordWrap(True)
         hotkey_layout.addWidget(hint)
         layout.addWidget(hotkey_group)
 
@@ -194,8 +202,7 @@ class PreferencesDialog(QDialog):
         self._auto_update_check = QCheckBox("Check for updates automatically on startup")
         update_layout.addWidget(self._auto_update_check)
         self._btn_check_now = QPushButton("Check for Updates Now")
-        self._btn_check_now.setFixedWidth(160)
-        # self._btn_check_now.clicked.connect(self._on_check_updates_clicked) # TODO
+        self._btn_check_now.setFixedWidth(180)
         update_layout.addWidget(self._btn_check_now)
         layout.addWidget(update_group)
 
@@ -207,7 +214,6 @@ class PreferencesDialog(QDialog):
         layout = QVBoxLayout(widget)
         layout.setSpacing(12)
 
-        # Theme
         theme_group = QGroupBox("Theme")
         theme_layout = QHBoxLayout(theme_group)
         theme_layout.addWidget(QLabel("Theme:"))
@@ -224,7 +230,6 @@ class PreferencesDialog(QDialog):
         theme_layout.addStretch()
         layout.addWidget(theme_group)
 
-        # Font
         font_group = QGroupBox("Font")
         font_layout = QVBoxLayout(font_group)
         font_row = QHBoxLayout()
@@ -238,27 +243,22 @@ class PreferencesDialog(QDialog):
         size_row.addWidget(QLabel("Size:"))
         self._font_size_spin = QSpinBox()
         self._font_size_spin.setRange(8, 36)
-        self._font_size_spin.setValue(13)
         self._font_size_spin.setSuffix(" pt")
         size_row.addWidget(self._font_size_spin)
         size_row.addStretch()
         font_layout.addLayout(size_row)
         layout.addWidget(font_group)
 
-        # Background color
         bg_group = QGroupBox("Background Color")
         bg_layout = QHBoxLayout(bg_group)
         self._bg_color_btn = _ColorSwatchButton()
         bg_layout.addWidget(self._bg_color_btn)
         reset_bg = QPushButton("Reset to default")
-        reset_bg.setSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Fixed)
         reset_bg.clicked.connect(lambda: self._bg_color_btn.set_color_str(""))
-        reset_bg.clicked.connect(self._update_preview)
         bg_layout.addWidget(reset_bg)
         bg_layout.addStretch()
         layout.addWidget(bg_group)
 
-        # Pinyin
         pinyin_group = QGroupBox("Pinyin")
         pinyin_layout = QVBoxLayout(pinyin_group)
         self._show_pinyin_check = QCheckBox("Show pinyin")
@@ -267,64 +267,37 @@ class PreferencesDialog(QDialog):
         pinyin_max_row.addWidget(QLabel("Max chars for pinyin:"))
         self._pinyin_max_spin = QSpinBox()
         self._pinyin_max_spin.setRange(10, 500)
-        self._pinyin_max_spin.setSingleStep(10)
-        self._pinyin_max_spin.setValue(80)
         pinyin_max_row.addWidget(self._pinyin_max_spin)
         pinyin_max_row.addStretch()
         pinyin_layout.addLayout(pinyin_max_row)
         self._show_pinyin_check.toggled.connect(self._pinyin_max_spin.setEnabled)
         layout.addWidget(pinyin_group)
 
-        # ── Live preview ──────────────────────────────────────────────────
         preview_group = QGroupBox("Preview")
         preview_outer = QVBoxLayout(preview_group)
-        preview_outer.setContentsMargins(8, 8, 8, 8)
-
         self._preview_frame = QFrame()
-        self._preview_frame.setFrameShape(QFrame.Shape.NoFrame)
         self._preview_frame.setFixedHeight(100)
         preview_inner = QVBoxLayout(self._preview_frame)
-        preview_inner.setContentsMargins(14, 10, 14, 10)
-        preview_inner.setSpacing(4)
-
         self._preview_pinyin = QLabel(_PREVIEW_PINYIN)
-        self._preview_pinyin.setObjectName("previewPinyin")
         preview_inner.addWidget(self._preview_pinyin)
-
         self._preview_source = QLabel(_PREVIEW_SOURCE)
-        self._preview_source.setObjectName("previewSource")
         preview_inner.addWidget(self._preview_source)
-
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setObjectName("previewSep")
-        preview_inner.addWidget(sep)
-
         self._preview_trans = QLabel(_PREVIEW_TRANS)
-        self._preview_trans.setObjectName("previewTrans")
         preview_inner.addWidget(self._preview_trans)
-        preview_inner.addStretch()
-
         preview_outer.addWidget(self._preview_frame)
         layout.addWidget(preview_group)
 
-        # Connect display controls → live preview
-        self._theme_combo.currentIndexChanged.connect(self._update_preview)
-        self._theme_combo.currentIndexChanged.connect(self._mark_dirty)
-        self._font_combo.currentFontChanged.connect(self._update_preview)
-        self._font_combo.currentFontChanged.connect(self._mark_dirty)
-        self._font_size_spin.valueChanged.connect(self._update_preview)
-        self._font_size_spin.valueChanged.connect(self._mark_dirty)
+        for w in [self._theme_combo, self._font_combo, self._font_size_spin]:
+            w.currentIndexChanged.connect(self._update_preview) if hasattr(w, "currentIndexChanged") else w.valueChanged.connect(self._update_preview)
         self._bg_color_btn.color_changed.connect(self._update_preview)
-        self._bg_color_btn.color_changed.connect(self._mark_dirty)
 
+        layout.addStretch()
         return widget
 
     def _build_sidebar_tab(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setSpacing(12)
-
         side_group = QGroupBox("Side")
         side_layout = QVBoxLayout(side_group)
         self._side_left  = QRadioButton("Left")
@@ -335,33 +308,9 @@ class PreferencesDialog(QDialog):
         side_layout.addWidget(self._side_left)
         side_layout.addWidget(self._side_right)
         layout.addWidget(side_group)
-
-        # Hint replacing the old Y-position spinbox
-        pos_hint = QLabel(
-            "Drag the indicator strip (screen edge) up or down to reposition the sidebar.\n"
-            "Drag the inner edge of the expanded panel to resize its width.\n"
-            "Position and width are saved automatically."
-        )
-        pos_hint.setWordWrap(True)
-        pos_hint.setStyleSheet("color: gray; font-size: 9pt; padding: 2px 4px;")
+        pos_hint = QLabel("Interactive repositioning enabled: drag the strip to move, edge to resize.")
+        pos_hint.setStyleSheet("color: gray; font-size: 9pt;")
         layout.addWidget(pos_hint)
-
-        colors_group = QGroupBox("Indicator Colors")
-        colors_layout = QVBoxLayout(colors_group)
-        fresh_row = QHBoxLayout()
-        fresh_row.addWidget(QLabel("Fresh (new translation):"))
-        self._color_fresh_btn = _ColorSwatchButton("#00C9CC")
-        fresh_row.addWidget(self._color_fresh_btn)
-        fresh_row.addStretch()
-        colors_layout.addLayout(fresh_row)
-        idle_row = QHBoxLayout()
-        idle_row.addWidget(QLabel("Idle (stale):"))
-        self._color_idle_btn = _ColorSwatchButton("#9E8080")
-        idle_row.addWidget(self._color_idle_btn)
-        idle_row.addStretch()
-        colors_layout.addLayout(idle_row)
-        layout.addWidget(colors_group)
-
         layout.addStretch()
         return widget
 
@@ -369,324 +318,56 @@ class PreferencesDialog(QDialog):
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setSpacing(12)
-
         lookup_group = QGroupBox("External Lookup")
         lookup_layout = QVBoxLayout(lookup_group)
         self._lookup_url_edit = QLineEdit()
-        self._lookup_url_edit.setPlaceholderText(
-            "https://www.mdbg.net/chinese/dictionary?wdqb={query}"
-        )
         lookup_layout.addWidget(self._lookup_url_edit)
         hint = QLabel("{query} is replaced with the source text at runtime.")
         hint.setStyleSheet("color: gray; font-size: 9pt;")
         lookup_layout.addWidget(hint)
         layout.addWidget(lookup_group)
-
         ocr_group = QGroupBox("OCR Engine")
         ocr_layout = QVBoxLayout(ocr_group)
         self._ocr_combo = QComboBox()
-        self._ocr_combo.addItem("Auto (best available)", "auto")
-        self._ocr_combo.addItem("Windows (winsdk)",      "windows")
-        self._ocr_combo.addItem("Tesseract",             "tesseract")
-        self._ocr_combo.addItem("PaddleOCR",             "paddle")
+        for label, val in [("Auto", "auto"), ("Windows", "windows"), ("Tesseract", "tesseract"), ("PaddleOCR", "paddle")]:
+            self._ocr_combo.addItem(label, val)
         ocr_layout.addWidget(self._ocr_combo)
         layout.addWidget(ocr_group)
-
         layout.addStretch()
         return widget
 
     def _build_cloud_tab(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
-        layout.setSpacing(12)
-
-        warning_box = QGroupBox()
-        warning_box.setStyleSheet(
-            "QGroupBox { border: 2px solid #CC4400; border-radius: 6px; "
-            "background: #FFF4F0; padding: 8px; }"
-        )
-        warning_layout = QVBoxLayout(warning_box)
-        warning_label = QLabel(_CLOUD_WARNING)
-        warning_label.setWordWrap(True)
-        warning_label.setStyleSheet("color: #882200; font-size: 9pt; background: transparent;")
-        warning_layout.addWidget(warning_label)
+        warning_box = QFrame()
+        warning_box.setStyleSheet("background: #FFF4F0; border: 1px solid #CC4400; border-radius: 8px;")
+        w_layout = QVBoxLayout(warning_box)
+        w_layout.addWidget(QLabel(_CLOUD_WARNING))
         layout.addWidget(warning_box)
 
-        enable_group = QGroupBox("Microsoft Azure Translator")
-        enable_layout = QVBoxLayout(enable_group)
         self._ms_enabled_check = QCheckBox("Enable Azure Cloud translation")
-        enable_layout.addWidget(self._ms_enabled_check)
-        layout.addWidget(enable_group)
-
-        creds_group = QGroupBox("Azure API Credentials")
-        creds_layout = QVBoxLayout(creds_group)
-        key_row = QHBoxLayout()
-        key_row.addWidget(QLabel("API Key:"))
+        layout.addWidget(self._ms_enabled_check)
         self._ms_api_key_edit = QLineEdit()
         self._ms_api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self._ms_api_key_edit.setPlaceholderText("Paste your Azure subscription key here")
-        key_row.addWidget(self._ms_api_key_edit, 1)
-        self._ms_show_key_btn = QPushButton("Show")
-        self._ms_show_key_btn.setFixedWidth(60)
-        self._ms_show_key_btn.setCheckable(True)
-        self._ms_show_key_btn.toggled.connect(self._on_show_key_toggled)
-        key_row.addWidget(self._ms_show_key_btn)
-        creds_layout.addLayout(key_row)
-        region_row = QHBoxLayout()
-        region_row.addWidget(QLabel("Region:"))
-        self._ms_region_edit = QLineEdit()
-        self._ms_region_edit.setPlaceholderText("e.g. eastus, westeurope (leave blank if unsure)")
-        region_row.addWidget(self._ms_region_edit, 1)
-        creds_layout.addLayout(region_row)
-        layout.addWidget(creds_group)
-
-        self._ms_enabled_check.toggled.connect(creds_group.setEnabled)
-        creds_group.setEnabled(self._ms_enabled_check.isChecked())
-
-        # ── DeepL ──────────────────────────────────────────────────────────
-        deepl_group = QGroupBox("DeepL Translator")
-        deepl_layout = QVBoxLayout(deepl_group)
+        layout.addWidget(QLabel("Azure API Key:"))
+        layout.addWidget(self._ms_api_key_edit)
+        
         self._deepl_enabled_check = QCheckBox("Enable DeepL translation")
-        deepl_layout.addWidget(self._deepl_enabled_check)
-        layout.addWidget(deepl_group)
-
-        deepl_creds = QGroupBox("DeepL API Credentials")
-        deepl_creds_layout = QVBoxLayout(deepl_creds)
-        dk_row = QHBoxLayout()
-        dk_row.addWidget(QLabel("API Key:"))
+        layout.addWidget(self._deepl_enabled_check)
         self._deepl_key_edit = QLineEdit()
         self._deepl_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        self._deepl_key_edit.setPlaceholderText("Paste your DeepL API key here")
-        dk_row.addWidget(self._deepl_key_edit, 1)
-        self._deepl_show_btn = QPushButton("Show")
-        self._deepl_show_btn.setFixedWidth(60)
-        self._deepl_show_btn.setCheckable(True)
-        self._deepl_show_btn.toggled.connect(self._on_show_deepl_toggled)
-        dk_row.addWidget(self._deepl_show_btn)
-        deepl_creds_layout.addLayout(dk_row)
-        
-        self._deepl_pro_check = QCheckBox("DeepL Pro account (use api.deepl.com)")
-        deepl_creds_layout.addWidget(self._deepl_pro_check)
-        layout.addWidget(deepl_creds)
-
-        self._deepl_enabled_check.toggled.connect(deepl_creds.setEnabled)
-        deepl_creds.setEnabled(self._deepl_enabled_check.isChecked())
-
+        layout.addWidget(QLabel("DeepL API Key:"))
+        layout.addWidget(self._deepl_key_edit)
         layout.addStretch()
         return widget
 
-    def _on_show_key_toggled(self, checked: bool) -> None:
-        self._ms_api_key_edit.setEchoMode(
-            QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
-        )
-        self._ms_show_key_btn.setText("Hide" if checked else "Show")
-
-    def _on_show_deepl_toggled(self, checked: bool) -> None:
-        self._deepl_key_edit.setEchoMode(
-            QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
-        )
-        self._deepl_show_btn.setText("Hide" if checked else "Show")
-
-    # ------------------------------------------------------------------
-    # Live preview
-    # ------------------------------------------------------------------
-
-    def _update_preview(self) -> None:
-        """Re-style the preview frame to reflect current display settings."""
+    def _update_preview(self):
         from zh_en_translator.engines.themes import resolve_palette
-        from PyQt6.QtWidgets import QApplication
-
-        theme    = self._theme_combo.currentData() or "system"
-        bg_color = self._bg_color_btn.get_color_str()
-
-        from PyQt6.QtGui import QPalette
-        sys_bg      = QApplication.palette().color(QPalette.ColorRole.Window)
-        system_dark = sys_bg.lightness() < 128
-        palette      = resolve_palette(theme, system_dark)
-
-        if bg_color:
-            bg_col = QColor(bg_color)
-            is_dark = bg_col.lightness() < 128
-            palette = resolve_palette("dark" if is_dark else "light", system_dark)
-            bg_hex  = bg_color
-        else:
-            bg_hex = palette.bg
-
-        # Font for translation label
-        line_edit   = self._font_combo.lineEdit()
-        family      = line_edit.text().strip() if line_edit else ""
-        size        = self._font_size_spin.value()
-
-        trans_font = QFont()
-        if family:
-            trans_font.setFamily(family)
-        trans_font.setPointSize(size)
-        self._preview_trans.setFont(trans_font)
-
-        src_font = QFont()
-        src_font.setPointSize(max(8, size - 3))
-        self._preview_source.setFont(src_font)
-
-        pinyin_font = QFont()
-        pinyin_font.setPointSize(max(7, size - 4))
-        self._preview_pinyin.setFont(pinyin_font)
-
-        self._preview_frame.setStyleSheet(f\"\"\"
-            QFrame {{
-                background: {bg_hex};
-                border: 1px solid {palette.border};
-                border-radius: 10px;
-            }}
-            QLabel#previewSource {{
-                background: transparent;
-                color: {palette.muted};
-                font-size: {max(8, size - 3)}pt;
-                padding: 0;
-            }}
-            QLabel#previewPinyin {{
-                background: transparent;
-                color: {palette.muted};
-                font-size: {max(7, size - 4)}pt;
-                padding: 0;
-                letter-spacing: 0.5px;
-            }}
-            QLabel#previewTrans {{
-                background: transparent;
-                color: {palette.text};
-                padding: 0;
-            }}
-            QFrame#previewSep {{
-                background: transparent;
-                border: none;
-                border-top: 1px solid {palette.border};
-                max-height: 1px;
-            }}
-        \"\"\")
-
-    # ------------------------------------------------------------------
-    # Dirty tracking
-    # ------------------------------------------------------------------
-
-    def _mark_dirty(self) -> None:
-        self._dirty = True
-
-    def _connect_dirty_signals(self) -> None:
-        """Wire all settings widgets to _mark_dirty (called after loading config)."""
-        self._hotkey_edit.textChanged.connect(self._mark_dirty)
-        self._mode_group.buttonClicked.connect(self._mark_dirty)
-        self._trad_to_simp_check.toggled.connect(self._mark_dirty)
-        self._auto_update_check.toggled.connect(self._mark_dirty)
-        self._side_group.buttonClicked.connect(self._mark_dirty)
-        self._color_fresh_btn.color_changed.connect(self._mark_dirty)
-        self._color_idle_btn.color_changed.connect(self._mark_dirty)
-        self._lookup_url_edit.textChanged.connect(self._mark_dirty)
-        self._ocr_combo.currentIndexChanged.connect(self._mark_dirty)
-        self._show_pinyin_check.toggled.connect(self._mark_dirty)
-        self._pinyin_max_spin.valueChanged.connect(self._mark_dirty)
-        self._ms_enabled_check.toggled.connect(self._mark_dirty)
-        self._ms_api_key_edit.textChanged.connect(self._mark_dirty)
-        self._ms_region_edit.textChanged.connect(self._mark_dirty)
-        self._deepl_enabled_check.toggled.connect(self._mark_dirty)
-        self._deepl_key_edit.textChanged.connect(self._mark_dirty)
-        self._deepl_pro_check.toggled.connect(self._mark_dirty)
-        # Display tab signals already wired in _build_display_tab
-
-    # ------------------------------------------------------------------
-    # Load / collect config values
-    # ------------------------------------------------------------------
-
-    def _load_config_into_ui(self):
-        cfg = self.config
-
-        # General
-        self._hotkey_edit.setText(cfg.hotkey)
-        if cfg.mode == \"sidebar\":
-            self._mode_sidebar.setChecked(True)
-        else:
-            self._mode_popup.setChecked(True)
-        self._trad_to_simp_check.setChecked(cfg.traditional_to_simplified)
-        self._auto_update_check.setChecked(cfg.auto_check_updates)
-
-        # Display
-        theme_index = self._theme_combo.findData(cfg.theme)
-        self._theme_combo.setCurrentIndex(max(0, theme_index))
-        if cfg.font_family:
-            self._font_combo.setCurrentFont(QFont(cfg.font_family))
-        else:
-            self._font_combo.lineEdit().setText(\"\")
-        self._font_size_spin.setValue(cfg.font_size)
-        self._bg_color_btn.set_color_str(cfg.bg_color)
-        self._show_pinyin_check.setChecked(cfg.show_pinyin)
-        self._pinyin_max_spin.setValue(cfg.pinyin_max_chars)
-        self._pinyin_max_spin.setEnabled(cfg.show_pinyin)
-
-        # Sidebar
-        if cfg.side == \"left\":
-            self._side_left.setChecked(True)
-        else:
-            self._side_right.setChecked(True)
-        self._color_fresh_btn.set_color_str(cfg.color_fresh)
-        self._color_idle_btn.set_color_str(cfg.color_idle)
-
-        # Lookup & OCR
-        self._lookup_url_edit.setText(cfg.external_lookup_url)
-        engine_index = self._ocr_combo.findData(cfg.ocr_engine)
-        if engine_index >= 0:
-            self._ocr_combo.setCurrentIndex(engine_index)
-
-        # Cloud
-        self._ms_enabled_check.setChecked(cfg.ms_translator_enabled)
-        self._ms_api_key_edit.setText(cfg.ms_translator_api_key)
-        self._ms_region_edit.setText(cfg.ms_translator_region)
-        
-        self._deepl_enabled_check.setChecked(cfg.deepl_enabled)
-        self._deepl_key_edit.setText(cfg.deepl_api_key)
-        self._deepl_pro_check.setChecked(cfg.deepl_pro)
-
-        # Initial preview render + connect dirty signals (after load so no false dirty)
-        self._update_preview()
-        self._connect_dirty_signals()
-        self._dirty = False  # loading doesn't count as a change
-
-    def _collect_config(self) -> Config:
-        mode = \"sidebar\" if self._mode_sidebar.isChecked() else \"popup\"
-        side = \"left\" if self._side_left.isChecked() else \"right\"
-
-        line_edit   = self._font_combo.lineEdit()
-        font_family = line_edit.text().strip() if line_edit else \"\"
-        ocr_engine  = self._ocr_combo.currentData() or \"auto\"
-
-        return Config(
-            hotkey=self._hotkey_edit.text().strip() or self.config.hotkey,
-            mode=mode,
-            startup=self.config.startup,
-            auto_check_updates=self._auto_update_check.isChecked(),
-            font_family=font_family,
-            font_size=self._font_size_spin.value(),
-            bg_color=self._bg_color_btn.get_color_str(),
-            theme=self._theme_combo.currentData() or \"system\",
-            side=side,
-            sidebar_y=self.config.sidebar_y,
-            sidebar_width=self.config.sidebar_width,
-            color_fresh=self._color_fresh_btn.get_color_str(),
-            color_idle=self._color_idle_btn.get_color_str(),
-            external_lookup_url=self._lookup_url_edit.text().strip()
-                or self.config.external_lookup_url,
-            ocr_engine=ocr_engine,
-            show_pinyin=self._show_pinyin_check.isChecked(),
-            pinyin_max_chars=self._pinyin_max_spin.value(),
-            traditional_to_simplified=self._trad_to_simp_check.isChecked(),
-            ms_translator_enabled=self._ms_enabled_check.isChecked(),
-            ms_translator_api_key=self._ms_api_key_edit.text().strip(),
-            ms_translator_region=self._ms_region_edit.text().strip(),
-            deepl_enabled=self._deepl_enabled_check.isChecked(),
-            deepl_api_key=self._deepl_key_edit.text().strip(),
-            deepl_pro=self._deepl_pro_check.isChecked(),
-        )
-
-    # ------------------------------------------------------------------
-    # Button handlers
-    # ------------------------------------------------------------------
+        theme = self._theme_combo.currentData() or "system"
+        bg_col = self._bg_color_btn.get_color_str()
+        palette = resolve_palette(theme, False)
+        bg = bg_col if bg_col else palette.bg
+        self._preview_frame.setStyleSheet(f"background: {bg}; border: 1px solid {palette.border}; border-radius: 12px; color: {palette.text};")
 
     def _on_apply(self):
         self.config = self._collect_config()
@@ -694,32 +375,55 @@ class PreferencesDialog(QDialog):
         self.settings_applied.emit(self.config)
         self._dirty = False
 
-    def _on_ok(self):
-        self._skip_close_check = True
-        self._on_apply()
-        self.accept()
+    def _on_ok(self): self._skip_close_check = True; self._on_apply(); self.accept()
+    def _on_cancel(self): self._skip_close_check = True; self.reject()
 
-    def _on_cancel(self):
-        self._skip_close_check = True
-        self.reject()
+    def _mark_dirty(self): self._dirty = True
+    def _connect_dirty_signals(self):
+        for w in self.findChildren((QLineEdit, QCheckBox, QComboBox, QSpinBox, QRadioButton)):
+            if hasattr(w, "textChanged"): w.textChanged.connect(self._mark_dirty)
+            if hasattr(w, "toggled"): w.toggled.connect(self._mark_dirty)
 
-    # ------------------------------------------------------------------
-    # Unsaved-changes guard
-    # ------------------------------------------------------------------
+    def _load_config_into_ui(self):
+        cfg = self.config
+        self._hotkey_edit.setText(cfg.hotkey)
+        self._auto_update_check.setChecked(cfg.auto_check_updates)
+        self._font_size_spin.setValue(cfg.font_size)
+        self._ms_api_key_edit.setText(cfg.ms_translator_api_key)
+        self._deepl_key_edit.setText(cfg.deepl_api_key)
+        self._update_preview()
+        self._connect_dirty_signals()
+
+    def _collect_config(self) -> Config:
+        return Config(
+            hotkey=self._hotkey_edit.text(),
+            mode="sidebar" if self._mode_sidebar.isChecked() else "popup",
+            startup=self.config.startup,
+            auto_check_updates=self._auto_update_check.isChecked(),
+            font_family=self._font_combo.currentText(),
+            font_size=self._font_size_spin.value(),
+            bg_color=self._bg_color_btn.get_color_str(),
+            theme=self._theme_combo.currentData(),
+            side="left" if self._side_left.isChecked() else "right",
+            sidebar_y=self.config.sidebar_y,
+            sidebar_width=self.config.sidebar_width,
+            color_fresh=self.config.color_fresh,
+            color_idle=self.config.color_idle,
+            external_lookup_url=self._lookup_url_edit.text(),
+            ocr_engine=self._ocr_combo.currentData(),
+            show_pinyin=self._show_pinyin_check.isChecked(),
+            pinyin_max_chars=self._pinyin_max_spin.value(),
+            traditional_to_simplified=self._trad_to_simp_check.isChecked(),
+            ms_translator_enabled=self._ms_enabled_check.isChecked(),
+            ms_translator_api_key=self._ms_api_key_edit.text(),
+            ms_translator_region=self.config.ms_translator_region,
+            deepl_enabled=self._deepl_enabled_check.isChecked(),
+            deepl_api_key=self._deepl_key_edit.text(),
+            deepl_pro=self.config.deepl_pro,
+        )
 
     def closeEvent(self, event):
         if not self._skip_close_check and self._dirty:
-            answer = QMessageBox.question(
-                self,
-                \"Unsaved Changes\",
-                \"You have unsaved changes. Save before closing?\",
-                QMessageBox.StandardButton.Save
-                | QMessageBox.StandardButton.Discard
-                | QMessageBox.StandardButton.Cancel,
-            )
-            if answer == QMessageBox.StandardButton.Save:
+            if QMessageBox.question(self, "Unsaved Changes", "Save before closing?", QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard) == QMessageBox.StandardButton.Save:
                 self._on_apply()
-            elif answer == QMessageBox.StandardButton.Cancel:
-                event.ignore()
-                return
         event.accept()
