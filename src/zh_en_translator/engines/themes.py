@@ -11,42 +11,47 @@ class ThemePalette:
     text: str        # primary text hex
     muted: str       # secondary/muted text hex
     border: str      # border rgba string
-    btn_hover: str   # button hover rgba string
-    btn_pressed: str # button pressed rgba string
+    btn_bg: str      # button background rgba
+    btn_hover: str   # button hover rgba
+    btn_pressed: str # button pressed rgba
 
 
 THEMES: dict[str, ThemePalette] = {
     "light": ThemePalette(
-        bg="#F8F8F8",
-        text="#111111",
-        muted="#666666",
-        border="rgba(0,0,0,0.15)",
-        btn_hover="rgba(0,0,0,0.06)",
+        bg="#FFFFFF",
+        text="#1A1A1A",
+        muted="#5F5F5F",
+        border="rgba(0,0,0,0.08)",
+        btn_bg="rgba(0,0,0,0.04)",
+        btn_hover="rgba(0,0,0,0.08)",
         btn_pressed="rgba(0,0,0,0.12)",
     ),
     "dark": ThemePalette(
-        bg="#1E1E1E",
-        text="#E8E8E8",
-        muted="#AAAAAA",
-        border="rgba(255,255,255,0.15)",
-        btn_hover="rgba(255,255,255,0.08)",
-        btn_pressed="rgba(255,255,255,0.14)",
+        bg="#202020",
+        text="#EEEEEE",
+        muted="#A0A0A0",
+        border="rgba(255,255,255,0.08)",
+        btn_bg="rgba(255,255,255,0.06)",
+        btn_hover="rgba(255,255,255,0.10)",
+        btn_pressed="rgba(255,255,255,0.15)",
     ),
     "sepia": ThemePalette(
         bg="#F4ECD8",
         text="#3B2A1A",
         muted="#7A6347",
-        border="rgba(80,50,20,0.20)",
-        btn_hover="rgba(80,50,20,0.08)",
-        btn_pressed="rgba(80,50,20,0.14)",
+        border="rgba(80,50,20,0.12)",
+        btn_bg="rgba(80,50,20,0.05)",
+        btn_hover="rgba(80,50,20,0.10)",
+        btn_pressed="rgba(80,50,20,0.15)",
     ),
     "high_contrast": ThemePalette(
         bg="#000000",
         text="#FFFF00",  # Yellow
         muted="#00FFFF", # Cyan
         border="rgba(255,255,255,0.8)",
-        btn_hover="rgba(255,255,255,0.2)",
-        btn_pressed="rgba(255,255,255,0.4)",
+        btn_bg="rgba(255,255,255,0.1)",
+        btn_hover="rgba(255,255,255,0.3)",
+        btn_pressed="rgba(255,255,255,0.5)",
     ),
 }
 
