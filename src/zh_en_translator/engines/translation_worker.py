@@ -23,9 +23,19 @@ class TranslationWorker(QThread):
         self.config = config  # Config | None
 
     def run(self):
-        logger.debug("input (%d chars): %r", len(self.text), self.text[:80])
+        logger.info("Translation started (input length: %d chars)", len(self.text))
 
-        # Try MS Cloud first when the user has explicitly enabled it
+        # 1. Try DeepL first if enabled
+        if self.config and self.config.deepl_enabled:
+            from zh_en_translator.engines.deepl import translate_with_deepl
+            result = translate_with_deepl(self.text, self.config)
+            if result and not result.startswith("⚠"):
+                logger.info("DeepL translation successful (result length: %d chars)", len(result))
+                self.result_ready.emit(result)
+                return
+            logger.warning("DeepL translation failed or not configured correctly: %s", result)
+
+        # 2. Try MS Cloud second
         if self.config and self.config.ms_translator_enabled:
             from zh_en_translator.engines.ms_cloud import is_configured, translate_sentence as ms_translate
             if is_configured(self.config.ms_translator_api_key):
@@ -35,12 +45,12 @@ class TranslationWorker(QThread):
                     self.config.ms_translator_region,
                 )
                 if result:
-                    logger.debug("ms_cloud result: %r", result[:80])
+                    logger.info("ms_cloud translation successful (result length: %d chars)", len(result))
                     self.result_ready.emit(result)
                     return
                 logger.warning("MS Cloud translation failed — falling back to Argos")
 
-        # Offline fallback: local Argos / ctranslate2
+        # 3. Offline fallback: local Argos / ctranslate2
         from zh_en_translator.engines.argos import ensure_pack, translate_sentence
 
         if not ensure_pack():
@@ -50,13 +60,16 @@ class TranslationWorker(QThread):
 
         try:
             result = translate_sentence(self.text)
-            logger.debug("result: %r", result)
+            if result:
+                logger.info("Argos translation successful (result length: %d chars)", len(result))
+            else:
+                logger.warning("Argos translation returned empty result")
         except Exception as e:
-            logger.debug("exception: %s", e)
+            logger.error("Argos translation failed: %s", e)
             result = None
 
         self.result_ready.emit(
-            result if result else f"(no translation — input: {self.text[:60]!r})"
+            result if result else "(no translation found)"
         )
 
 

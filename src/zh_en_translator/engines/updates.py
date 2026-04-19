@@ -1,0 +1,48 @@
+"""Update checker for zh-en-translator."""
+
+from __future__ import annotations
+
+import json
+import logging
+import urllib.request
+from typing import TypedDict
+
+logger = logging.getLogger(__name__)
+
+REPO_OWNER = "roger"
+REPO_NAME = "zh-en-translation"
+
+class ReleaseInfo(TypedDict):
+    tag_name: str
+    html_url: str
+    body: str
+
+def get_latest_release() -> ReleaseInfo | None:
+    """Fetch latest release info from GitHub API."""
+    url = f"https://api.github.com/repos/{REPO_OWNER}/{REPO_NAME}/releases/latest"
+    try:
+        req = urllib.request.Request(url)
+        # GitHub API requires a User-Agent
+        req.add_header("User-Agent", "zh-en-translator-update-checker")
+        with urllib.request.urlopen(req, timeout=5) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            return {
+                "tag_name": data.get("tag_name", ""),
+                "html_url": data.get("html_url", ""),
+                "body": data.get("body", ""),
+            }
+    except Exception as e:
+        logger.debug("Failed to check for updates: %s", e)
+        return None
+
+def is_newer(latest_tag: str, current_version: str) -> bool:
+    """Basic version comparison (v0.1.0 vs 0.1.0)."""
+    latest = latest_tag.lstrip("v")
+    current = current_version.lstrip("v")
+    
+    try:
+        latest_parts = [int(p) for p in latest.split(".")]
+        current_parts = [int(p) for p in current.split(".")]
+        return latest_parts > current_parts
+    except ValueError:
+        return latest != current

@@ -3,10 +3,10 @@
 from __future__ import annotations
 
 import logging
+import re
 import urllib.parse
-import pyperclip
-from PyQt6.QtCore import Qt, QTimer, QRectF, QUrl
-from PyQt6.QtGui import QCursor, QFont, QPainter, QPainterPath, QPen, QColor, QDesktopServices
+from PyQt6.QtCore import Qt, QTimer, QRectF, QUrl, QPoint
+from PyQt6.QtGui import QCursor, QFont, QPainter, QPainterPath, QPen, QColor, QDesktopServices, QKeyEvent
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -16,12 +16,24 @@ from PyQt6.QtWidgets import (
     QPushButton,
     QApplication,
     QFrame,
+    QToolTip,
+    QScrollArea,
 )
 
-from zh_en_translator.engines.dictionary import Dictionary
+from zh_en_translator.engines.dictionary import Dictionary, Entry
 from zh_en_translator.engines.translation_worker import TranslationWorker, PinyinWorker
 
 logger = logging.getLogger(__name__)
+
+
+def wrap_words(text: str) -> str:
+    """Wrap English words in <a> tags for interaction."""
+    # Match sequences of alphabetic characters
+    return re.sub(
+        r"([a-zA-Z']+)",
+        r'<a href="word:\1" style="text-decoration:none; color:inherit;">\1</a>',
+        text,
+    )
 
 
 class TranslatorPopup(QWidget):
@@ -59,6 +71,10 @@ class TranslatorPopup(QWidget):
         self._pinyin_worker: PinyinWorker | None = None
         self._is_ocr_pending = is_ocr_pending
         self._config = config
+        self._loading_dots = 0
+        self._loading_timer = QTimer(self)
+        self._loading_timer.setInterval(400)
+        self._loading_timer.timeout.connect(self._animate_loading)
 
         self._setup_ui()
         self._apply_styling()
@@ -67,8 +83,17 @@ class TranslatorPopup(QWidget):
         if not is_ocr_pending:
             self._start_translation()
             self._start_pinyin(text)
+            self._loading_timer.start()
         else:
             self.translation_label.setText("Waiting for OCR…")
+
+    def _animate_loading(self):
+        self._loading_dots = (self._loading_dots + 1) % 4
+        dots = "." * self._loading_dots
+        if self._is_ocr_pending:
+            self.translation_label.setText(f"Waiting for OCR{dots}")
+        else:
+            self.translation_label.setText(f"Translating{dots}")
 
     # ------------------------------------------------------------------
     # UI construction
@@ -127,16 +152,24 @@ class TranslatorPopup(QWidget):
         layout.addWidget(self._pinyin_label)
 
         # ── Source text ─────────────────────────────────────────────────
+        source_row = QHBoxLayout()
+        source_row.setSpacing(4)
+        
         self.text_display = QTextEdit()
         self.text_display.setPlainText(self.captured_text)
-        self.text_display.setReadOnly(True)
+        self.text_display.setReadOnly(False)
         self.text_display.setFrameShape(QFrame.Shape.NoFrame)
         self.text_display.setMaximumHeight(52)
-        self.text_display.setTextInteractionFlags(
-            Qt.TextInteractionFlag.TextSelectableByMouse
-            | Qt.TextInteractionFlag.TextSelectableByKeyboard
-        )
-        layout.addWidget(self.text_display)
+        self.text_display.installEventFilter(self) # For Ctrl+Enter
+        source_row.addWidget(self.text_display, 1)
+
+        self.btn_retranslate = QPushButton("↺")
+        self.btn_retranslate.setFixedSize(24, 24)
+        self.btn_retranslate.setToolTip("Retranslate (Ctrl+Enter)")
+        self.btn_retranslate.clicked.connect(self._retranslate)
+        source_row.addWidget(self.btn_retranslate)
+        
+        layout.addLayout(source_row)
 
         # ── Divider ─────────────────────────────────────────────────────
         sep = QFrame()
@@ -153,11 +186,36 @@ class TranslatorPopup(QWidget):
         self.translation_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
             | Qt.TextInteractionFlag.TextSelectableByKeyboard
+            | Qt.TextInteractionFlag.LinksAccessibleByMouse
         )
+        self.translation_label.linkActivated.connect(self._on_link_activated)
         font = QFont()
         font.setPointSize(13)
         self.translation_label.setFont(font)
         layout.addWidget(self.translation_label)
+
+        # ── Collapsible Details ─────────────────────────────────────────
+        self._details_toggle = QPushButton("▼ Details")
+        self._details_toggle.setCheckable(True)
+        self._details_toggle.setChecked(False)
+        self._details_toggle.setFixedWidth(80)
+        self._details_toggle.setStyleSheet("font-size: 9pt; padding: 2px; border-radius: 4px;")
+        self._details_toggle.clicked.connect(self._toggle_details)
+        layout.addWidget(self._details_toggle)
+
+        self._details_area = QScrollArea()
+        self._details_area.setWidgetResizable(True)
+        self._details_area.setFrameShape(QFrame.Shape.NoFrame)
+        self._details_area.setMaximumHeight(0)  # Collapsed by default
+        self._details_area.setVisible(False)
+        
+        self._details_content = QLabel("Word-by-word breakdown...")
+        self._details_content.setWordWrap(True)
+        self._details_content.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+        self._details_content.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
+        self._details_content.setContentsMargins(4, 4, 4, 4)
+        self._details_area.setWidget(self._details_content)
+        layout.addWidget(self._details_area)
 
         # ── Action buttons ───────────────────────────────────────────────
         btn_row = QHBoxLayout()
@@ -203,6 +261,13 @@ class TranslatorPopup(QWidget):
         self._setup_accessibility()
         # Size dynamically after layout; start at a sensible compact default
         self.resize(400, 160)
+
+    def eventFilter(self, obj, event):
+        if obj is self.text_display and event.type() == event.Type.KeyPress:
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
+                self._retranslate()
+                return True
+        return super().eventFilter(obj, event)
 
     def _setup_accessibility(self):
         self._pinyin_label.setAccessibleName("Pinyin romanisation")
@@ -262,10 +327,15 @@ class TranslatorPopup(QWidget):
 
         self.setStyleSheet(f"""
             QTextEdit {{
-                border: none;
-                background: transparent;
+                border: 1px solid rgba(0,0,0,0.05);
+                background: rgba(255,255,255,0.05);
+                border-radius: 4px;
                 font-size: 11pt;
                 color: {palette.muted};
+            }}
+            QTextEdit:focus {{
+                border-color: {palette.border};
+                background: rgba(255,255,255,0.1);
             }}
             QLabel {{
                 border: none;
@@ -304,8 +374,7 @@ class TranslatorPopup(QWidget):
                 color: {palette.text};
             }}
         """)
-        # Style the small header buttons directly — avoids objectName/re-apply
-        # timing issues where Qt skips re-evaluation of an unchanged stylesheet.
+        # Style the small header buttons directly
         _hdr = (
             f"QPushButton {{ background: transparent; border: none; border-radius: 5px;"
             f" padding: 2px; font-size: 11pt; color: {palette.muted}; }}"
@@ -321,6 +390,11 @@ class TranslatorPopup(QWidget):
         self._drag_grip.setStyleSheet(
             f"QLabel {{ color: {palette.muted}; background: transparent; font-size: 11pt; }}"
         )
+        # Small retranslate button style
+        self.btn_retranslate.setStyleSheet(f"""
+            QPushButton {{ border-radius: 4px; padding: 0; font-size: 12pt; border: 1px solid transparent; }}
+            QPushButton:hover {{ background: {palette.btn_hover}; border-color: {palette.border}; }}
+        """)
 
     def _apply_config(self, config):
         if config is None:
@@ -415,6 +489,7 @@ class TranslatorPopup(QWidget):
         if self._dismissed:
             return
         if text.startswith("⚠"):
+            self._loading_timer.stop()
             self.translation_label.setText(text)
             self.translation_label.adjustSize()
             if "language pack" in text.lower():
@@ -423,18 +498,41 @@ class TranslatorPopup(QWidget):
         self.captured_text = text
         self.text_display.setPlainText(text)
         self.translation_label.setText("Translating…")
+        self._loading_dots = 0
+        self._loading_timer.start()
         self._start_translation()
+
+    def _retranslate(self):
+        new_text = self.text_display.toPlainText().strip()
+        if not new_text:
+            return
+        self.captured_text = new_text
+        self.translation_label.setText("Translating…")
+        self._loading_dots = 0
+        self._loading_timer.start()
+        self._start_translation()
+        self._start_pinyin(new_text)
 
     def _on_translation_ready(self, text: str):
         if self._dismissed:
             return
-        self.translation_label.setText(text)
+        self._loading_timer.stop()
+        
+        # Wrap English words in <a> tags for dictionary lookup
+        if not text.startswith("⚠"):
+            self.translation_label.setText(wrap_words(text))
+            self._update_details()  # Generate word-by-word breakdown
+        else:
+            self.translation_label.setText(text)
+
         self.translation_label.adjustSize()
 
         needed_h = (
             self.text_display.height()
             + 7 + 1 + 7                         # spacing + sep + spacing
             + self.translation_label.sizeHint().height()
+            + 25                                 # details toggle
+            + self._details_area.maximumHeight() # details area height
             + 36                                 # button row
             + 8 + 12                             # top + bottom margins
             + 26                                 # header row
@@ -449,6 +547,68 @@ class TranslatorPopup(QWidget):
         self.btn_pin.setEnabled(is_real)
         if self._on_pin is not None:
             self.btn_pin_sidebar.setEnabled(is_real)
+
+    def _on_link_activated(self, link: str):
+        """Handle clicking on a wrapped English word."""
+        if not link.startswith("word:"):
+            return
+        word = link[5:]
+        if not self.dictionary:
+            return
+        
+        entries = self.dictionary.lookup_english(word)
+        if not entries:
+            QToolTip.showText(QCursor.pos(), f"No dictionary entries found for '{word}'", self)
+            return
+
+        # Format tooltip content
+        tip_lines = [f"<b>{word}</b>"]
+        for entry in entries[:5]:  # Limit to 5 entries
+            tip_lines.append(f"• {entry.simplified} ({entry.pinyin}): {', '.join(entry.glosses[:3])}")
+        
+        QToolTip.showText(QCursor.pos(), "<br>".join(tip_lines), self)
+
+    def _toggle_details(self, checked: bool):
+        """Toggle the collapsible word-by-word details section."""
+        self._details_toggle.setText("▲ Details" if checked else "▼ Details")
+        if checked:
+            self._details_area.setVisible(True)
+            self._details_area.setMaximumHeight(150)
+        else:
+            self._details_area.setMaximumHeight(0)
+            self._details_area.setVisible(False)
+        
+        # Adjust popup height
+        self._on_translation_ready(self.translation_label.text())
+
+    def _update_details(self):
+        """Update the word-by-word breakdown using the pipeline."""
+        if not self.dictionary or not self.captured_text:
+            return
+        
+        try:
+            from zh_en_translator.engines import pipeline
+            results = pipeline.translate(self.captured_text, self.dictionary)
+            
+            html_parts = []
+            for r in results:
+                if not r.is_chinese:
+                    html_parts.append(f"<span>{r.token}</span>")
+                    continue
+                
+                gloss_text = ", ".join(r.glosses[:3]) if r.glosses else "???"
+                pinyin = f" [{r.pinyin}]" if r.pinyin else ""
+                html_parts.append(
+                    f'<div style="margin-bottom: 4px;">'
+                    f'<b>{r.token}</b>{pinyin}<br>'
+                    f'<span style="color: gray; font-size: 9pt;">{gloss_text}</span>'
+                    f'</div>'
+                )
+            
+            self._details_content.setText("".join(html_parts))
+        except Exception as e:
+            logger.warning("Failed to update details: %s", e)
+            self._details_content.setText("Failed to load details.")
 
     def _on_pinyin_ready(self, pinyin_str: str):
         if self._dismissed or not pinyin_str:
@@ -469,7 +629,7 @@ class TranslatorPopup(QWidget):
         if not translation or translation == "Translating…":
             return
         try:
-            pyperclip.copy(translation)
+            QApplication.clipboard().setText(translation)
         except Exception:
             return
         self._dismissed = True
@@ -542,7 +702,10 @@ class TranslatorPopup(QWidget):
         from PyQt6.QtCore import QEvent
         if event.type() == QEvent.Type.WindowDeactivate:
             if not self._pinned:
-                QTimer.singleShot(150, self._dismiss)
+                # Use focusWidget to check if focus is still within the popup
+                # (e.g. child widget like QTextEdit is active)
+                if not self.isActiveWindow():
+                    QTimer.singleShot(150, self._dismiss)
         super().changeEvent(event)
 
     def _dismiss(self):
@@ -550,7 +713,7 @@ class TranslatorPopup(QWidget):
             return
         self._dismissed = True
         try:
-            pyperclip.copy(self.original_clipboard)
+            QApplication.clipboard().setText(self.original_clipboard)
         except Exception:
             pass
         if self._worker and self._worker.isRunning():
@@ -564,8 +727,6 @@ class TranslatorPopup(QWidget):
     def mousePressEvent(self, event):
         if event.button() == Qt.MouseButton.LeftButton:
             # Start drag from any area that isn't an interactive child widget.
-            # QPushButton and QTextEdit absorb their own mouse events; QLabel with
-            # TextSelectableByMouse does too.  Everything else propagates here.
             child = self.childAt(event.pos())
             if not isinstance(child, (QPushButton, QTextEdit)):
                 self._drag_pos = (

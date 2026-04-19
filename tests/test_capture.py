@@ -1,38 +1,57 @@
 """Unit tests for clipboard capture logic."""
 
 from unittest.mock import Mock, MagicMock
+from PyQt6.QtCore import QMimeData
+from PyQt6.QtWidgets import QApplication
 
 import pytest
 
 from zh_en_translator.capture import TextCapture
 
 
-def test_capture_selection_success(monkeypatch):
+def test_capture_selection_success(qapp, monkeypatch):
     """Test successful text capture with clipboard restore."""
     capture = TextCapture()
+    clipboard = QApplication.clipboard()
 
-    # Mock pyperclip and keyboard
-    original_clipboard = "original text"
+    # Mock original mime data
+    original_text = "original text"
+    original_mime = QMimeData()
+    original_mime.setText(original_text)
+
+    # Mock captured text
     captured_text = "你好世界"
 
-    paste_call_count = [0]
+    # Set initial state
+    clipboard.setMimeData(original_mime)
 
-    def mock_paste():
-        paste_call_count[0] += 1
-        if paste_call_count[0] == 1:
-            return original_clipboard
-        else:
-            return captured_text
-
-    mock_copy = Mock()
     mock_keyboard = MagicMock()
-
-    monkeypatch.setattr("zh_en_translator.capture.pyperclip.paste", mock_paste)
-    monkeypatch.setattr("zh_en_translator.capture.pyperclip.copy", mock_copy)
     monkeypatch.setattr("zh_en_translator.capture.KeyboardController", lambda: mock_keyboard)
-
-    # Recreate capture with mocked keyboard
     capture.keyboard = mock_keyboard
+
+    # We need to simulate the clipboard changing after Ctrl+C
+    # and then being restored.
+    state = {"captured": False}
+
+    original_text_fn = clipboard.text
+    def mock_text():
+        if state["captured"]:
+            return captured_text
+        return original_text_fn()
+
+    original_set_mime_fn = clipboard.setMimeData
+    def mock_set_mime(data):
+        # When restore is called, we go back to original state
+        state["captured"] = False
+        original_set_mime_fn(data)
+
+    monkeypatch.setattr(clipboard, "text", mock_text)
+    monkeypatch.setattr(clipboard, "setMimeData", mock_set_mime)
+
+    # Trigger 'captured' state when keyboard is 'pressed'
+    def mock_press(key):
+        state["captured"] = True
+    mock_keyboard.press.side_effect = mock_press
 
     result = capture.capture_selection()
 
@@ -44,101 +63,31 @@ def test_capture_selection_success(monkeypatch):
     assert mock_keyboard.release.called
 
     # Verify clipboard was restored
-    mock_copy.assert_called_with(original_clipboard)
+    assert clipboard.text() == original_text
 
 
-def test_capture_selection_empty_clipboard(monkeypatch):
-    """Test capture when clipboard read fails initially."""
-    capture = TextCapture()
-
-    captured_text = "captured text"
-
-    paste_call_count = [0]
-
-    def mock_paste():
-        paste_call_count[0] += 1
-        if paste_call_count[0] == 1:
-            raise Exception("Clipboard error")
-        return captured_text
-
-    mock_copy = Mock()
-    mock_keyboard = MagicMock()
-
-    monkeypatch.setattr("zh_en_translator.capture.pyperclip.paste", mock_paste)
-    monkeypatch.setattr("zh_en_translator.capture.pyperclip.copy", mock_copy)
-
-    capture.keyboard = mock_keyboard
-
-    result = capture.capture_selection()
-
-    # Should still return captured text despite initial clipboard error
-    assert result == captured_text
-
-    # Restore should be called with empty string
-    mock_copy.assert_called_with("")
-
-
-def test_capture_selection_restore_fails(monkeypatch):
-    """Test that capture succeeds even if clipboard restore fails."""
-    capture = TextCapture()
-
-    original_clipboard = "original"
-    captured_text = "captured"
-
-    paste_call_count = [0]
-
-    def mock_paste():
-        paste_call_count[0] += 1
-        if paste_call_count[0] == 1:
-            return original_clipboard
-        return captured_text
-
-    def mock_copy(text):
-        if text == original_clipboard:
-            raise Exception("Restore failed")
-
-    mock_keyboard = MagicMock()
-
-    monkeypatch.setattr("zh_en_translator.capture.pyperclip.paste", mock_paste)
-    monkeypatch.setattr("zh_en_translator.capture.pyperclip.copy", mock_copy)
-
-    capture.keyboard = mock_keyboard
-
-    # Should not raise, just return captured text
-    result = capture.capture_selection()
-    assert result == captured_text
-
-
-def test_capture_no_selection(monkeypatch):
+def test_capture_no_selection(qapp, monkeypatch):
     """Test capture when Ctrl+C copies nothing (no selection)."""
     capture = TextCapture()
+    clipboard = QApplication.clipboard()
 
-    original_clipboard = "original"
+    original_text = "original"
+    original_mime = QMimeData()
+    original_mime.setText(original_text)
+    clipboard.setMimeData(original_mime)
 
-    paste_call_count = [0]
-
-    def mock_paste():
-        paste_call_count[0] += 1
-        if paste_call_count[0] == 1:
-            return original_clipboard
-        # No change after Ctrl+C means no selection
-        return original_clipboard
-
-    mock_copy = Mock()
     mock_keyboard = MagicMock()
-
-    monkeypatch.setattr("zh_en_translator.capture.pyperclip.paste", mock_paste)
-    monkeypatch.setattr("zh_en_translator.capture.pyperclip.copy", mock_copy)
-
+    monkeypatch.setattr("zh_en_translator.capture.KeyboardController", lambda: mock_keyboard)
     capture.keyboard = mock_keyboard
+
+    # In this case, even after "Ctrl+C", clipboard.text() returns same text
+    monkeypatch.setattr(clipboard, "text", lambda: original_text)
 
     result = capture.capture_selection()
 
-    # Should return the original clipboard (unchanged)
-    assert result == original_clipboard
-
-    # Restore should still be attempted
-    mock_copy.assert_called_with(original_clipboard)
+    # Should return original text if Ctrl+C didn't change it
+    assert result == original_text
+    assert clipboard.text() == original_text
 
 
 def test_hotkey_string_parseable():

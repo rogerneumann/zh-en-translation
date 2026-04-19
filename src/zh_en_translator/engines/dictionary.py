@@ -219,6 +219,7 @@ class Dictionary:
         )
         cursor.execute("CREATE INDEX idx_simplified ON entries(simplified)")
         cursor.execute("CREATE INDEX idx_traditional ON entries(traditional)")
+        cursor.execute("CREATE INDEX idx_glosses ON entries(glosses)")
 
         # Parse and insert entries
         with open(cedict_txt, "r", encoding="utf-8") as f:
@@ -301,6 +302,43 @@ class Dictionary:
             seen.add(key)
 
             # Parse glosses from pipe-separated string
+            glosses = [g.strip() for g in glosses_text.split("/") if g.strip()]
+            entries.append(Entry(trad, simp, pinyin, glosses))
+
+        return entries
+
+    def lookup_english(self, word: str) -> list[Entry]:
+        """
+        Lookup entries that contain the given English word in their glosses.
+
+        Args:
+            word: The English word to search for.
+
+        Returns:
+            List of matching entries.
+        """
+        cursor = self.conn.cursor()
+        # Using LIKE with wildcards for a basic "contains" search.
+        # For a full-text search we'd need FTS5, but this is okay for a sample.
+        cursor.execute(
+            """
+            SELECT traditional, simplified, pinyin, glosses
+            FROM entries
+            WHERE glosses LIKE ? OR glosses LIKE ? OR glosses LIKE ?
+            LIMIT 50
+        """,
+            (f"%/{word}/%", f"{word}/%", f"%/{word}"),
+        )
+        rows = cursor.fetchall()
+
+        entries = []
+        seen = set()
+        for row in rows:
+            trad, simp, pinyin, glosses_text = row
+            key = (trad, simp, pinyin)
+            if key in seen:
+                continue
+            seen.add(key)
             glosses = [g.strip() for g in glosses_text.split("/") if g.strip()]
             entries.append(Entry(trad, simp, pinyin, glosses))
 

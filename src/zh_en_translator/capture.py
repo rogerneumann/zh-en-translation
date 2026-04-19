@@ -2,7 +2,8 @@
 
 import time
 
-import pyperclip
+from PyQt6.QtWidgets import QApplication
+from PyQt6.QtCore import QMimeData
 from pynput.keyboard import Controller as KeyboardController
 from pynput.keyboard import Key
 
@@ -22,22 +23,27 @@ class TextCapture:
         Capture currently selected text.
 
         Steps:
-        1. Save current clipboard contents.
+        1. Save current clipboard contents (as QMimeData).
         2. Simulate Ctrl+C to copy selection.
         3. Small sleep for OS clipboard propagation.
-        4. Read clipboard.
+        4. Read clipboard text.
         5. Restore original clipboard contents.
 
         Returns:
             The captured text, or empty string if capture failed or clipboard
             was empty/binary.
         """
+        clipboard = QApplication.clipboard()
+
         # Step 1: Save current clipboard
-        try:
-            original_clipboard = pyperclip.paste()
-        except Exception:
-            # If clipboard read fails, assume it's empty or binary
-            original_clipboard = ""
+        # We must create a copy of the mime data, because the one returned by
+        # clipboard.mimeData() is owned by the clipboard and will change.
+        original_mime = clipboard.mimeData()
+        saved_mime = QMimeData()
+
+        # Copy all formats
+        for fmt in original_mime.formats():
+            saved_mime.setData(fmt, original_mime.data(fmt))
 
         try:
             # Step 2: Simulate Ctrl+C
@@ -50,17 +56,14 @@ class TextCapture:
             time.sleep(CLIPBOARD_WAIT_MS)
 
             # Step 4: Read clipboard
-            try:
-                captured_text = pyperclip.paste()
-            except Exception:
-                # Clipboard may contain binary data or be inaccessible
-                captured_text = ""
-
+            captured_text = clipboard.text().strip()
             return captured_text
+
+        except Exception:
+            # Capture failed
+            return ""
         finally:
             # Step 5: Restore original clipboard (always)
-            try:
-                pyperclip.copy(original_clipboard)
-            except Exception:
-                # If restore fails, at least we tried
-                pass
+            # Use a small delay before restoring to ensure the 'c' key release
+            # and OS clipboard updates from Ctrl+C have settled.
+            clipboard.setMimeData(saved_mime)

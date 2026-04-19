@@ -36,6 +36,7 @@ class Config:
     hotkey: str = "<ctrl>+<shift>+t"
     mode: str = "popup"           # "popup" | "sidebar"
     startup: bool = True          # launch at Windows login
+    auto_check_updates: bool = True
 
     # [display]
     font_family: str = ""         # empty = system default
@@ -67,6 +68,9 @@ class Config:
     ms_translator_enabled: bool = False
     ms_translator_api_key: str = ""
     ms_translator_region: str = ""
+    deepl_enabled: bool = False
+    deepl_api_key: str = ""
+    deepl_pro: bool = False
 
 
 def load_config(config_path: Path | None = None) -> Config:
@@ -97,6 +101,7 @@ def load_config(config_path: Path | None = None) -> Config:
         hotkey=_get("general", "hotkey", defaults.hotkey),
         mode=_get("general", "mode", defaults.mode),
         startup=_get("general", "startup", defaults.startup),
+        auto_check_updates=_get("general", "auto_check_updates", defaults.auto_check_updates),
         font_family=_get("display", "font_family", defaults.font_family),
         font_size=_get("display", "font_size", defaults.font_size),
         bg_color=_get("display", "bg_color", defaults.bg_color),
@@ -116,6 +121,9 @@ def load_config(config_path: Path | None = None) -> Config:
         ms_translator_enabled=_get("cloud", "ms_translator_enabled", defaults.ms_translator_enabled),
         ms_translator_api_key=_get("cloud", "ms_translator_api_key", defaults.ms_translator_api_key),
         ms_translator_region=_get("cloud", "ms_translator_region", defaults.ms_translator_region),
+        deepl_enabled=_get("cloud", "deepl_enabled", defaults.deepl_enabled),
+        deepl_api_key=_get("cloud", "deepl_api_key", defaults.deepl_api_key),
+        deepl_pro=_get("cloud", "deepl_pro", defaults.deepl_pro),
     )
 
 
@@ -131,6 +139,7 @@ def save_config(cfg: Config, config_path: Path | None = None) -> None:
 hotkey = {_toml_str(cfg.hotkey)}
 mode = {_toml_str(cfg.mode)}
 startup = {_toml_bool(cfg.startup)}
+auto_check_updates = {_toml_bool(cfg.auto_check_updates)}
 
 [display]
 font_family = {_toml_str(cfg.font_family)}
@@ -162,6 +171,9 @@ traditional_to_simplified = {_toml_bool(cfg.traditional_to_simplified)}
 ms_translator_enabled = {_toml_bool(cfg.ms_translator_enabled)}
 ms_translator_api_key = {_toml_str(cfg.ms_translator_api_key)}
 ms_translator_region = {_toml_str(cfg.ms_translator_region)}
+deepl_enabled = {_toml_bool(cfg.deepl_enabled)}
+deepl_api_key = {_toml_str(cfg.deepl_api_key)}
+deepl_pro = {_toml_bool(cfg.deepl_pro)}
 """
     config_path.write_text(toml_content, encoding="utf-8")
 

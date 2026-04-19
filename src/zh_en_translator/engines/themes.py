@@ -40,6 +40,14 @@ THEMES: dict[str, ThemePalette] = {
         btn_hover="rgba(80,50,20,0.08)",
         btn_pressed="rgba(80,50,20,0.14)",
     ),
+    "high_contrast": ThemePalette(
+        bg="#000000",
+        text="#FFFF00",  # Yellow
+        muted="#00FFFF", # Cyan
+        border="rgba(255,255,255,0.8)",
+        btn_hover="rgba(255,255,255,0.2)",
+        btn_pressed="rgba(255,255,255,0.4)",
+    ),
 }
 
 

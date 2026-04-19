@@ -30,10 +30,10 @@ from PyQt6.QtWidgets import (
 from zh_en_translator.config import Config, save_config
 
 _CLOUD_WARNING = (
-    "⚠  Enabling cloud translation will send your text to Microsoft Azure servers "
+    "⚠  Enabling cloud translation will send your text to Microsoft Azure or DeepL servers "
     "over the internet. Only enable this if your organisation permits sending "
     "potentially sensitive data to third-party cloud services.\n\n"
-    "The API key is stored in plain text in config.toml. "
+    "The API keys are stored in plain text in config.toml. "
     "Secure that file if the machine is shared."
 )
 
@@ -96,6 +96,7 @@ class PreferencesDialog(QDialog):
             hotkey=config.hotkey,
             mode=config.mode,
             startup=config.startup,
+            auto_check_updates=config.auto_check_updates,
             font_family=config.font_family,
             font_size=config.font_size,
             bg_color=config.bg_color,
@@ -113,6 +114,9 @@ class PreferencesDialog(QDialog):
             ms_translator_enabled=config.ms_translator_enabled,
             ms_translator_api_key=config.ms_translator_api_key,
             ms_translator_region=config.ms_translator_region,
+            deepl_enabled=config.deepl_enabled,
+            deepl_api_key=config.deepl_api_key,
+            deepl_pro=config.deepl_pro,
         )
 
         # Unsaved-changes tracking
@@ -185,6 +189,16 @@ class PreferencesDialog(QDialog):
         trad_layout.addWidget(self._trad_to_simp_check)
         layout.addWidget(trad_group)
 
+        update_group = QGroupBox("Updates")
+        update_layout = QVBoxLayout(update_group)
+        self._auto_update_check = QCheckBox("Check for updates automatically on startup")
+        update_layout.addWidget(self._auto_update_check)
+        self._btn_check_now = QPushButton("Check for Updates Now")
+        self._btn_check_now.setFixedWidth(160)
+        # self._btn_check_now.clicked.connect(self._on_check_updates_clicked) # TODO
+        update_layout.addWidget(self._btn_check_now)
+        layout.addWidget(update_group)
+
         layout.addStretch()
         return widget
 
@@ -203,6 +217,7 @@ class PreferencesDialog(QDialog):
             ("Light",          "light"),
             ("Dark",           "dark"),
             ("Sepia",          "sepia"),
+            ("High Contrast",  "high_contrast"),
         ]:
             self._theme_combo.addItem(label, userData=value)
         theme_layout.addWidget(self._theme_combo)
@@ -399,11 +414,11 @@ class PreferencesDialog(QDialog):
 
         enable_group = QGroupBox("Microsoft Azure Translator")
         enable_layout = QVBoxLayout(enable_group)
-        self._ms_enabled_check = QCheckBox("Enable cloud translation (sends text to Azure)")
+        self._ms_enabled_check = QCheckBox("Enable Azure Cloud translation")
         enable_layout.addWidget(self._ms_enabled_check)
         layout.addWidget(enable_group)
 
-        creds_group = QGroupBox("API Credentials")
+        creds_group = QGroupBox("Azure API Credentials")
         creds_layout = QVBoxLayout(creds_group)
         key_row = QHBoxLayout()
         key_row.addWidget(QLabel("API Key:"))
@@ -423,17 +438,39 @@ class PreferencesDialog(QDialog):
         self._ms_region_edit.setPlaceholderText("e.g. eastus, westeurope (leave blank if unsure)")
         region_row.addWidget(self._ms_region_edit, 1)
         creds_layout.addLayout(region_row)
-        hint = QLabel(
-            "Get an API key from the Azure portal (Cognitive Services → Translator). "
-            "The Free tier (F0) allows 2 million characters/month."
-        )
-        hint.setWordWrap(True)
-        hint.setStyleSheet("color: gray; font-size: 9pt;")
-        creds_layout.addWidget(hint)
         layout.addWidget(creds_group)
 
         self._ms_enabled_check.toggled.connect(creds_group.setEnabled)
-        creds_group.setEnabled(False)
+        creds_group.setEnabled(self._ms_enabled_check.isChecked())
+
+        # ── DeepL ──────────────────────────────────────────────────────────
+        deepl_group = QGroupBox("DeepL Translator")
+        deepl_layout = QVBoxLayout(deepl_group)
+        self._deepl_enabled_check = QCheckBox("Enable DeepL translation")
+        deepl_layout.addWidget(self._deepl_enabled_check)
+        layout.addWidget(deepl_group)
+
+        deepl_creds = QGroupBox("DeepL API Credentials")
+        deepl_creds_layout = QVBoxLayout(deepl_creds)
+        dk_row = QHBoxLayout()
+        dk_row.addWidget(QLabel("API Key:"))
+        self._deepl_key_edit = QLineEdit()
+        self._deepl_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self._deepl_key_edit.setPlaceholderText("Paste your DeepL API key here")
+        dk_row.addWidget(self._deepl_key_edit, 1)
+        self._deepl_show_btn = QPushButton("Show")
+        self._deepl_show_btn.setFixedWidth(60)
+        self._deepl_show_btn.setCheckable(True)
+        self._deepl_show_btn.toggled.connect(self._on_show_deepl_toggled)
+        dk_row.addWidget(self._deepl_show_btn)
+        deepl_creds_layout.addLayout(dk_row)
+        
+        self._deepl_pro_check = QCheckBox("DeepL Pro account (use api.deepl.com)")
+        deepl_creds_layout.addWidget(self._deepl_pro_check)
+        layout.addWidget(deepl_creds)
+
+        self._deepl_enabled_check.toggled.connect(deepl_creds.setEnabled)
+        deepl_creds.setEnabled(self._deepl_enabled_check.isChecked())
 
         layout.addStretch()
         return widget
@@ -443,6 +480,12 @@ class PreferencesDialog(QDialog):
             QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
         )
         self._ms_show_key_btn.setText("Hide" if checked else "Show")
+
+    def _on_show_deepl_toggled(self, checked: bool) -> None:
+        self._deepl_key_edit.setEchoMode(
+            QLineEdit.EchoMode.Normal if checked else QLineEdit.EchoMode.Password
+        )
+        self._deepl_show_btn.setText("Hide" if checked else "Show")
 
     # ------------------------------------------------------------------
     # Live preview
@@ -488,7 +531,7 @@ class PreferencesDialog(QDialog):
         pinyin_font.setPointSize(max(7, size - 4))
         self._preview_pinyin.setFont(pinyin_font)
 
-        self._preview_frame.setStyleSheet(f"""
+        self._preview_frame.setStyleSheet(f\"\"\"
             QFrame {{
                 background: {bg_hex};
                 border: 1px solid {palette.border};
@@ -518,7 +561,7 @@ class PreferencesDialog(QDialog):
                 border-top: 1px solid {palette.border};
                 max-height: 1px;
             }}
-        """)
+        \"\"\")
 
     # ------------------------------------------------------------------
     # Dirty tracking
@@ -532,6 +575,7 @@ class PreferencesDialog(QDialog):
         self._hotkey_edit.textChanged.connect(self._mark_dirty)
         self._mode_group.buttonClicked.connect(self._mark_dirty)
         self._trad_to_simp_check.toggled.connect(self._mark_dirty)
+        self._auto_update_check.toggled.connect(self._mark_dirty)
         self._side_group.buttonClicked.connect(self._mark_dirty)
         self._color_fresh_btn.color_changed.connect(self._mark_dirty)
         self._color_idle_btn.color_changed.connect(self._mark_dirty)
@@ -542,6 +586,9 @@ class PreferencesDialog(QDialog):
         self._ms_enabled_check.toggled.connect(self._mark_dirty)
         self._ms_api_key_edit.textChanged.connect(self._mark_dirty)
         self._ms_region_edit.textChanged.connect(self._mark_dirty)
+        self._deepl_enabled_check.toggled.connect(self._mark_dirty)
+        self._deepl_key_edit.textChanged.connect(self._mark_dirty)
+        self._deepl_pro_check.toggled.connect(self._mark_dirty)
         # Display tab signals already wired in _build_display_tab
 
     # ------------------------------------------------------------------
@@ -553,11 +600,12 @@ class PreferencesDialog(QDialog):
 
         # General
         self._hotkey_edit.setText(cfg.hotkey)
-        if cfg.mode == "sidebar":
+        if cfg.mode == \"sidebar\":
             self._mode_sidebar.setChecked(True)
         else:
             self._mode_popup.setChecked(True)
         self._trad_to_simp_check.setChecked(cfg.traditional_to_simplified)
+        self._auto_update_check.setChecked(cfg.auto_check_updates)
 
         # Display
         theme_index = self._theme_combo.findData(cfg.theme)
@@ -565,7 +613,7 @@ class PreferencesDialog(QDialog):
         if cfg.font_family:
             self._font_combo.setCurrentFont(QFont(cfg.font_family))
         else:
-            self._font_combo.lineEdit().setText("")
+            self._font_combo.lineEdit().setText(\"\")
         self._font_size_spin.setValue(cfg.font_size)
         self._bg_color_btn.set_color_str(cfg.bg_color)
         self._show_pinyin_check.setChecked(cfg.show_pinyin)
@@ -573,7 +621,7 @@ class PreferencesDialog(QDialog):
         self._pinyin_max_spin.setEnabled(cfg.show_pinyin)
 
         # Sidebar
-        if cfg.side == "left":
+        if cfg.side == \"left\":
             self._side_left.setChecked(True)
         else:
             self._side_right.setChecked(True)
@@ -590,6 +638,10 @@ class PreferencesDialog(QDialog):
         self._ms_enabled_check.setChecked(cfg.ms_translator_enabled)
         self._ms_api_key_edit.setText(cfg.ms_translator_api_key)
         self._ms_region_edit.setText(cfg.ms_translator_region)
+        
+        self._deepl_enabled_check.setChecked(cfg.deepl_enabled)
+        self._deepl_key_edit.setText(cfg.deepl_api_key)
+        self._deepl_pro_check.setChecked(cfg.deepl_pro)
 
         # Initial preview render + connect dirty signals (after load so no false dirty)
         self._update_preview()
@@ -597,21 +649,22 @@ class PreferencesDialog(QDialog):
         self._dirty = False  # loading doesn't count as a change
 
     def _collect_config(self) -> Config:
-        mode = "sidebar" if self._mode_sidebar.isChecked() else "popup"
-        side = "left" if self._side_left.isChecked() else "right"
+        mode = \"sidebar\" if self._mode_sidebar.isChecked() else \"popup\"
+        side = \"left\" if self._side_left.isChecked() else \"right\"
 
         line_edit   = self._font_combo.lineEdit()
-        font_family = line_edit.text().strip() if line_edit else ""
-        ocr_engine  = self._ocr_combo.currentData() or "auto"
+        font_family = line_edit.text().strip() if line_edit else \"\"
+        ocr_engine  = self._ocr_combo.currentData() or \"auto\"
 
         return Config(
             hotkey=self._hotkey_edit.text().strip() or self.config.hotkey,
             mode=mode,
             startup=self.config.startup,
+            auto_check_updates=self._auto_update_check.isChecked(),
             font_family=font_family,
             font_size=self._font_size_spin.value(),
             bg_color=self._bg_color_btn.get_color_str(),
-            theme=self._theme_combo.currentData() or "system",
+            theme=self._theme_combo.currentData() or \"system\",
             side=side,
             sidebar_y=self.config.sidebar_y,
             sidebar_width=self.config.sidebar_width,
@@ -626,6 +679,9 @@ class PreferencesDialog(QDialog):
             ms_translator_enabled=self._ms_enabled_check.isChecked(),
             ms_translator_api_key=self._ms_api_key_edit.text().strip(),
             ms_translator_region=self._ms_region_edit.text().strip(),
+            deepl_enabled=self._deepl_enabled_check.isChecked(),
+            deepl_api_key=self._deepl_key_edit.text().strip(),
+            deepl_pro=self._deepl_pro_check.isChecked(),
         )
 
     # ------------------------------------------------------------------
@@ -655,8 +711,8 @@ class PreferencesDialog(QDialog):
         if not self._skip_close_check and self._dirty:
             answer = QMessageBox.question(
                 self,
-                "Unsaved Changes",
-                "You have unsaved changes. Save before closing?",
+                \"Unsaved Changes\",
+                \"You have unsaved changes. Save before closing?\",
                 QMessageBox.StandardButton.Save
                 | QMessageBox.StandardButton.Discard
                 | QMessageBox.StandardButton.Cancel,
