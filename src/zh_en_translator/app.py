@@ -4,7 +4,6 @@ import logging
 import sys
 import threading
 
-import pyperclip
 from PyQt6.QtCore import Qt, QObject, QRectF, pyqtSignal, QThread
 from PyQt6.QtGui import QBrush, QFont, QIcon, QColor, QPainter, QPainterPath, QPixmap
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
@@ -82,7 +81,7 @@ def _render_icon_pixmap_fallback(size: int) -> "QPixmap":
     pixmap.fill(Qt.GlobalColor.transparent)
 
     p = QPainter(pixmap)
-    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    p.setRenderHint(QPainter.Antialiasing)
 
     radius = size * 0.215
     path = QPainterPath()
@@ -197,6 +196,15 @@ class _OCRWorker(QThread):
             self.result_ready.emit(f"⚠ OCR failed: {e}")
 
 
+class _UpdateWorker(QThread):
+    result_ready = pyqtSignal(object)  # emits ReleaseInfo or None
+
+    def run(self):
+        from zh_en_translator.engines.updates import get_latest_release
+        release = get_latest_release()
+        self.result_ready.emit(release)
+
+
 class TranslatorApp(QObject):
     """System tray application with global hotkey listener."""
 
@@ -220,9 +228,11 @@ class TranslatorApp(QObject):
 
         self.tray_icon = None
         self.popup = None
+        self.dictionary = None
         self.sidebar = TranslatorSidebar(config=self.config)
         self.paused = False
         self._ocr_worker = None
+        self._update_worker = None
 
         # Apply mode from config
         self.sidebar_mode: bool = self.config.mode == "sidebar"
@@ -237,11 +247,35 @@ class TranslatorApp(QObject):
         self.sidebar.closed.connect(self._on_sidebar_closed)
 
         self._setup_tray()
+        self._init_dictionary()
 
         # Show sidebar if starting in sidebar mode
         if self.sidebar_mode:
             self._update_tray_sidebar_label()
             self.sidebar.show()
+
+        # Check for updates on startup if enabled
+        if self.config.auto_check_updates:
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(5000, lambda: self._check_for_updates(manual=False))
+
+    def _init_dictionary(self):
+        """Build/load the dictionary in a background thread."""
+        def _task():
+            from zh_en_translator.engines.dictionary import ensure_cedict, Dictionary
+            try:
+                cedict_path = ensure_cedict()
+                db_path = cedict_path.with_suffix(".db")
+                if not db_path.exists():
+                    Dictionary.build_from_cedict(cedict_path, db_path)
+                self.dictionary = Dictionary(db_path)
+                # Also give it to sidebar
+                self.sidebar.dictionary = self.dictionary
+                logger.info("Dictionary ready")
+            except Exception as e:
+                logger.warning("Failed to initialize dictionary: %s", e)
+        
+        threading.Thread(target=_task, daemon=True).start()
 
     def _setup_tray(self):
         self.tray_icon = QSystemTrayIcon(self.app)
@@ -331,7 +365,7 @@ class TranslatorApp(QObject):
             self.popup.close()
 
         try:
-            original_clipboard = pyperclip.paste()
+            original_clipboard = QApplication.clipboard().text()
         except Exception:
             original_clipboard = ""
 
@@ -360,7 +394,11 @@ class TranslatorApp(QObject):
             captured_text = to_simplified(captured_text)
 
         self.popup = TranslatorPopup(
-            captured_text, original_clipboard, on_pin=self._pin_to_sidebar, config=self.config
+            captured_text,
+            original_clipboard,
+            dictionary=self.dictionary,
+            on_pin=self._pin_to_sidebar,
+            config=self.config
         )
         self.popup.show()
 
@@ -488,6 +526,44 @@ class TranslatorApp(QObject):
                 "Sidebar Mode: On" if self.sidebar_mode else "Sidebar Mode: Off"
             )
 
+    def _check_for_updates(self, manual: bool = False) -> None:
+        if self._update_worker and self._update_worker.isRunning():
+            return
+        self._update_worker = _UpdateWorker()
+        self._update_worker.result_ready.connect(
+            lambda info: self._on_update_check_finished(info, manual)
+        )
+        self._update_worker.start()
+
+    def _on_update_check_finished(self, release_info, manual: bool) -> None:
+        if not release_info:
+            if manual:
+                from PyQt6.QtWidgets import QMessageBox
+                QMessageBox.information(
+                    None, "Update Check", "Could not check for updates. Please try again later."
+                )
+            return
+
+        from zh_en_translator import __version__
+        from zh_en_translator.engines.updates import is_newer
+        
+        tag = release_info["tag_name"]
+        if is_newer(tag, __version__):
+            from PyQt6.QtWidgets import QMessageBox
+            msg = f"A new version is available: {tag}\n\nWould you like to visit the download page?"
+            ans = QMessageBox.question(
+                None, "Update Available", msg,
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+            )
+            if ans == QMessageBox.StandardButton.Yes:
+                import webbrowser
+                webbrowser.open(release_info["html_url"])
+        elif manual:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                None, "Update Check", f"You are running the latest version ({__version__})."
+            )
+
     def _open_preferences(self):
         from zh_en_translator.ui.preferences import PreferencesDialog
         from zh_en_translator.config import Config as _Config
@@ -497,6 +573,7 @@ class TranslatorApp(QObject):
             hotkey=self.config.hotkey,
             mode="sidebar" if self.sidebar_mode else "popup",
             startup=self.config.startup,
+            auto_check_updates=self.config.auto_check_updates,
             font_family=self.config.font_family,
             font_size=self.config.font_size,
             bg_color=self.config.bg_color,
@@ -514,9 +591,14 @@ class TranslatorApp(QObject):
             ms_translator_enabled=self.config.ms_translator_enabled,
             ms_translator_api_key=self.config.ms_translator_api_key,
             ms_translator_region=self.config.ms_translator_region,
+            deepl_enabled=self.config.deepl_enabled,
+            deepl_api_key=self.config.deepl_api_key,
+            deepl_pro=self.config.deepl_pro,
         )
         dialog = PreferencesDialog(current)
         dialog.settings_applied.connect(self._on_settings_applied)
+        if hasattr(dialog, "_btn_check_now"):
+            dialog._btn_check_now.clicked.connect(lambda: self._check_for_updates(manual=True))
         dialog.exec()
 
     def _on_settings_applied(self, cfg: Config) -> None:
@@ -575,14 +657,49 @@ class TranslatorApp(QObject):
         self.app.quit()
 
 
+def setup_logging():
+    """Configure persistent file-based logging.
+
+    Logs to %APPDATA%/zh-en-translator/logs/app.log (Windows) or
+    ~/.config/zh-en-translator/logs/app.log (others).
+    """
+    from zh_en_translator.config import get_config_path
+    log_dir = get_config_path().parent / "logs"
+    log_dir.mkdir(parents=True, exist_ok=True)
+    log_file = log_dir / "app.log"
+
+    # Use a rotating file handler to keep log size under control
+    from logging.handlers import RotatingFileHandler
+    handler = RotatingFileHandler(
+        log_file, maxBytes=1024 * 1024, backupCount=3, encoding="utf-8"
+    )
+    formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    )
+    handler.setFormatter(formatter)
+
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+    root_logger.addHandler(handler)
+
+    # Also keep stderr logging for dev/visibility
+    stream_handler = logging.StreamHandler()
+    stream_handler.setFormatter(formatter)
+    root_logger.addHandler(stream_handler)
+
+    logger.info("--- Application Started ---")
+    logger.info("Log file: %s", log_file)
+
+
 def main():
-    logging.basicConfig(level=logging.WARNING, format="%(levelname)s [%(name)s] %(message)s")
     # Suppress Qt's harmless "Unable to open monitor interface" warning that
     # appears when a secondary display is detected by Windows but currently
     # powered off (error 0xe0000225 = ERROR_NOT_FOUND from the GDI/DXGI layer).
     # Must be set before QApplication is created.
     import os
     os.environ.setdefault("QT_LOGGING_RULES", "qt.qpa.screen.warning=false")
+
+    setup_logging()
     app = TranslatorApp()
     app.start()
 

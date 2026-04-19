@@ -208,6 +208,35 @@ def test_sidebar_signals():
     assert hasattr(sidebar, "closed")
 
 
+def test_sidebar_history_ui_exists():
+    """History list and buttons are present on the sidebar."""
+    from zh_en_translator.ui.sidebar import TranslatorSidebar
+    _ = QApplication.instance() or QApplication(sys.argv)
+    sidebar = TranslatorSidebar()
+    assert hasattr(sidebar, "history_list")
+    assert hasattr(sidebar, "btn_clear")
+    assert hasattr(sidebar, "btn_export")
+
+
+def test_sidebar_history_updates_on_translation(tmp_path):
+    """History list updates when a translation is set."""
+    from zh_en_translator.ui.sidebar import TranslatorSidebar
+    from zh_en_translator.engines.history import HistoryManager
+    _ = QApplication.instance() or QApplication(sys.argv)
+    
+    sidebar = TranslatorSidebar()
+    # Mock the history manager to use a temp file for this test
+    temp_hist = tmp_path / "test_history.json"
+    sidebar._history_manager = HistoryManager(temp_hist)
+    sidebar._load_history_ui()
+    
+    assert sidebar.history_list.count() == 0
+    
+    sidebar.set_translation("你好", "Hello")
+    assert sidebar.history_list.count() == 1
+    assert "你好" in sidebar.history_list.item(0).text()
+
+
 def test_popup_lang_settings_button_hidden_by_default():
     """btn_lang_settings is hidden unless OCR reports a missing language pack."""
     _ = QApplication.instance() or QApplication(sys.argv)

@@ -118,7 +118,7 @@ def translate_sentence(text: str) -> str | None:
         # Collapse any double-spaces left by the substitution
         while "  " in translation:
             translation = translation.replace("  ", " ")
-        logger.debug("translation: %r", translation)
+        logger.debug("translation successful (length: %d chars)", len(translation))
 
         return translation if translation else None
 

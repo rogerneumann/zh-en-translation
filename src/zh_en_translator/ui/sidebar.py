@@ -23,7 +23,15 @@ from PyQt6.QtWidgets import (
     QFrame,
     QScrollArea,
     QApplication,
+    QListWidget,
+    QListWidgetItem,
+    QFileDialog,
+    QToolTip,
 )
+
+from zh_en_translator.engines.history import HistoryManager
+from zh_en_translator.config import get_config_path
+from zh_en_translator.ui.popup import wrap_words
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +129,8 @@ class TranslatorSidebar(QWidget):
         self.setPalette(QApplication.palette())
 
         self._config = config
+        self.dictionary = None  # Set by TranslatorApp
+        self._history_manager = HistoryManager(get_config_path().parent / "history.json")
 
         if config is not None:
             if config.color_fresh:
@@ -152,10 +162,24 @@ class TranslatorSidebar(QWidget):
         self._animation.setDuration(200)
         self._animation.setEasingCurve(QEasingCurve.Type.OutCubic)
 
+        self._loading_dots = 0
+        self._loading_timer = QTimer(self)
+        self._loading_timer.setInterval(400)
+        self._loading_timer.timeout.connect(self._animate_loading)
+
         self._setup_ui()
         self._apply_styling()
         self._setup_accessibility()
         self._reposition()
+
+    def _animate_loading(self):
+        self._loading_dots = (self._loading_dots + 1) % 4
+        dots = "." * self._loading_dots
+        # Check if we are in OCR mode or normal translation mode based on title or source
+        if "OCR" in self.source_label.text():
+            self.translation_label.setText(f"Running OCR{dots}")
+        else:
+            self.translation_label.setText(f"Translating{dots}")
 
     # ──────────────────────────────────────────────────────────────────────────
     # UI construction
@@ -230,15 +254,55 @@ class TranslatorSidebar(QWidget):
         self.translation_label.setTextInteractionFlags(
             Qt.TextInteractionFlag.TextSelectableByMouse
             | Qt.TextInteractionFlag.TextSelectableByKeyboard
+            | Qt.TextInteractionFlag.LinksAccessibleByMouse
         )
+        self.translation_label.linkActivated.connect(self._on_link_activated)
         trans_font = QFont()
         trans_font.setPointSize(12)
         self.translation_label.setFont(trans_font)
         self.translation_label.setStyleSheet("background: transparent;")
         scroll_layout.addWidget(self.translation_label)
+        
+        # ── History Section ──────────────────────────────────────────────
+        hist_header = QHBoxLayout()
+        hist_header.setContentsMargins(0, 10, 0, 0)
+        hist_header.setSpacing(4)
+        
+        self._hist_title = QLabel("History")
+        hist_font = QFont()
+        hist_font.setPointSize(9)
+        hist_font.setBold(True)
+        self._hist_title.setFont(hist_font)
+        hist_header.addWidget(self._hist_title)
+        hist_header.addStretch()
+        
+        self.btn_clear = QPushButton("🗑")
+        self.btn_clear.setFixedSize(22, 22)
+        self.btn_clear.setToolTip("Clear History")
+        self.btn_clear.clicked.connect(self._on_clear_history)
+        hist_header.addWidget(self.btn_clear)
+        
+        self.btn_export = QPushButton("📤")
+        self.btn_export.setFixedSize(22, 22)
+        self.btn_export.setToolTip("Export History to CSV")
+        self.btn_export.clicked.connect(self._on_export_history)
+        hist_header.addWidget(self.btn_export)
+        
+        scroll_layout.addLayout(hist_header)
+        
+        self.history_list = QListWidget()
+        self.history_list.setMinimumHeight(200)
+        self.history_list.itemClicked.connect(self._on_history_item_clicked)
+        # Ensure it doesn't have its own scrollbar to avoid nested scrolling issues
+        self.history_list.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.history_list.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        scroll_layout.addWidget(self.history_list)
+
         scroll_layout.addStretch()
 
         self._scroll = QScrollArea()
+        ...
+        self._load_history_ui()
         self._scroll.setWidget(scroll_content)
         self._scroll.setWidgetResizable(True)
         self._scroll.setFrameShape(QFrame.Shape.NoFrame)
@@ -335,6 +399,23 @@ class TranslatorSidebar(QWidget):
                 background: {btn_hover};
                 color: {text_color};
             }}
+            QListWidget {{
+                background: transparent;
+                border: none;
+                color: {text_color};
+                outline: none;
+            }}
+            QListWidget::item {{
+                background: transparent;
+                color: {text_color};
+                padding: 6px;
+                border-bottom: 1px solid {border_color};
+            }}
+            QListWidget::item:selected {{
+                background: {btn_hover};
+                color: {text_color};
+                border-radius: 4px;
+            }}
             QMenu {{
                 background: {theme_palette.bg};
                 color: {text_color};
@@ -357,6 +438,9 @@ class TranslatorSidebar(QWidget):
         self._title_label.setStyleSheet(
             f"color: {muted_color}; background: transparent; font-weight: 600;"
         )
+        self._hist_title.setStyleSheet(
+            f"color: {muted_color}; background: transparent; font-weight: 600; margin-top: 10px;"
+        )
         self._drag_hint.setStyleSheet(
             f"color: {muted_color}; background: transparent;"
         )
@@ -378,6 +462,16 @@ class TranslatorSidebar(QWidget):
             f" border-radius: 5px; color: {muted_color}; font-size: 11pt; padding: 1px; }}"
             f"QPushButton:hover {{ background: {btn_hover}; color: {text_color}; }}"
         )
+        self.btn_clear.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none;"
+            f" border-radius: 5px; color: {muted_color}; font-size: 11pt; padding: 1px; }}"
+            f"QPushButton:hover {{ background: {btn_hover}; color: {text_color}; }}"
+        )
+        self.btn_export.setStyleSheet(
+            f"QPushButton {{ background: transparent; border: none;"
+            f" border-radius: 5px; color: {muted_color}; font-size: 11pt; padding: 1px; }}"
+            f"QPushButton:hover {{ background: {btn_hover}; color: {text_color}; }}"
+        )
 
     def _setup_accessibility(self) -> None:
         self.setAccessibleName("Translation sidebar")
@@ -392,10 +486,17 @@ class TranslatorSidebar(QWidget):
 
     def set_translation(self, source: str, translation: str) -> None:
         self.source_label.setText(source)
-        self.translation_label.setText(translation)
+        if not translation.startswith("Running OCR") and not translation.startswith("⚠"):
+            self.translation_label.setText(wrap_words(translation))
+        else:
+            self.translation_label.setText(translation)
         self._indicator_colour = self.COLOUR_FRESH
         self.update()
         self.expand()
+        
+        # Save to history
+        self._history_manager.add_entry(source, translation)
+        self._load_history_ui()
 
     def set_translation_pending(self, source: str) -> None:
         self.source_label.setText(source)
@@ -404,10 +505,41 @@ class TranslatorSidebar(QWidget):
         self.update()
 
     def update_translation(self, translation: str) -> None:
-        self.translation_label.setText(translation)
+        if not translation.startswith("Running OCR") and not translation.startswith("⚠") and translation != "Translating…":
+            self.translation_label.setText(wrap_words(translation))
+        else:
+            self.translation_label.setText(translation)
+            
         if not self._expanded:
             self._indicator_colour = self.COLOUR_FRESH
             self.update()
+
+        # Save to history
+        source = self.source_label.text()
+        if source and translation and not translation.startswith("Running OCR") and translation != "Translating…":
+            self._history_manager.add_entry(source, translation)
+            self._load_history_ui()
+
+    def _on_link_activated(self, link: str):
+        """Handle clicking on a wrapped English word."""
+        if not link.startswith("word:"):
+            return
+        word = link[5:]
+        if not self.dictionary:
+            return
+        
+        from PyQt6.QtGui import QCursor
+        entries = self.dictionary.lookup_english(word)
+        if not entries:
+            QToolTip.showText(QCursor.pos(), f"No dictionary entries found for '{word}'", self)
+            return
+
+        # Format tooltip content
+        tip_lines = [f"<b>{word}</b>"]
+        for entry in entries[:5]:  # Limit to 5 entries
+            tip_lines.append(f"• {entry.simplified} ({entry.pinyin}): {', '.join(entry.glosses[:3])}")
+        
+        QToolTip.showText(QCursor.pos(), "<br>".join(tip_lines), self)
 
     def set_side(self, side: str) -> None:
         if side not in ("left", "right"):
@@ -645,3 +777,56 @@ class TranslatorSidebar(QWidget):
         self.collapse()
         self.hide()
         self.closed.emit()
+
+    # ──────────────────────────────────────────────────────────────────────────
+    # History slots
+    # ──────────────────────────────────────────────────────────────────────────
+
+    def _load_history_ui(self) -> None:
+        """Clear and repopulate the history QListWidget."""
+        self.history_list.clear()
+        history = self._history_manager.load_history()
+        for entry in history:
+            item = QListWidgetItem()
+            # Create a compact preview: Source \n Translation (truncated)
+            src = entry["source"].replace("\n", " ").strip()
+            trans = entry["translation"].replace("\n", " ").strip()
+            
+            if len(src) > 40:
+                src = src[:37] + "..."
+            if len(trans) > 40:
+                trans = trans[:37] + "..."
+                
+            item.setText(f"{src}\n{trans}")
+            item.setData(Qt.ItemDataRole.UserRole, entry)
+            
+            # Subtle tool tip with full text
+            item.setToolTip(f"{entry['source']}\n\n{entry['translation']}")
+            self.history_list.addItem(item)
+
+    def _on_history_item_clicked(self, item: QListWidgetItem) -> None:
+        """Restore a history item to the main labels."""
+        entry = item.data(Qt.ItemDataRole.UserRole)
+        if entry:
+            self.source_label.setText(entry["source"])
+            self.translation_label.setText(entry["translation"])
+            # Visual feedback that this is an "old" translation
+            self._indicator_colour = self.COLOUR_NEUTRAL
+            self.update()
+
+    def _on_clear_history(self) -> None:
+        """Wipe history and update UI."""
+        self._history_manager.clear_history()
+        self._load_history_ui()
+
+    def _on_export_history(self) -> None:
+        """Prompt user for a CSV location and export."""
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Translation History",
+            "translations_export.csv",
+            "CSV Files (*.csv);;All Files (*)"
+        )
+        if path:
+            from pathlib import Path as _Path
+            self._history_manager.export_to_csv(_Path(path))

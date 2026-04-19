@@ -55,7 +55,7 @@ def translate_sentence(text: str, api_key: str, region: str = "") -> str | None:
         with urllib.request.urlopen(req, timeout=10) as resp:
             payload = json.loads(resp.read().decode("utf-8"))
         translation = payload[0]["translations"][0]["text"]
-        logger.debug("Azure Translator result: %r", translation[:80])
+        logger.debug("Azure Translator successful (result length: %d chars)", len(translation))
         return translation if translation else None
     except urllib.error.HTTPError as exc:
         logger.warning("Azure Translator HTTP %s: %s", exc.code, exc.reason)
