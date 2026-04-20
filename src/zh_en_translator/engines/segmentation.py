@@ -1,6 +1,7 @@
 """Chinese text segmentation using jieba (preferred) with character-run fallback."""
 
 import logging
+from pathlib import Path
 
 try:
     import jieba
@@ -9,6 +10,54 @@ try:
     _JIEBA_AVAILABLE = True
 except ImportError:
     _JIEBA_AVAILABLE = False
+
+logger = logging.getLogger(__name__)
+
+
+def load_user_dict(dict_path: str | Path) -> None:
+    """Load a user dictionary into jieba for domain-specific terms.
+
+    Args:
+        dict_path: Path to user dictionary file. Expected format: one term per line,
+                   optionally with frequency and POS tag (tab-separated).
+                   Example: 激光模块\t10\tn
+    """
+    if not _JIEBA_AVAILABLE:
+        logger.warning("jieba not available; user dictionary ignored")
+        return
+
+    dict_path = Path(dict_path)
+    if not dict_path.exists():
+        logger.warning("user dictionary not found: %s", dict_path)
+        return
+
+    try:
+        jieba.load_userdict(str(dict_path))
+        logger.info("loaded user dictionary from %s", dict_path)
+    except Exception as e:
+        logger.error("failed to load user dictionary: %s", e)
+
+
+def add_custom_words(words: list[tuple[str, int, str]] | list[str]) -> None:
+    """Add custom words to jieba vocabulary.
+
+    Args:
+        words: List of words (strings) or tuples of (word, frequency, pos_tag).
+               Example: [('激光模块', 10, 'n'), ('手板样机', 8, 'n')]
+    """
+    if not _JIEBA_AVAILABLE:
+        logger.warning("jieba not available; custom words ignored")
+        return
+
+    for word_data in words:
+        if isinstance(word_data, str):
+            jieba.add_word(word_data)
+        elif isinstance(word_data, tuple) and len(word_data) >= 1:
+            jieba.add_word(word_data[0], freq=word_data[1] if len(word_data) > 1 else None,
+                          tag=word_data[2] if len(word_data) > 2 else None)
+
+
+
 
 
 def _segment_fallback(text: str) -> list[str]:
