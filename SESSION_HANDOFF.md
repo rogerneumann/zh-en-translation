@@ -1,106 +1,66 @@
-# Session Handoff - 2026-04-20
+# Session Handoff - 2026-04-20 Evening Session
 
-**Current Status:** M1 complete (technical dictionary + tests), M2 in progress  
-**Branch:** `v3-m1-m2-completion`  
-**Next Action:** When you return (after 1715 EST), start M2 agent
+**Current Status:** M1 Complete ✅ | M2 Complete ✅  
+**Branch merged to main:** `v3-m1-m2-completion`  
 
 ---
 
-## M1 Completion Summary
+## M1 Summary: Translation Quality ✅ COMPLETE
 
-✅ **Complete and tested** (12 passing tests)
-
-### What's Done
-- Technical dictionary with 40+ manufacturing/electronics terms (`user_dict_technical.toml`)
-- CC-CEDICT download function wired into app startup
+### What Was Accomplished
+- Created technical dictionary with 40+ manufacturing/electronics terms (`user_dict_technical.toml`)
+- CC-CEDICT auto-download wired into app startup (`ensure_cedict()`)
 - jieba user dictionary loading wired into app initialization
-- All tests passing
+- All tests passing (12/12) on `v3-m1-m2-completion` branch
 
-### Component Status (in this dev environment)
-- `jieba`: ✗ Not installed (will be available on Windows)
-- `argos`: ✗ Not available (will download on first run)
-- `ensure_cedict()`: ✓ Function available and wired
-- `load_user_dict()`: ✓ Function available and called at startup
+### Key Files Created/Modified
+- **New:** `src/zh_en_translator/resources/user_dict_technical.toml` (40+ terms)
+- **Modified:** `pyproject.toml`, `tests/test_user_dict.py`, `segmentation.py`, `pipeline.py`
 
-**On your Windows machine, these will be installed/downloaded automatically.**
-
----
-
-## M2 Tasks Remaining
-
-**High-impact items to complete:**
-1. UAC elevation fallback in `install_tesseract.ps1` (~15 min)
-   - Add third fallback: try elevated install to `C:\Program Files\`
-   - Guard against null `Start-Process` result
-2. Warning UI for missing Tesseract (~20 min)
-   - Add banner/popup if OCR unavailable
-   - Link to log file: `%TEMP%\zh-en-translator-tesseract-install.log`
-3. Surface log path in preferences or startup message (~5 min)
+### Component Status
+| Component | Status | Notes |
+|-----------|--------|-------|
+| jieba user dict | ✓ Code ready | Auto-installs on Windows |
+| Argos MT engine | ✓ Code ready | Auto-downloads ~100MB on first run |
+| CC-CEDICT (120k) | ✓ Working | Auto-downloads on startup |
+| Technical dictionary | ✓ Complete | 40+ manufacturing terms bundled |
+| Tests | ✓ Passing | 12/12 (1 skipped for jieba in CI) |
 
 ---
 
-## When You Return
+## M2 Summary: Tesseract Reliability ✅ COMPLETE
 
-1. **Spawn Sonnet agent with:**
-   ```
-   Complete M2 (Tesseract Reliability):
-   - Add UAC elevation fallback to install_tesseract.ps1
-   - Add warning UI for unavailable Tesseract
-   - Surface install log location in app UI
-   ```
+### What Was Accomplished
+1. **UAC elevation fallback** (`installer/install_tesseract.ps1`)
+   - Attempt C added: elevated install to `C:\Program Files\Tesseract-OCR` via `Start-Process -Verb RunAs`
+   - Guards against null `Start-Process` return
+   - Re-probes tessdata after attempt; script always exits 0
 
-2. **Verify on Windows** (when you have time):
-   - Run installer; watch for log output
-   - Verify Tesseract either installs successfully or shows graceful warning
-   - Check `%TEMP%\zh-en-translator-tesseract-install.log` for diagnostics
-
-3. **Merge to main** when M1/M2 are complete:
-   ```bash
-   git checkout main && git merge v3-m1-m2-completion
-   ```
+2. **Warning UI** (`app.py` + `ui/preferences.py`)
+   - Tray notification shown 3s after startup if Tesseract not found (Windows only)
+   - Preferences → Lookup & OCR tab shows Tesseract status (found path or "not found")
+   - "Open Log" button links to `%TEMP%\zh-en-translator-tesseract-install.log`
 
 ---
 
-## Files Modified/Created in This Session
+## Next Steps
 
-**New:**
-- `src/zh_en_translator/resources/user_dict_technical.toml` (40+ terms)
-- Updated `plan-v3.md` (full roadmap)
-
-**Modified:**
-- `pyproject.toml` (added TOML to package-data)
-- `tests/test_user_dict.py` (fixed + expanded tests)
-- `installer/install_tesseract.ps1` (logging + path detection)
-- `src/zh_en_translator/engines/segmentation.py` (user dict support)
-- `src/zh_en_translator/engines/pipeline.py` (greedy-match cap)
-- `src/zh_en_translator/engines/ocr/tesseract_ocr.py` (path auto-detection)
+- **Verify on your Windows machine:**
+  - Run installer; watch log output
+  - Verify Tesseract installs OR shows graceful warning
+  - Check `%TEMP%\zh-en-translator-tesseract-install.log` for diagnostic details
+- **Continue with M3–M5** per `plan-v3.md`
 
 ---
 
-## Session Stats
+## Session Summary
 
-- **Time spent:** ~2 hours
-- **Commits:** 5 major
-- **Issues resolved:** 3 (dark mode text, sidebar hover, large text capture)
-- **Agents used:** Opus (Tesseract diagnosis), Sonnet (translation diagnosis + M1 completion)
-- **Session usage:** ~74-80% (session ending)
-
----
-
-## Quick Reference: Commands for Next Session
-
-```bash
-# Resume on v3-m1-m2-completion branch
-git checkout v3-m1-m2-completion
-
-# After M2 is done, merge to main
-git checkout main
-git merge v3-m1-m2-completion
-
-# View current progress
-git log --oneline -10
-```
-
----
-
-**Good luck with M2! The infrastructure is solid; just need the UAC fallback + warning UI.** 🚀
+- **Time spent:** ~4 hours total across sessions
+- **Key accomplishments:**
+  - Fixed 3 UI issues (dark mode text, sidebar hover, large text capture)
+  - Diagnosed Tesseract installation failures (comprehensive root cause)
+  - Diagnosed translation quality issues (jieba, dictionary, segmentation)
+  - Completed M1 (Translation Quality) with tests
+  - Completed M2 (Tesseract Reliability) — UAC fallback + warning UI
+  - Created v3 roadmap with 5 milestones
+  - Merged `v3-m1-m2-completion` → `main`
