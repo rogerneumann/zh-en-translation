@@ -174,10 +174,9 @@ class TranslatorPopup(QWidget):
         layout.addLayout(source_row)
 
         # ── Divider ─────────────────────────────────────────────────────
-        sep = QFrame()
-        sep.setFrameShape(QFrame.Shape.HLine)
-        sep.setStyleSheet("border: none; border-top: 1px solid rgba(0,0,0,0.06);")
-        layout.addWidget(sep)
+        self._sep = QFrame()
+        self._sep.setFrameShape(QFrame.Shape.HLine)
+        layout.addWidget(self._sep)
 
         # ── Translation text ────────────────────────────────────────────
         self.translation_label = QLabel("Translating…")
@@ -358,6 +357,14 @@ class TranslatorPopup(QWidget):
             QPushButton {{ border-radius: 14px; background: {palette.btn_bg}; border: none; font-size: 12pt; }}
             QPushButton:hover {{ background: {palette.btn_hover}; }}
         """)
+
+        # Divider color
+        self._sep.setStyleSheet(f"border: none; border-top: 1px solid {palette.border};")
+
+        # Ensure QTextEdit text color is set explicitly via QPalette (Qt quirk fix)
+        text_palette = self.text_display.palette()
+        text_palette.setColor(text_palette.ColorRole.Text, QColor(palette.text))
+        self.text_display.setPalette(text_palette)
         
         # Details toggle style
         self._details_toggle.setStyleSheet(f"""
