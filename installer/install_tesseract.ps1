@@ -150,6 +150,51 @@ try {
                     Log-Info "Cleaned up installer file."
                 }
             }
+
+            # Attempt C — elevated install to Program Files (triggers UAC prompt)
+            $TessDataDirAfterB = Find-TessDataDir
+            if (-not $TessDataDirAfterB) {
+                Log-Info "Attempt B did not produce a working install. Trying elevated install to 'C:\Program Files\Tesseract-OCR'..."
+                $ElevatedInstallerPath = Join-Path $env:TEMP "tesseract-ocr-setup-elevated.exe"
+
+                # Re-download the installer for the elevated attempt
+                try {
+                    Log-Info "Downloading Tesseract installer for elevated install..."
+                    (New-Object System.Net.WebClient).DownloadFile($DownloadUrl, $ElevatedInstallerPath)
+                    Log-Info "Download complete. Launching elevated installer (UAC prompt will appear)..."
+
+                    try {
+                        $p = Start-Process $ElevatedInstallerPath `
+                            -ArgumentList "/VERYSILENT /NORESTART /DIR=""C:\Program Files\Tesseract-OCR""" `
+                            -Verb RunAs -Wait -PassThru
+
+                        if ($p -eq $null) {
+                            Log-Error "Elevated Start-Process returned null (UAC may have been denied or elevation failed)"
+                        } elseif ($p.ExitCode -eq 0) {
+                            Log-Success "Elevated install to 'C:\Program Files\Tesseract-OCR' succeeded (exit code 0)."
+                        } else {
+                            Log-Error "Elevated install failed with exit code: $($p.ExitCode)"
+                        }
+                    } catch {
+                        Log-Error "Elevated install exception (UAC may have been cancelled): $_"
+                    }
+                } catch {
+                    Log-Error "Download for elevated install failed: $_"
+                } finally {
+                    if (Test-Path $ElevatedInstallerPath) {
+                        Remove-Item $ElevatedInstallerPath -Force -ErrorAction SilentlyContinue
+                        Log-Info "Cleaned up elevated installer file."
+                    }
+                }
+
+                # Re-probe after Attempt C
+                $TessDataDirAfterC = Find-TessDataDir
+                if ($TessDataDirAfterC) {
+                    Log-Success "Elevated install succeeded. Found tessdata at: $TessDataDirAfterC"
+                } else {
+                    Log-Error "Tesseract tessdata directory not found after elevated install attempt."
+                }
+            }
         }
 
         Start-Sleep -Seconds 2
