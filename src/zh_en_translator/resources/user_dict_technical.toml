@@ -1,0 +1,336 @@
+# Technical/manufacturing domain dictionary — source of truth for jieba user dict.
+#
+# This TOML file documents each term with its English translation(s) and usage
+# context. The companion user_dict_technical.txt (jieba format) is the file
+# actually loaded at runtime; keep both in sync when adding new terms.
+#
+# Format of each entry:
+#   [[terms]]
+#   zh     = "Chinese word"
+#   en     = ["primary translation", "alt translation"]
+#   freq   = <jieba frequency weight (higher = preferred segmentation)>
+#   pos    = "<jieba POS tag: n=noun, v=verb, r=pronoun>"
+#   note   = "Usage / disambiguation context"
+
+# ---------------------------------------------------------------------------
+# Multi-character compounds — highest priority; must not be split by jieba
+# ---------------------------------------------------------------------------
+
+[[terms]]
+zh   = "激光模块"
+en   = ["laser module"]
+freq = 20
+pos  = "n"
+note = "Complete compound: diode/CO₂ laser assembly unit. Never split into 激光 + 模块 in manufacturing context."
+
+[[terms]]
+zh   = "手板样机"
+en   = ["prototype", "sample machine", "pre-production prototype"]
+freq = 20
+pos  = "n"
+note = "Physical prototype built before mass production (手板 = hand-made board, 样机 = sample unit)."
+
+[[terms]]
+zh   = "激光头模块"
+en   = ["laser head module", "laser head assembly"]
+freq = 20
+pos  = "n"
+note = "Complete laser head + driver board assembly."
+
+[[terms]]
+zh   = "进能部门"
+en   = ["calibration department", "testing department", "energy input department"]
+freq = 15
+pos  = "n"
+note = "Internal department name; 进能 can mean 'energy input' or 'calibration' in factory context."
+
+[[terms]]
+zh   = "校准部门"
+en   = ["calibration department"]
+freq = 15
+pos  = "n"
+
+[[terms]]
+zh   = "检测部门"
+en   = ["inspection department", "quality control department"]
+freq = 15
+pos  = "n"
+
+[[terms]]
+zh   = "质量检测"
+en   = ["quality inspection", "quality control", "QC"]
+freq = 15
+pos  = "n"
+
+[[terms]]
+zh   = "生产线"
+en   = ["production line", "assembly line"]
+freq = 15
+pos  = "n"
+
+[[terms]]
+zh   = "装配线"
+en   = ["assembly line"]
+freq = 15
+pos  = "n"
+
+[[terms]]
+zh   = "电路板"
+en   = ["circuit board", "PCB"]
+freq = 15
+pos  = "n"
+
+[[terms]]
+zh   = "控制板"
+en   = ["control board", "controller board"]
+freq = 15
+pos  = "n"
+
+[[terms]]
+zh   = "散热模块"
+en   = ["heat dissipation module", "thermal module", "heatsink module"]
+freq = 15
+pos  = "n"
+
+[[terms]]
+zh   = "驱动模块"
+en   = ["driver module", "drive module"]
+freq = 15
+pos  = "n"
+
+[[terms]]
+zh   = "电源模块"
+en   = ["power module", "power supply module", "PSU module"]
+freq = 15
+pos  = "n"
+
+[[terms]]
+zh   = "传感器模块"
+en   = ["sensor module"]
+freq = 15
+pos  = "n"
+
+# ---------------------------------------------------------------------------
+# Two-character domain terms
+# ---------------------------------------------------------------------------
+
+[[terms]]
+zh   = "样机"
+en   = ["prototype machine", "sample unit", "demo unit"]
+freq = 12
+pos  = "n"
+note = "Pre-production or demonstration unit."
+
+[[terms]]
+zh   = "模块"
+en   = ["module", "unit", "assembly"]
+freq = 12
+pos  = "n"
+
+[[terms]]
+zh   = "激光"
+en   = ["laser"]
+freq = 12
+pos  = "n"
+
+[[terms]]
+zh   = "标定"
+en   = ["calibrate", "calibration", "mark and fix"]
+freq = 12
+pos  = "v"
+note = "Preferred over bare 标 for 'calibrate' — two-char compound is unambiguous."
+
+[[terms]]
+zh   = "校准"
+en   = ["calibrate", "align", "adjust"]
+freq = 12
+pos  = "v"
+
+[[terms]]
+zh   = "检测"
+en   = ["inspect", "test", "detect", "examine"]
+freq = 12
+pos  = "v"
+
+[[terms]]
+zh   = "焊接"
+en   = ["weld", "solder", "soldering"]
+freq = 12
+pos  = "v"
+
+[[terms]]
+zh   = "装配"
+en   = ["assemble", "assembly", "fit together"]
+freq = 12
+pos  = "v"
+
+[[terms]]
+zh   = "调试"
+en   = ["debug", "commission", "tune", "test and adjust"]
+freq = 12
+pos  = "v"
+
+[[terms]]
+zh   = "返修"
+en   = ["rework", "repair", "return for repair"]
+freq = 12
+pos  = "v"
+note = "Sending a unit back for rework — common in QC workflow."
+
+[[terms]]
+zh   = "报废"
+en   = ["scrap", "write off", "discard as defective"]
+freq = 12
+pos  = "v"
+
+[[terms]]
+zh   = "来料"
+en   = ["incoming material", "incoming goods", "IQC material"]
+freq = 12
+pos  = "n"
+note = "Refers to raw material or components arriving at factory."
+
+[[terms]]
+zh   = "成品"
+en   = ["finished product", "final product"]
+freq = 12
+pos  = "n"
+
+[[terms]]
+zh   = "半成品"
+en   = ["semi-finished product", "work in progress", "WIP"]
+freq = 12
+pos  = "n"
+
+[[terms]]
+zh   = "部门"
+en   = ["department", "division", "section"]
+freq = 10
+pos  = "n"
+
+[[terms]]
+zh   = "产线"
+en   = ["production line", "line"]
+freq = 10
+pos  = "n"
+note = "Informal short form of 生产线."
+
+[[terms]]
+zh   = "工位"
+en   = ["workstation", "station", "work post"]
+freq = 10
+pos  = "n"
+
+[[terms]]
+zh   = "工序"
+en   = ["process step", "operation", "procedure"]
+freq = 10
+pos  = "n"
+
+[[terms]]
+zh   = "物料"
+en   = ["material", "component", "BOM item"]
+freq = 10
+pos  = "n"
+
+[[terms]]
+zh   = "图纸"
+en   = ["drawing", "blueprint", "technical drawing"]
+freq = 10
+pos  = "n"
+
+[[terms]]
+zh   = "规格"
+en   = ["specification", "spec", "dimension"]
+freq = 10
+pos  = "n"
+
+[[terms]]
+zh   = "参数"
+en   = ["parameter", "spec value", "setting"]
+freq = 10
+pos  = "n"
+
+# ---------------------------------------------------------------------------
+# Single-character terms — explicit hints for manufacturing disambiguation
+# ---------------------------------------------------------------------------
+
+[[terms]]
+zh   = "换"
+en   = ["replace", "swap out", "change"]
+freq = 8
+pos  = "v"
+note = "In manufacturing: 换 means replace a component, not general 'change'."
+
+[[terms]]
+zh   = "标"
+en   = ["calibrate", "mark", "label"]
+freq = 8
+pos  = "v"
+note = "Short for 标定 (calibrate) or 标注 (annotate). Context determines meaning."
+
+[[terms]]
+zh   = "拆"
+en   = ["disassemble", "remove", "take apart"]
+freq = 8
+pos  = "v"
+
+[[terms]]
+zh   = "测"
+en   = ["measure", "test", "check"]
+freq = 8
+pos  = "v"
+
+[[terms]]
+zh   = "装"
+en   = ["install", "assemble", "mount", "fit"]
+freq = 8
+pos  = "v"
+
+# ---------------------------------------------------------------------------
+# Pronouns and common manufacturing operational phrases
+# ---------------------------------------------------------------------------
+
+[[terms]]
+zh   = "你们"
+en   = ["you (plural)", "your team", "you all"]
+freq = 10
+pos  = "r"
+note = "Second-person plural — critical for translating inter-department instructions."
+
+[[terms]]
+zh   = "我们"
+en   = ["we", "our team", "us"]
+freq = 10
+pos  = "r"
+
+[[terms]]
+zh   = "他们"
+en   = ["they", "their team", "them"]
+freq = 10
+pos  = "r"
+
+[[terms]]
+zh   = "上线"
+en   = ["go live", "start production", "put online", "bring online"]
+freq = 10
+pos  = "v"
+note = "In manufacturing: launch a product or start a production run."
+
+[[terms]]
+zh   = "下线"
+en   = ["take offline", "end of line", "pull from production"]
+freq = 10
+pos  = "v"
+
+[[terms]]
+zh   = "开机"
+en   = ["power on", "start up", "boot up"]
+freq = 10
+pos  = "v"
+
+[[terms]]
+zh   = "关机"
+en   = ["power off", "shut down", "turn off"]
+freq = 10
+pos  = "v"
