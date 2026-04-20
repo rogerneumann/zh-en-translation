@@ -1,0 +1,62 @@
+# Technical/manufacturing domain dictionary for jieba segmentation.
+# Format: word [TAB frequency TAB POS-tag]
+# Higher frequency = preferred segmentation. Default POS: n (noun), v (verb)
+# This file is loaded at startup via segmentation.load_user_dict().
+
+# --- Multi-char compound terms (highest priority — must not be split) ---
+激光模块	20	n
+手板样机	20	n
+激光头模块	20	n
+校准部门	15	n
+检测部门	15	n
+进能部门	15	n
+质量检测	15	n
+生产线	15	n
+装配线	15	n
+电路板	15	n
+控制板	15	n
+散热模块	15	n
+驱动模块	15	n
+电源模块	15	n
+传感器模块	15	n
+
+# --- Two-char domain terms ---
+样机	12	n
+模块	12	n
+激光	12	n
+标定	12	v
+校准	12	v
+检测	12	v
+焊接	12	v
+装配	12	v
+调试	12	v
+返修	12	v
+报废	12	v
+来料	12	n
+成品	12	n
+半成品	12	n
+部门	10	n
+产线	10	n
+工位	10	n
+工序	10	n
+物料	10	n
+图纸	10	n
+规格	10	n
+参数	10	n
+
+# --- Single-char terms needing explicit segmentation hints ---
+# 换 as "replace" in manufacturing context
+换	8	v
+标	8	v
+拆	8	v
+测	8	v
+装	8	v
+
+# --- Pronouns and common manufacturing phrases ---
+你们	10	r
+我们	10	r
+他们	10	r
+上线	10	v
+下线	10	v
+开机	10	v
+关机	10	v
