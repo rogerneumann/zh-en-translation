@@ -260,9 +260,14 @@ class TranslatorApp(QObject):
             QTimer.singleShot(5000, lambda: self._check_for_updates(manual=False))
 
     def _init_dictionary(self):
-        """Build/load the dictionary in a background thread."""
+        """Build/load the dictionary and user segmentation dict in a background thread."""
         def _task():
             from zh_en_translator.engines.dictionary import ensure_cedict, Dictionary
+            from zh_en_translator.engines.segmentation import load_user_dict
+            # Prime jieba with domain-specific manufacturing/technical terms so
+            # that multi-char compounds (e.g. 激光模块, 手板样机) are not split.
+            _user_dict = _resources_dir() / "user_dict_technical.txt"
+            load_user_dict(_user_dict)
             try:
                 cedict_path = ensure_cedict()
                 db_path = cedict_path.with_suffix(".db")
