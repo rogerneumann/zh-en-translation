@@ -267,7 +267,8 @@ class TranslatorSidebar(QWidget):
             x = 0 if self._expanded else -self._width + 6
         else:
             x = screen.right() - self._width if self._expanded else screen.right() - 6
-        self.setGeometry(int(x), int(self._y_pos), self._width, 400)
+        height = screen.height()
+        self.setGeometry(int(x), 0, self._width, height)
 
     def expand(self):
         if self._expanded: return
@@ -312,8 +313,15 @@ class TranslatorSidebar(QWidget):
             from zh_en_translator.config import save_config
             save_config(self._config)
 
+    def enterEvent(self, event):
+        if not self._expanded and not self._pinned:
+            self.expand()
+        super().enterEvent(event)
+
     def leaveEvent(self, event):
-        QTimer.singleShot(500, self.collapse)
+        if not self._pinned:
+            QTimer.singleShot(300, self.collapse)
+        super().leaveEvent(event)
 
     def close_sidebar(self):
         self.hide()
