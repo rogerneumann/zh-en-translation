@@ -249,6 +249,11 @@ class TranslatorApp(QObject):
         self._setup_tray()
         self._init_dictionary()
 
+        # Warn once per session if Tesseract is missing (Windows only, 3 s delay)
+        if sys.platform == "win32":
+            from PyQt6.QtCore import QTimer
+            QTimer.singleShot(3000, self._check_tesseract_warning)
+
         # Show sidebar if starting in sidebar mode
         if self.sidebar_mode:
             self._update_tray_sidebar_label()
@@ -530,6 +535,37 @@ class TranslatorApp(QObject):
             self.action_sidebar.setText(
                 "Sidebar Mode: On" if self.sidebar_mode else "Sidebar Mode: Off"
             )
+
+    def _check_tesseract_warning(self) -> None:
+        """Show a one-time tray warning if Tesseract is not found (Windows only)."""
+        import shutil
+        import os
+
+        found = shutil.which("tesseract")
+        if not found:
+            # Also check common Windows install paths
+            candidates = [
+                os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe"),
+                r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+            ]
+            for c in candidates:
+                if os.path.isfile(c):
+                    found = c
+                    break
+
+        if not found and self.tray_icon and self.tray_icon.isVisible():
+            log_path = os.path.join(os.environ.get("TEMP", ""), "zh-en-translator-tesseract-install.log")
+            message = (
+                "Tesseract OCR not found. Image capture may be limited.\n"
+                f"See: {log_path}"
+            )
+            self.tray_icon.showMessage(
+                "zh-en-translator",
+                message,
+                QSystemTrayIcon.MessageIcon.Warning,
+                8000,
+            )
+            logger.warning("Tesseract not found — tray warning shown.")
 
     def _check_for_updates(self, manual: bool = False) -> None:
         if self._update_worker and self._update_worker.isRunning():

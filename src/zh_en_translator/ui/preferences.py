@@ -333,6 +333,51 @@ class PreferencesDialog(QDialog):
             self._ocr_combo.addItem(label, val)
         ocr_layout.addWidget(self._ocr_combo)
         layout.addWidget(ocr_group)
+
+        # Tesseract status
+        import sys, shutil, os
+        tess_group = QGroupBox("Tesseract Status")
+        tess_layout = QVBoxLayout(tess_group)
+
+        tess_path = shutil.which("tesseract")
+        if not tess_path and sys.platform == "win32":
+            candidates = [
+                os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe"),
+                r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+            ]
+            for c in candidates:
+                if os.path.isfile(c):
+                    tess_path = c
+                    break
+
+        if tess_path:
+            status_label = QLabel(f"Tesseract: Found at {tess_path}")
+            status_label.setStyleSheet("color: #1a7a1a; font-weight: bold;")
+            tess_layout.addWidget(status_label)
+        else:
+            status_label = QLabel("Tesseract: Not found. Check install log:")
+            status_label.setStyleSheet("color: #b85c00; font-weight: bold;")
+            tess_layout.addWidget(status_label)
+
+            def _open_tess_log():
+                log_path = os.path.join(os.environ.get("TEMP", ""), "zh-en-translator-tesseract-install.log")
+                if os.path.isfile(log_path):
+                    import subprocess
+                    subprocess.Popen(["notepad.exe", log_path])
+                else:
+                    QMessageBox.information(
+                        self,
+                        "Log Not Found",
+                        f"Install log not found:\n{log_path}\n\n"
+                        "Run the Tesseract installer to generate it.",
+                    )
+
+            btn_open_log = QPushButton("Open Log")
+            btn_open_log.setFixedWidth(100)
+            btn_open_log.clicked.connect(_open_tess_log)
+            tess_layout.addWidget(btn_open_log)
+
+        layout.addWidget(tess_group)
         layout.addStretch()
         return widget
 
