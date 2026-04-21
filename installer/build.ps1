@@ -222,22 +222,30 @@ if (Test-Path $CedictFile) {
     Write-Ok "cedict-bundle already exists -- skipping download"
 } else {
     New-Item -ItemType Directory -Force -Path $CedictBundle | Out-Null
-    Write-Host "    Downloading CC-CEDICT from mdbg.net..." -ForegroundColor Gray
-    try {
-        $ZipBytes = (New-Object System.Net.WebClient).DownloadData(
-            "https://www.mdbg.net/chinese/export/cedict/cedict_1_0_ts_utf-8_mdbg.zip"
-        )
-        Add-Type -AssemblyName System.IO.Compression.FileSystem
-        $zip = [System.IO.Compression.ZipArchive]::new([System.IO.MemoryStream]::new($ZipBytes))
-        $entry = $zip.Entries | Where-Object { $_.Name -eq "cedict_ts.u8" } | Select-Object -First 1
-        $stream = $entry.Open()
-        $out = [System.IO.File]::Create($CedictFile)
-        $stream.CopyTo($out); $out.Close(); $stream.Close()
-        $zip.Dispose()
-        Write-Ok "CC-CEDICT saved to: $CedictFile"
-    } catch {
-        Write-Host "    WARNING: CC-CEDICT download failed: $_" -ForegroundColor Yellow
-        Write-Host "    The app will download it on first run instead." -ForegroundColor Yellow
+    Write-Host "    Downloading CC-CEDICT from mdbg.net (~6 MB)..." -ForegroundColor Gray
+    $CedictZip = Join-Path $env:TEMP "cedict.zip"
+    if (Download-FileWithRetry -Url "https://www.mdbg.net/chinese/export/cedict/cedict_1_0_ts_utf-8_mdbg.zip" -OutPath $CedictZip -MaxRetries 3 -TimeoutSeconds 300) {
+        try {
+            Add-Type -AssemblyName System.IO.Compression.FileSystem
+            $zip = [System.IO.Compression.ZipFile]::OpenRead($CedictZip)
+            $entry = $zip.Entries | Where-Object { $_.Name -eq "cedict_ts.u8" } | Select-Object -First 1
+            if ($entry) {
+                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $CedictFile, $true)
+                Write-Ok "CC-CEDICT saved to: $CedictFile"
+            } else {
+                Write-Host "    WARNING: cedict_ts.u8 not found in zip archive" -ForegroundColor Yellow
+            }
+            $zip.Dispose()
+        } catch {
+            Write-Host "    WARNING: CC-CEDICT extraction failed: $_" -ForegroundColor Yellow
+        } finally {
+            Remove-Item $CedictZip -Force -ErrorAction SilentlyContinue
+        }
+    } else {
+        Write-Host "    WARNING: CC-CEDICT download failed after retries" -ForegroundColor Yellow
+    }
+    if (-not (Test-Path $CedictFile)) {
+        Write-Host "    NOTE: The app will download CC-CEDICT on first run instead." -ForegroundColor Yellow
     }
 }
 
