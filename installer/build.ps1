@@ -49,9 +49,7 @@ function Download-FileWithRetry([string]$Url, [string]$OutPath, [int]$MaxRetries
         $attempt++
         try {
             Write-Host "    Attempt $attempt/$MaxRetries..." -ForegroundColor Gray
-            $client = New-Object System.Net.WebClient
-            $client.Timeout = $TimeoutSeconds * 1000
-            $client.DownloadFile($Url, $OutPath)
+            Invoke-WebRequest -Uri $Url -OutFile $OutPath -TimeoutSec $TimeoutSeconds -ErrorAction Stop
             return $true
         } catch {
             Write-Host "    Failed: $_" -ForegroundColor Yellow
@@ -186,12 +184,11 @@ if (Test-Path $TessBundle) {
 } else {
     # Download installer
     $TessSetup = Join-Path $env:TEMP "tesseract-ocr-setup.exe"
-    $TessUrl = "https://github.com/UB-Mannheim/tesseract/releases/download/v5.5.0.20241111/tesseract-ocr-w64-setup-5.5.0.20241111.exe"
-    Write-Host "    Downloading Tesseract (~180 MB, may take a few minutes)..." -ForegroundColor Gray
+    $TessUrl = "https://github.com/UB-Mannheim/tesseract/releases/download/v5.4.0.20240606/tesseract-ocr-w64-setup-v5.4.0.20240606.exe"
+    Write-Host "    Downloading Tesseract (~100 MB, may take a few minutes)..." -ForegroundColor Gray
     if (-not (Download-FileWithRetry -Url $TessUrl -OutPath $TessSetup -MaxRetries 3 -TimeoutSeconds 600)) {
         Write-Fail "Tesseract download failed after 3 attempts"
-        Write-Host "    You can download manually from: $TessUrl" -ForegroundColor Yellow
-        Write-Host "    And place the exe at: $TessSetup" -ForegroundColor Yellow
+        Write-Host "    Check GitHub releases: https://github.com/UB-Mannheim/tesseract/releases" -ForegroundColor Yellow
         exit 1
     }
 
@@ -208,7 +205,7 @@ if (Test-Path $TessBundle) {
     if (-not (Test-Path $ChiSim)) {
         Write-Host "    Downloading chi_sim.traineddata (~30 MB)..." -ForegroundColor Gray
         $ChiSimUrl = "https://github.com/tesseract-ocr/tessdata_fast/raw/main/chi_sim.traineddata"
-        if (-not (Download-FileWithRetry -Url $ChiSimUrl -OutPath $ChiSim -MaxRetries 3 -TimeoutSeconds 300)) {
+        if (-not (Download-FileWithRetry -Url $ChiSimUrl -OutPath $ChiSim -MaxRetries 3 -TimeoutSeconds 600)) {
             Write-Host "    WARNING: chi_sim.traineddata download failed. Tesseract may not work for Chinese OCR." -ForegroundColor Yellow
         }
     }
