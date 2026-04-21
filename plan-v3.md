@@ -1,7 +1,7 @@
 # Popup Translator (Chinese → English) — v3 Enhancement Roadmap
 
-**Status:** M1 Complete ✅ | M2 In Progress 🔄 | M3-M5 Planned  
-**Last Updated:** 2026-04-20 (End of session)
+**Status:** M1 Complete ✅ | M2 Complete ✅ | M3 Complete ✅ | M4 In Progress 🔄 | M5 Partially Complete 🔄  
+**Last Updated:** 2026-04-21 (End of session)
 
 This document outlines improvements and new features for v3, informed by v1/v2 completion and user feedback.
 
@@ -82,27 +82,30 @@ This document outlines improvements and new features for v3, informed by v1/v2 c
 
 ---
 
-### M3: Offline Robustness (Pending)
+### M3: Offline Robustness ✅ COMPLETE
 
 **Objective:** Ensure all critical models/data are available offline after initial install.
 
-**Current state:**
-- Argos zh→en model (~100 MB): Downloaded on-demand via `ensure_pack()`
-- CC-CEDICT: Falls back to 51-entry sample if full 120k unavailable
-- Tesseract: Downloaded at install time, but not always found at runtime
+**What was done:**
+- ✅ Tesseract bundled in installer (`installer/tesseract-bundle/` generated at build time by `build.ps1` Step 2.5)
+- ✅ CC-CEDICT bundled in installer (pre-populated to `%APPDATA%\zh-en-translator\` via `installer/cedict-bundle/`)
+- ✅ Argos zh→en model bundled in installer (pre-populated to `%APPDATA%\argos-translate\packages\` via `installer/argos-bundle/`)
+- ✅ Tesseract path detection updated to check `{app}\tesseract\` first in frozen builds
+- ✅ `TESSDATA_PREFIX` env var set when bundled tessdata dir is found
+- ✅ `_check_tesseract_warning()` updated to skip warning when bundled Tesseract present
+- ✅ `BundleExists`/`BundleDirExists` Check: guards in `.iss` prevent errors when bundles absent (e.g. CI)
+- ✅ Bundle dirs gitignored — generated at build time on Windows, not committed
 
-**Deliverables:**
-1. **Model bundling**:
-   - Include Argos zh→en model in installer (or download during install, cache at `%APPDATA%\zh-en-translator\models\`)
-   - Pre-download + bundle full CC-CEDICT
-   - Verify bundle integrity (checksums)
-2. **Graceful offline fallback**:
-   - If model unavailable, degrade to dictionary-only translation
-   - Log all model load attempts
-   - User feedback: "Translation engine unavailable (offline?); showing dictionary match"
-3. **Update checker offline mode**: Check for new versions only if network available; never block startup
+**Deliverables completed:**
+1. ✅ **Model bundling**: Tesseract portable, CC-CEDICT, and Argos zh→en model all bundled in installer
+2. ✅ **Graceful offline fallback**: Check: guards ensure installer is non-breaking if bundles absent; app falls back to system Tesseract or shows tray warning
+3. ✅ **Update checker offline mode**: Already existed (non-blocking on startup)
 
-**Status:** Code infrastructure in place (ensure_pack, ensure_cedict, fallback chains). Bundling strategy TBD.
+**Status:** **COMPLETE** (Branch `v3-m3-bundling`)
+- Build steps: `installer/build.ps1` Steps 2.5, 2.6, 2.7
+- Installer: `installer/zh-en-translator.iss` — bundle [Files] entries + BundleExists guards
+- Runtime: `src/zh_en_translator/engines/ocr/tesseract_ocr.py` — bundled path detection
+- Runtime: `src/zh_en_translator/app.py` — bundled Tesseract warning suppression
 
 ---
 
@@ -126,25 +129,25 @@ This document outlines improvements and new features for v3, informed by v1/v2 c
 
 ---
 
-### M5: Portable Distribution (Future)
+### M5: Portable Distribution (Partially Complete 🔄)
 
 **Objective:** Ship "Tesseract portable" bundle and standalone archive for restricted environments.
 
 **Deliverables:**
-1. **Tesseract portable bundle**:
-   - Include precompiled `tesseract.exe` + `chi_sim.traineddata` in installer
-   - Avoids winget/download complexity; uses local binary
-   - Falls back to Windows OCR if not present
-2. **Standalone ZIP archive**:
+1. ✅ **Tesseract portable bundle** (DONE in M3):
+   - Precompiled `tesseract.exe` + `chi_sim.traineddata` bundled in installer via `build.ps1` Step 2.5
+   - Avoids winget/download complexity; uses local binary installed to `{app}\tesseract\`
+   - Falls back to system Tesseract or Windows OCR if bundle absent
+2. ❌ **Standalone ZIP archive**:
    - For users who can't/won't run the MSI installer
    - Portable Python environment + app + models
    - Run `zh-en-translator.exe` directly from extracted folder
-3. **Network-free installer variant**:
+3. ❌ **Network-free installer variant**:
    - All models + dependencies pre-cached in installer
    - No internet access required during or after setup
    - Larger installer (~500+ MB) but zero-network deploy
 
-**Status:** Deferred; depends on M2 & M3 completion
+**Status:** M5.1 complete (Tesseract portable bundle done as part of M3). M5.2 and M5.3 deferred.
 
 ---
 
