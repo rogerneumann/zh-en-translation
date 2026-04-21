@@ -184,7 +184,7 @@ if (Test-Path $TessBundle) {
 } else {
     # Download installer
     $TessSetup = Join-Path $env:TEMP "tesseract-ocr-setup.exe"
-    $TessUrl = "https://github.com/UB-Mannheim/tesseract/releases/download/v5.4.0.20240606/tesseract-ocr-w64-setup-v5.4.0.20240606.exe"
+    $TessUrl = "https://github.com/UB-Mannheim/tesseract/releases/download/v5.4.0.20240606/tesseract-ocr-w64-setup-5.4.0.20240606.exe"
     Write-Host "    Downloading Tesseract (~100 MB, may take a few minutes)..." -ForegroundColor Gray
     if (-not (Download-FileWithRetry -Url $TessUrl -OutPath $TessSetup -MaxRetries 3 -TimeoutSeconds 600)) {
         Write-Fail "Tesseract download failed after 3 attempts"
