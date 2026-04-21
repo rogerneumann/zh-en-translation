@@ -378,7 +378,7 @@ USAGE
 
 TESSERACT OCR
 -------------
-$(if (Test-Path $TessBundle) { "Tesseract OCR is bundled in the tesseract\ subfolder." } else { "Tesseract OCR is NOT included. Install it from https://github.com/UB-Mannheim/tesseract/wiki" })
+$(if (Test-Path $TessBundle) { 'Tesseract OCR is bundled in the tesseract\ subfolder.' } else { 'Tesseract OCR is NOT included. Install it from https://github.com/UB-Mannheim/tesseract/wiki' })
 
 HOTKEY
 ------
