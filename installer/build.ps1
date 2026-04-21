@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Build zh-en-translator: PyInstaller bundle + Inno Setup installer.
@@ -51,7 +51,7 @@ Set-Location $RepoRoot
 Write-Step "Working directory: $RepoRoot"
 
 # ---------------------------------------------------------------------------
-# Step 0 — Verify Python version is 3.11.x
+# Step 0 -- Verify Python version is 3.11.x
 # ---------------------------------------------------------------------------
 Write-Step "Step 0: Checking Python version"
 
@@ -66,7 +66,7 @@ if ($PyVer -ne "3.11") {
 }
 
 # ---------------------------------------------------------------------------
-# Step 1 — Verify PyInstaller is available via the active Python
+# Step 1 -- Verify PyInstaller is available via the active Python
 # Use "python -m PyInstaller" instead of the bare "pyinstaller" command so
 # we always use the interpreter that is currently active (venv or system).
 # ---------------------------------------------------------------------------
@@ -88,7 +88,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-Ok "PyInstaller found (via python -m PyInstaller)"
 
 # ---------------------------------------------------------------------------
-# Step 1.5 — Install package dependencies
+# Step 1.5 -- Install package dependencies
 # ---------------------------------------------------------------------------
 Write-Step "Step 1.5: Installing package dependencies (pip install -e .)"
 Write-Host "    This ensures PyQt6, ctranslate2 etc. are present for PyInstaller to bundle." -ForegroundColor Gray
@@ -102,7 +102,7 @@ if ($LASTEXITCODE -ne 0) {
 Write-Ok "Dependencies installed"
 
 # ---------------------------------------------------------------------------
-# Step 2 — Run PyInstaller
+# Step 2 -- Run PyInstaller
 # ---------------------------------------------------------------------------
 if (-not $SkipPyInstaller) {
     Write-Step "Step 2: Running PyInstaller"
@@ -156,12 +156,12 @@ if (-not $SkipPyInstaller) {
 }
 
 # ---------------------------------------------------------------------------
-# Step 2.5 — Download Tesseract portable for bundling
+# Step 2.5 -- Download Tesseract portable for bundling
 # ---------------------------------------------------------------------------
 Write-Step "Step 2.5: Bundling Tesseract OCR (portable)"
 $TessBundle = Join-Path $PSScriptRoot "tesseract-bundle"
 if (Test-Path $TessBundle) {
-    Write-Ok "tesseract-bundle already exists — skipping download"
+    Write-Ok "tesseract-bundle already exists -- skipping download"
 } else {
     # Download installer
     $TessSetup = Join-Path $env:TEMP "tesseract-ocr-setup.exe"
@@ -190,13 +190,13 @@ if (Test-Path $TessBundle) {
 }
 
 # ---------------------------------------------------------------------------
-# Step 2.6 — Download CC-CEDICT for bundling
+# Step 2.6 -- Download CC-CEDICT for bundling
 # ---------------------------------------------------------------------------
 Write-Step "Step 2.6: Bundling CC-CEDICT"
 $CedictBundle = Join-Path $PSScriptRoot "cedict-bundle"
 $CedictFile = Join-Path $CedictBundle "cedict_ts.u8"
 if (Test-Path $CedictFile) {
-    Write-Ok "cedict-bundle already exists — skipping download"
+    Write-Ok "cedict-bundle already exists -- skipping download"
 } else {
     New-Item -ItemType Directory -Force -Path $CedictBundle | Out-Null
     Write-Host "    Downloading CC-CEDICT from mdbg.net..." -ForegroundColor Gray
@@ -219,12 +219,12 @@ if (Test-Path $CedictFile) {
 }
 
 # ---------------------------------------------------------------------------
-# Step 2.7 — Download Argos zh->en model for bundling
+# Step 2.7 -- Download Argos zh->en model for bundling
 # ---------------------------------------------------------------------------
 Write-Step "Step 2.7: Bundling Argos zh->en model (~100 MB)"
 $ArgosBundle = Join-Path $PSScriptRoot "argos-bundle"
 if ((Test-Path $ArgosBundle) -and (Get-ChildItem $ArgosBundle -Recurse -Filter "model.bin" | Select-Object -First 1)) {
-    Write-Ok "argos-bundle already exists — skipping download"
+    Write-Ok "argos-bundle already exists -- skipping download"
 } else {
     Write-Host "    Installing argostranslate and downloading zh->en pack..." -ForegroundColor Gray
     pip install argostranslate --quiet
@@ -264,7 +264,7 @@ print("ERROR: installed pack dir not found", file=sys.stderr); sys.exit(1)
 }
 
 # ---------------------------------------------------------------------------
-# Step 3 — Locate Inno Setup compiler (iscc.exe)
+# Step 3 -- Locate Inno Setup compiler (iscc.exe)
 # ---------------------------------------------------------------------------
 Write-Step "Step 3: Locating Inno Setup compiler (iscc.exe)"
 
@@ -304,7 +304,7 @@ if (-not $Iscc) {
 }
 
 # ---------------------------------------------------------------------------
-# Step 4 — Run Inno Setup compiler
+# Step 4 -- Run Inno Setup compiler
 # ---------------------------------------------------------------------------
 Write-Step "Step 4: Compiling installer with Inno Setup"
 
@@ -322,7 +322,7 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # ---------------------------------------------------------------------------
-# Step 5 — Report output
+# Step 5 -- Report output
 # ---------------------------------------------------------------------------
 Write-Step "Step 5: Build complete"
 
@@ -337,7 +337,7 @@ if (Test-Path $OutputFile) {
 }
 
 # ---------------------------------------------------------------------------
-# Step 5.1 — Create portable ZIP archive
+# Step 5.1 -- Create portable ZIP archive
 # ---------------------------------------------------------------------------
 Write-Step "Step 5.1: Creating portable ZIP archive"
 
@@ -358,7 +358,7 @@ if (Test-Path $TessBundle) {
     Write-Host "    Including bundled Tesseract..." -ForegroundColor Gray
     Copy-Item -Recurse $TessBundle (Join-Path $PortableDir "tesseract")
 } else {
-    Write-Host "    tesseract-bundle not found — Tesseract not included in ZIP." -ForegroundColor Yellow
+    Write-Host "    tesseract-bundle not found -- Tesseract not included in ZIP." -ForegroundColor Yellow
 }
 
 # Write README
@@ -403,7 +403,7 @@ Add-Type -AssemblyName System.IO.Compression.FileSystem
     $PortableDir,
     $PortableZip,
     [System.IO.Compression.CompressionLevel]::Optimal,
-    $true   # includeBaseDirectory = true → zip contains zh-en-translator-portable\ subfolder
+    $true   # includeBaseDirectory = true -> zip contains zh-en-translator-portable\ subfolder
 )
 
 Remove-Item -Recurse -Force $PortableDir
