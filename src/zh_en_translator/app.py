@@ -540,6 +540,13 @@ class TranslatorApp(QObject):
         """Show a one-time tray warning if Tesseract is not found (Windows only)."""
         import shutil
         import os
+        from pathlib import Path
+
+        # Check bundled path first (frozen app)
+        if getattr(sys, "frozen", False):
+            bundled = Path(sys.executable).parent / "tesseract" / "tesseract.exe"
+            if bundled.exists():
+                return  # Bundled Tesseract found — no warning needed
 
         found = shutil.which("tesseract")
         if not found:

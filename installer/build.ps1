@@ -156,6 +156,114 @@ if (-not $SkipPyInstaller) {
 }
 
 # ---------------------------------------------------------------------------
+# Step 2.5 — Download Tesseract portable for bundling
+# ---------------------------------------------------------------------------
+Write-Step "Step 2.5: Bundling Tesseract OCR (portable)"
+$TessBundle = Join-Path $PSScriptRoot "tesseract-bundle"
+if (Test-Path $TessBundle) {
+    Write-Ok "tesseract-bundle already exists — skipping download"
+} else {
+    # Download installer
+    $TessSetup = Join-Path $env:TEMP "tesseract-ocr-setup.exe"
+    $TessUrl = "https://github.com/UB-Mannheim/tesseract/releases/download/v5.5.0.20241111/tesseract-ocr-w64-setup-5.5.0.20241111.exe"
+    Write-Host "    Downloading Tesseract from $TessUrl" -ForegroundColor Gray
+    (New-Object System.Net.WebClient).DownloadFile($TessUrl, $TessSetup)
+
+    # Install silently to tesseract-bundle/
+    Write-Host "    Installing Tesseract to tesseract-bundle\..." -ForegroundColor Gray
+    $p = Start-Process $TessSetup -ArgumentList "/VERYSILENT /NORESTART /DIR=`"$TessBundle`"" -Wait -PassThru
+    Remove-Item $TessSetup -Force -ErrorAction SilentlyContinue
+    if ($p.ExitCode -ne 0) { Write-Fail "Tesseract install failed (exit $($p.ExitCode))"; exit 1 }
+
+    # Download chi_sim.traineddata into tessdata/
+    $TessData = Join-Path $TessBundle "tessdata"
+    New-Item -ItemType Directory -Force -Path $TessData | Out-Null
+    $ChiSim = Join-Path $TessData "chi_sim.traineddata"
+    if (-not (Test-Path $ChiSim)) {
+        Write-Host "    Downloading chi_sim.traineddata..." -ForegroundColor Gray
+        (New-Object System.Net.WebClient).DownloadFile(
+            "https://github.com/tesseract-ocr/tessdata_fast/raw/main/chi_sim.traineddata",
+            $ChiSim
+        )
+    }
+    Write-Ok "Tesseract bundle ready at: $TessBundle"
+}
+
+# ---------------------------------------------------------------------------
+# Step 2.6 — Download CC-CEDICT for bundling
+# ---------------------------------------------------------------------------
+Write-Step "Step 2.6: Bundling CC-CEDICT"
+$CedictBundle = Join-Path $PSScriptRoot "cedict-bundle"
+$CedictFile = Join-Path $CedictBundle "cedict_ts.u8"
+if (Test-Path $CedictFile) {
+    Write-Ok "cedict-bundle already exists — skipping download"
+} else {
+    New-Item -ItemType Directory -Force -Path $CedictBundle | Out-Null
+    Write-Host "    Downloading CC-CEDICT from mdbg.net..." -ForegroundColor Gray
+    try {
+        $ZipBytes = (New-Object System.Net.WebClient).DownloadData(
+            "https://www.mdbg.net/chinese/export/cedict/cedict_1_0_ts_utf-8_mdbg.zip"
+        )
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $zip = [System.IO.Compression.ZipArchive]::new([System.IO.MemoryStream]::new($ZipBytes))
+        $entry = $zip.Entries | Where-Object { $_.Name -eq "cedict_ts.u8" } | Select-Object -First 1
+        $stream = $entry.Open()
+        $out = [System.IO.File]::Create($CedictFile)
+        $stream.CopyTo($out); $out.Close(); $stream.Close()
+        $zip.Dispose()
+        Write-Ok "CC-CEDICT saved to: $CedictFile"
+    } catch {
+        Write-Host "    WARNING: CC-CEDICT download failed: $_" -ForegroundColor Yellow
+        Write-Host "    The app will download it on first run instead." -ForegroundColor Yellow
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Step 2.7 — Download Argos zh->en model for bundling
+# ---------------------------------------------------------------------------
+Write-Step "Step 2.7: Bundling Argos zh->en model (~100 MB)"
+$ArgosBundle = Join-Path $PSScriptRoot "argos-bundle"
+if ((Test-Path $ArgosBundle) -and (Get-ChildItem $ArgosBundle -Recurse -Filter "model.bin" | Select-Object -First 1)) {
+    Write-Ok "argos-bundle already exists — skipping download"
+} else {
+    Write-Host "    Installing argostranslate and downloading zh->en pack..." -ForegroundColor Gray
+    pip install argostranslate --quiet
+    $ArgosScript = @'
+import sys, pathlib, shutil, argostranslate.package, argostranslate.settings
+
+argostranslate.package.update_package_index()
+avail = argostranslate.package.get_available_packages()
+pkg = next((p for p in avail if p.from_code == "zh" and p.to_code == "en"), None)
+if not pkg:
+    print("ERROR: zh->en pack not found", file=sys.stderr); sys.exit(1)
+print(f"Installing {pkg} ...")
+pkg.install()
+
+# Find installed pack dir
+for d in argostranslate.settings.package_dirs:
+    p = pathlib.Path(d)
+    if not p.exists(): continue
+    for sub in p.iterdir():
+        if sub.is_dir() and "zh_en" in sub.name and (sub / "sentencepiece.model").exists():
+            dest = pathlib.Path(sys.argv[1])
+            dest.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(str(sub), str(dest / sub.name), dirs_exist_ok=True)
+            print(f"Copied {sub.name} -> {dest}")
+            sys.exit(0)
+print("ERROR: installed pack dir not found", file=sys.stderr); sys.exit(1)
+'@
+    $ArgosScriptPath = Join-Path $env:TEMP "bundle_argos.py"
+    $ArgosScript | Set-Content $ArgosScriptPath -Encoding UTF8
+    python $ArgosScriptPath $ArgosBundle
+    Remove-Item $ArgosScriptPath -Force -ErrorAction SilentlyContinue
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "    WARNING: Argos model download failed. App will download on first run." -ForegroundColor Yellow
+    } else {
+        Write-Ok "Argos bundle ready at: $ArgosBundle"
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Step 3 — Locate Inno Setup compiler (iscc.exe)
 # ---------------------------------------------------------------------------
 Write-Step "Step 3: Locating Inno Setup compiler (iscc.exe)"

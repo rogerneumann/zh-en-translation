@@ -2,17 +2,27 @@
 
 from __future__ import annotations
 import logging
+import sys
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
-# Candidate Tesseract paths (Windows-specific, checked in order)
-_TESSERACT_CANDIDATES = [
-    Path.home() / "AppData" / "Local" / "Programs" / "Tesseract-OCR" / "tesseract.exe",
-    Path.home() / "AppData" / "Local" / "Tesseract-OCR" / "tesseract.exe",
-    Path("C:\\Program Files\\Tesseract-OCR\\tesseract.exe"),
-    Path("C:\\Program Files (x86)\\Tesseract-OCR\\tesseract.exe"),
-]
+
+def _get_tesseract_candidates() -> list[Path]:
+    """Return candidate Tesseract paths, checking bundled path first in frozen builds."""
+    candidates = []
+    # Check bundled Tesseract first (for frozen/installed app)
+    if getattr(sys, "frozen", False):
+        bundled = Path(sys.executable).parent / "tesseract" / "tesseract.exe"
+        candidates.append(bundled)
+    # Standard Windows install locations
+    candidates += [
+        Path.home() / "AppData" / "Local" / "Programs" / "Tesseract-OCR" / "tesseract.exe",
+        Path.home() / "AppData" / "Local" / "Tesseract-OCR" / "tesseract.exe",
+        Path("C:\\Program Files\\Tesseract-OCR\\tesseract.exe"),
+        Path("C:\\Program Files (x86)\\Tesseract-OCR\\tesseract.exe"),
+    ]
+    return candidates
 
 
 def _configure_pytesseract_cmd() -> bool:
@@ -25,10 +35,15 @@ def _configure_pytesseract_cmd() -> bool:
     except ImportError:
         return False
 
+    import os
+
     # Check each candidate path
-    for candidate in _TESSERACT_CANDIDATES:
+    for candidate in _get_tesseract_candidates():
         if candidate.exists() and candidate.is_file():
             try:
+                tessdata_dir = candidate.parent / "tessdata"
+                if tessdata_dir.exists():
+                    os.environ["TESSDATA_PREFIX"] = str(tessdata_dir)
                 pytesseract.pytesseract.tesseract_cmd = str(candidate)
                 logger.info("Configured pytesseract.tesseract_cmd to: %s", candidate)
                 return True
