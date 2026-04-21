@@ -16,15 +16,22 @@ class TokenResult:
     is_chinese: bool
 
 
-def translate(text: str, dictionary: Dictionary) -> list[TokenResult]:
+def translate(
+    text: str,
+    dictionary: Dictionary,
+    glossary: dict[str, str] | None = None,
+) -> list[TokenResult]:
     """
     Segment text and look up each Chinese token in the dictionary.
 
-    Uses greedy longest-match for multi-character words.
+    Uses greedy longest-match for multi-character words. If a glossary is
+    provided, glossary entries take precedence over dictionary lookups for
+    exact token matches.
 
     Args:
         text: Text to translate.
         dictionary: Dictionary instance for lookup.
+        glossary: Optional {zh: en} dict of user-defined term overrides.
 
     Returns:
         List of TokenResult for each token.
@@ -43,6 +50,11 @@ def translate(text: str, dictionary: Dictionary) -> list[TokenResult]:
 
         if not is_chinese:
             results.append(TokenResult(token, None, [], False))
+            continue
+
+        # Glossary override: if the token matches a user-defined term, use it
+        if glossary and token in glossary:
+            results.append(TokenResult(token, None, [glossary[token]], True))
             continue
 
         # For Chinese tokens, try greedy longest-match lookup
@@ -69,7 +81,7 @@ def translate(text: str, dictionary: Dictionary) -> list[TokenResult]:
             # If we only matched part of the token, recursively process the rest
             if best_match and best_match != token:
                 remaining = token[len(best_match):]
-                for result in translate(remaining, dictionary):
+                for result in translate(remaining, dictionary, glossary):
                     results.append(result)
         else:
             # Unknown Chinese token

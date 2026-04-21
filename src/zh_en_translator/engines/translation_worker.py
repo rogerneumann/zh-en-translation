@@ -86,6 +86,7 @@ class PinyinWorker(QThread):
         try:
             from zh_en_translator.engines.dictionary import Dictionary, ensure_cedict
             from zh_en_translator.engines import pipeline
+            from zh_en_translator.engines.glossary import load_glossary
 
             cedict_path = ensure_cedict()
             db_path = cedict_path.with_suffix(".db")
@@ -94,7 +95,8 @@ class PinyinWorker(QThread):
             dictionary = Dictionary(db_path)
 
             try:
-                results = pipeline.translate(self.text, dictionary)
+                glossary = load_glossary()
+                results = pipeline.translate(self.text, dictionary, glossary=glossary)
                 pinyin_str = " ".join(
                     r.pinyin if r.pinyin else r.token for r in results
                 )
