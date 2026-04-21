@@ -336,5 +336,81 @@ if (Test-Path $OutputFile) {
     Write-Host "    Check Inno Setup output above for the actual output path." -ForegroundColor Yellow
 }
 
+# ---------------------------------------------------------------------------
+# Step 5.1 — Create portable ZIP archive
+# ---------------------------------------------------------------------------
+Write-Step "Step 5.1: Creating portable ZIP archive"
+
+$PortableDir  = Join-Path $env:TEMP "zh-en-translator-portable"
+$PortableZip  = Join-Path $PSScriptRoot "Output\zh-en-translator-portable.zip"
+
+# Clean temp staging dir
+if (Test-Path $PortableDir) { Remove-Item -Recurse -Force $PortableDir }
+New-Item -ItemType Directory -Force -Path $PortableDir | Out-Null
+
+# Copy PyInstaller onedir bundle
+Write-Host "    Copying app bundle..." -ForegroundColor Gray
+Copy-Item -Recurse "$BundleDir\*" $PortableDir
+
+# Copy bundled Tesseract if present
+$TessBundle = Join-Path $PSScriptRoot "tesseract-bundle"
+if (Test-Path $TessBundle) {
+    Write-Host "    Including bundled Tesseract..." -ForegroundColor Gray
+    Copy-Item -Recurse $TessBundle (Join-Path $PortableDir "tesseract")
+} else {
+    Write-Host "    tesseract-bundle not found — Tesseract not included in ZIP." -ForegroundColor Yellow
+}
+
+# Write README
+$ReadmePath = Join-Path $PortableDir "README-PORTABLE.txt"
+@"
+zh-en-translator — Portable Edition
+=====================================
+
+USAGE
+-----
+1. Extract this folder anywhere (Desktop, USB drive, etc.)
+2. Run zh-en-translator.exe
+3. On first run the app will download:
+   - Offline translation model (~100 MB, one time)
+   - CC-CEDICT dictionary (~6 MB, one time)
+   These are saved to %APPDATA%\zh-en-translator\ and reused on next run.
+
+TESSERACT OCR
+-------------
+$(if (Test-Path $TessBundle) { "Tesseract OCR is bundled in the tesseract\ subfolder." } else { "Tesseract OCR is NOT included. Install it from https://github.com/UB-Mannheim/tesseract/wiki" })
+
+HOTKEY
+------
+Default: Ctrl+Shift+T — select Chinese text then press the hotkey to translate.
+Change in the system tray icon -> Preferences.
+
+UNINSTALL
+---------
+Delete this folder. App data is in %APPDATA%\zh-en-translator\ (delete that too for a clean uninstall).
+"@ | Set-Content $ReadmePath -Encoding UTF8
+
+# Create ZIP
+Write-Host "    Zipping to $PortableZip..." -ForegroundColor Gray
+New-Item -ItemType Directory -Force -Path (Split-Path $PortableZip) | Out-Null
+if (Test-Path $PortableZip) { Remove-Item $PortableZip -Force }
+
+Add-Type -AssemblyName System.IO.Compression.FileSystem
+[System.IO.Compression.ZipFile]::CreateFromDirectory(
+    $PortableDir,
+    $PortableZip,
+    [System.IO.Compression.CompressionLevel]::Optimal,
+    $true   # includeBaseDirectory = true → zip contains zh-en-translator-portable\ subfolder
+)
+
+Remove-Item -Recurse -Force $PortableDir
+
+if (Test-Path $PortableZip) {
+    $ZipSize = [math]::Round((Get-Item $PortableZip).Length / 1MB, 1)
+    Write-Ok "Portable ZIP: $PortableZip ($ZipSize MB)"
+} else {
+    Write-Host "    WARNING: Portable ZIP not created." -ForegroundColor Yellow
+}
+
 Write-Host ""
 Write-Host "Done!" -ForegroundColor Green

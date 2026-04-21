@@ -1,6 +1,6 @@
 # Popup Translator (Chinese → English) — v3 Enhancement Roadmap
 
-**Status:** M1 Complete ✅ | M2 Complete ✅ | M3 Complete ✅ | M4 In Progress 🔄 | M5 Partially Complete 🔄  
+**Status:** M1 ✅ | M2 ✅ | M3 ✅ | M4 ✅ (partial) | M5 ✅  
 **Last Updated:** 2026-04-21 (End of session)
 
 This document outlines improvements and new features for v3, informed by v1/v2 completion and user feedback.
@@ -131,25 +131,26 @@ This document outlines improvements and new features for v3, informed by v1/v2 c
 
 ---
 
-### M5: Portable Distribution (Partially Complete 🔄)
+### M5: Portable Distribution ✅ COMPLETE
 
 **Objective:** Ship "Tesseract portable" bundle and standalone archive for restricted environments.
 
 **Deliverables:**
-1. ✅ **Tesseract portable bundle** (DONE in M3):
+1. ✅ **M5.1 Tesseract portable bundle** (DONE in M3):
    - Precompiled `tesseract.exe` + `chi_sim.traineddata` bundled in installer via `build.ps1` Step 2.5
    - Avoids winget/download complexity; uses local binary installed to `{app}\tesseract\`
    - Falls back to system Tesseract or Windows OCR if bundle absent
-2. ❌ **Standalone ZIP archive**:
-   - For users who can't/won't run the MSI installer
-   - Portable Python environment + app + models
+2. ✅ **M5.2 Standalone ZIP archive** (done now — `build.ps1 Step 5.1`):
+   - For users who can't/won't run the installer
+   - PyInstaller onedir bundle + optional bundled Tesseract + README-PORTABLE.txt
    - Run `zh-en-translator.exe` directly from extracted folder
-3. ❌ **Network-free installer variant**:
-   - All models + dependencies pre-cached in installer
+   - Output: `installer/Output/zh-en-translator-portable.zip`
+   - Argos model + CC-CEDICT download on first run to `%APPDATA%\` as normal
+3. ✅ **M5.3 Network-free installer variant** — already achieved by M3 bundling:
+   - Tesseract + CC-CEDICT + Argos all pre-bundled in the installer
    - No internet access required during or after setup
-   - Larger installer (~500+ MB) but zero-network deploy
 
-**Status:** M5.1 complete (Tesseract portable bundle done as part of M3). M5.2 and M5.3 deferred.
+**Status:** **COMPLETE** (Branch `v3-m5`)
 
 ---
 
