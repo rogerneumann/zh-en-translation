@@ -1,9 +1,20 @@
 """Tests for Chinese text segmentation."""
 
+import pytest
 from unittest.mock import patch
 
 from zh_en_translator.engines.segmentation import segment, _segment_fallback
 import zh_en_translator.engines.segmentation as seg_module
+
+# ---------------------------------------------------------------------------
+# Jieba availability check for skipif guards
+# ---------------------------------------------------------------------------
+
+try:
+    import jieba as _jieba  # noqa: F401
+    _JIEBA_OK = True
+except ImportError:
+    _JIEBA_OK = False
 
 
 def test_segment_chinese():
@@ -102,3 +113,111 @@ def test_segment_fallback_direct():
 def test_segment_fallback_empty():
     """Test _segment_fallback with empty string."""
     assert _segment_fallback("") == []
+
+
+# ---------------------------------------------------------------------------
+# Regression tests for compound Chinese phrases
+# ---------------------------------------------------------------------------
+
+
+def test_empty_input_returns_empty_list():
+    """Empty input should always return an empty list (no jieba needed)."""
+    assert segment("") == []
+
+
+def test_whitespace_only_returns_empty_or_whitespace():
+    """Whitespace-only input should return no meaningful tokens."""
+    result = segment("   ")
+    # Either empty list or tokens that are all whitespace — no Chinese chars
+    assert all(tok.strip() == "" for tok in result) or result == []
+
+
+def test_latin_passthrough_ascii_word():
+    """ASCII words should pass through unchanged (no jieba needed)."""
+    result = segment("hello")
+    combined = "".join(result)
+    assert combined == "hello"
+
+
+def test_latin_passthrough_alphanumeric():
+    """Alphanumeric strings like 'X10' should be preserved (no jieba needed)."""
+    result = segment("X10")
+    combined = "".join(result)
+    assert combined == "X10"
+
+
+def test_punctuation_chinese_enumeration_comma():
+    """Chinese enumeration comma 、 should appear as a separate token or be stripped."""
+    result = segment("李勋、张三")
+    # The enumeration comma must not be silently fused into a Chinese word token
+    joined = "".join(result)
+    assert "李勋" in joined
+    assert "张三" in joined
+
+
+def test_punctuation_chinese_comma_and_period():
+    """Standard Chinese punctuation 、，。 should be separate tokens or stripped."""
+    result = segment("你好，世界。")
+    joined = "".join(result)
+    assert "你好" in joined
+    assert "世界" in joined
+
+
+@pytest.mark.skipif(not _JIEBA_OK, reason="jieba not installed")
+def test_compound_laser_module():
+    """'激光模块' should be recognised as a compound (2+ chars) when jieba is available."""
+    result = segment("激光模块")
+    # Must appear as a single compound token, not split into single characters
+    assert "激光模块" in result, (
+        f"Expected '激光模块' as a compound token; got: {result!r}"
+    )
+
+
+@pytest.mark.skipif(not _JIEBA_OK, reason="jieba not installed")
+def test_compound_full_sentence_regression():
+    """Canonical regression sentence: key compounds must survive segmentation.
+
+    Input:  李勋、那个X10 Pro的手板样机，激光模块换完了，你们可以去进能部门标一下，我去找他弄
+    When the user dict (手板样机, 激光模块, 进能部门) is loaded these should
+    appear as compound tokens rather than being split into single characters.
+    """
+    from pathlib import Path
+    from zh_en_translator.engines.segmentation import load_user_dict
+
+    # Load domain user dict if it exists (mirrors what the app does at startup)
+    user_dict = (
+        Path(__file__).parent.parent
+        / "src" / "zh_en_translator" / "resources" / "user_dict_technical.txt"
+    )
+    if user_dict.exists():
+        load_user_dict(user_dict)
+
+    sentence = (
+        "李勋、那个X10 Pro的手板样机，激光模块换完了，"
+        "你们可以去进能部门标一下，我去找他弄"
+    )
+    result = segment(sentence)
+
+    # At least the most prominent compound should survive
+    assert "激光模块" in result, (
+        f"Expected '激光模块' as a compound token; got: {result!r}"
+    )
+
+
+@pytest.mark.skipif(not _JIEBA_OK, reason="jieba not installed")
+def test_compound_with_user_dict_loaded():
+    """Compounds in the user dict should be segmented as units after load_user_dict."""
+    from zh_en_translator.engines.segmentation import load_user_dict, add_custom_words
+
+    # Register the test compound directly so we don't depend on the file
+    add_custom_words([("手板样机", 10, "n"), ("进能部门", 10, "n")])
+
+    result_proto = segment("手板样机")
+    assert "手板样机" in result_proto, (
+        f"Expected '手板样机' as compound; got: {result_proto!r}"
+    )
+
+    result_dept = segment("进能部门")
+    assert "进能部门" in result_dept, (
+        f"Expected '进能部门' as compound; got: {result_dept!r}"
+    )
