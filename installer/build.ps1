@@ -194,7 +194,7 @@ if (Test-Path $TessBundle) {
 
     # Install silently to tesseract-bundle/
     Write-Host "    Installing Tesseract to tesseract-bundle\..." -ForegroundColor Gray
-    $p = Start-Process $TessSetup -ArgumentList "/VERYSILENT /NORESTART /DIR=`"$TessBundle`"" -Wait -PassThru
+    $p = Start-Process $TessSetup -ArgumentList "/VERYSILENT /NORESTART /DIR=`"$TessBundle`"" -Wait -PassThru -Verb RunAs
     Remove-Item $TessSetup -Force -ErrorAction SilentlyContinue
     if ($p.ExitCode -ne 0) { Write-Fail "Tesseract install failed (exit $($p.ExitCode))"; exit 1 }
 
