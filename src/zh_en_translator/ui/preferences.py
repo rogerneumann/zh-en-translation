@@ -26,6 +26,10 @@ from PyQt6.QtWidgets import (
     QFrame,
     QMessageBox,
     QApplication,
+    QFileDialog,
+    QTableWidget,
+    QTableWidgetItem,
+    QHeaderView,
 )
 
 from zh_en_translator.config import Config, save_config
@@ -153,6 +157,7 @@ class PreferencesDialog(QDialog):
         self._tabs.addTab(self._build_display_tab(),    "Display")
         self._tabs.addTab(self._build_sidebar_tab(),    "Sidebar")
         self._tabs.addTab(self._build_lookup_ocr_tab(), "Lookup && OCR")
+        self._tabs.addTab(self._build_glossary_tab(),   "Glossary")
         self._tabs.addTab(self._build_cloud_tab(),      "Cloud")
 
         buttons = QDialogButtonBox(
@@ -381,6 +386,115 @@ class PreferencesDialog(QDialog):
         layout.addStretch()
         return widget
 
+    def _build_glossary_tab(self) -> QWidget:
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(8)
+
+        hint = QLabel(
+            "Glossary terms override the translation engine for exact phrase matches.\n"
+            "Format: Chinese phrase → English translation"
+        )
+        hint.setStyleSheet("color: gray; font-size: 9pt;")
+        hint.setWordWrap(True)
+        layout.addWidget(hint)
+
+        self._glossary_table = QTableWidget(0, 2)
+        self._glossary_table.setHorizontalHeaderLabels(["Chinese", "English translation"])
+        self._glossary_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        self._glossary_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self._glossary_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
+        layout.addWidget(self._glossary_table)
+
+        btn_row = QHBoxLayout()
+        btn_add = QPushButton("Add row")
+        btn_add.clicked.connect(self._glossary_add_row)
+        btn_remove = QPushButton("Remove selected")
+        btn_remove.clicked.connect(self._glossary_remove_row)
+        btn_import = QPushButton("Import CSV…")
+        btn_import.clicked.connect(self._glossary_import_csv)
+        btn_export = QPushButton("Export CSV…")
+        btn_export.clicked.connect(self._glossary_export_csv)
+        btn_row.addWidget(btn_add)
+        btn_row.addWidget(btn_remove)
+        btn_row.addStretch()
+        btn_row.addWidget(btn_import)
+        btn_row.addWidget(btn_export)
+        layout.addLayout(btn_row)
+        return widget
+
+    def _glossary_add_row(self) -> None:
+        """Append a blank row to the glossary table."""
+        row = self._glossary_table.rowCount()
+        self._glossary_table.insertRow(row)
+        self._glossary_table.setItem(row, 0, QTableWidgetItem(""))
+        self._glossary_table.setItem(row, 1, QTableWidgetItem(""))
+
+    def _glossary_remove_row(self) -> None:
+        """Remove all currently selected rows from the glossary table."""
+        selected_rows = sorted(
+            {idx.row() for idx in self._glossary_table.selectedIndexes()},
+            reverse=True,
+        )
+        for row in selected_rows:
+            self._glossary_table.removeRow(row)
+
+    def _glossary_import_csv(self, path=None) -> None:
+        """Import a zh,en CSV file, merging entries into the current table."""
+        if path is None:
+            path, _ = QFileDialog.getOpenFileName(
+                self,
+                "Import Glossary CSV",
+                "",
+                "CSV files (*.csv);;All files (*)",
+            )
+            if not path:
+                return
+        from zh_en_translator.engines.glossary import load_glossary
+        from pathlib import Path as _Path
+        imported = load_glossary(_Path(path))
+        if not imported:
+            QMessageBox.information(self, "Import Glossary", "No valid entries found in the selected file.")
+            return
+        existing = self._glossary_get_terms()
+        existing.update(imported)
+        self._glossary_load_terms(existing)
+
+    def _glossary_export_csv(self) -> None:
+        """Export the current glossary table to a CSV file."""
+        path, _ = QFileDialog.getSaveFileName(
+            self,
+            "Export Glossary CSV",
+            "glossary.csv",
+            "CSV files (*.csv);;All files (*)",
+        )
+        if not path:
+            return
+        from zh_en_translator.engines.glossary import save_glossary
+        from pathlib import Path as _Path
+        save_glossary(self._glossary_get_terms(), _Path(path))
+
+    def _glossary_get_terms(self) -> dict[str, str]:
+        """Read the current glossary table into a {zh: en} dict."""
+        terms: dict[str, str] = {}
+        for row in range(self._glossary_table.rowCount()):
+            zh_item = self._glossary_table.item(row, 0)
+            en_item = self._glossary_table.item(row, 1)
+            zh = zh_item.text().strip() if zh_item else ""
+            en = en_item.text().strip() if en_item else ""
+            if zh and en:
+                terms[zh] = en
+        return terms
+
+    def _glossary_load_terms(self, terms: dict[str, str]) -> None:
+        """Populate the glossary table from a {zh: en} dict."""
+        self._glossary_table.setRowCount(0)
+        for zh, en in sorted(terms.items()):
+            row = self._glossary_table.rowCount()
+            self._glossary_table.insertRow(row)
+            self._glossary_table.setItem(row, 0, QTableWidgetItem(zh))
+            self._glossary_table.setItem(row, 1, QTableWidgetItem(en))
+
     def _build_cloud_tab(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
@@ -417,6 +531,8 @@ class PreferencesDialog(QDialog):
     def _on_apply(self):
         self.config = self._collect_config()
         save_config(self.config)
+        from zh_en_translator.engines.glossary import save_glossary
+        save_glossary(self._glossary_get_terms())
         self.settings_applied.emit(self.config)
         self._dirty = False
 
@@ -436,6 +552,8 @@ class PreferencesDialog(QDialog):
         self._font_size_spin.setValue(cfg.font_size)
         self._ms_api_key_edit.setText(cfg.ms_translator_api_key)
         self._deepl_key_edit.setText(cfg.deepl_api_key)
+        from zh_en_translator.engines.glossary import load_glossary
+        self._glossary_load_terms(load_glossary())
         self._update_preview()
         self._connect_dirty_signals()
 
