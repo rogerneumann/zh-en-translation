@@ -363,32 +363,32 @@ if (Test-Path $TessBundle) {
 
 # Write README
 $ReadmePath = Join-Path $PortableDir "README-PORTABLE.txt"
-@"
-zh-en-translator — Portable Edition
-=====================================
-
-USAGE
------
-1. Extract this folder anywhere (Desktop, USB drive, etc.)
-2. Run zh-en-translator.exe
-3. On first run the app will download:
-   - Offline translation model (~100 MB, one time)
-   - CC-CEDICT dictionary (~6 MB, one time)
-   These are saved to %APPDATA%\zh-en-translator\ and reused on next run.
-
-TESSERACT OCR
--------------
-$(if (Test-Path $TessBundle) { "Tesseract OCR is bundled in the tesseract\ subfolder." } else { "Tesseract OCR is NOT included. Install it from https://github.com/UB-Mannheim/tesseract/wiki" })
-
-HOTKEY
-------
-Default: Ctrl+Shift+T — select Chinese text then press the hotkey to translate.
-Change in the system tray icon -> Preferences.
-
-UNINSTALL
----------
-Delete this folder. App data is in %APPDATA%\zh-en-translator\ (delete that too for a clean uninstall).
-"@ | Set-Content $ReadmePath -Encoding UTF8
+$TessLine = if (Test-Path $TessBundle) { "Tesseract OCR is bundled in the tesseract\ subfolder." } else { "Tesseract OCR is NOT included. Install it from https://github.com/UB-Mannheim/tesseract/wiki" }
+$ReadmeContent = "zh-en-translator - Portable Edition`r`n" +
+    "=====================================`r`n" +
+    "`r`n" +
+    "USAGE`r`n" +
+    "-----`r`n" +
+    "1. Extract this folder anywhere (Desktop, USB drive, etc.)`r`n" +
+    "2. Run zh-en-translator.exe`r`n" +
+    "3. On first run the app will download:`r`n" +
+    "   - Offline translation model (~100 MB, one time)`r`n" +
+    "   - CC-CEDICT dictionary (~6 MB, one time)`r`n" +
+    "   These are saved to %APPDATA%\zh-en-translator\ and reused on next run.`r`n" +
+    "`r`n" +
+    "TESSERACT OCR`r`n" +
+    "-------------`r`n" +
+    "$TessLine`r`n" +
+    "`r`n" +
+    "HOTKEY`r`n" +
+    "------`r`n" +
+    "Default: Ctrl+Shift+T -- select Chinese text then press the hotkey to translate.`r`n" +
+    "Change in the system tray icon -> Preferences.`r`n" +
+    "`r`n" +
+    "UNINSTALL`r`n" +
+    "---------`r`n" +
+    "Delete this folder. App data is in %APPDATA%\zh-en-translator\ (delete that too for a clean uninstall).`r`n"
+[System.IO.File]::WriteAllText($ReadmePath, $ReadmeContent, [System.Text.Encoding]::UTF8)
 
 # Create ZIP
 Write-Host "    Zipping to $PortableZip..." -ForegroundColor Gray
