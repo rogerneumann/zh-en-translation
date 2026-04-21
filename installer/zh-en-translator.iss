@@ -51,16 +51,18 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 ; Launch at Windows startup — default checked
 Name: "startup"; Description: "Launch {#MyAppName} when Windows starts"; GroupDescription: "Windows startup:"; Flags: checkedonce
-; Optional: Tesseract OCR fallback — auto-checked if Windows OCR unavailable (see [Code])
-Name: "tesseract"; Description: "Download && install Tesseract OCR as Chinese OCR fallback (~30 MB)"; \
-  GroupDescription: "Optional components:"; Flags: unchecked
 
 [Files]
 ; PyInstaller onedir output — entire dist\zh-en-translator\ folder
 Source: "{#MyDistDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Post-install helper scripts
 Source: "download_packs.ps1"; DestDir: "{app}"; Flags: ignoreversion
-Source: "install_tesseract.ps1"; DestDir: "{tmp}"; Flags: ignoreversion
+; Bundled Tesseract OCR (portable — always included, no UAC required)
+Source: "tesseract-bundle\*"; DestDir: "{app}\tesseract"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: BundleExists('tesseract-bundle\tesseract.exe')
+; Bundled CC-CEDICT (pre-populated so no network required on first run)
+Source: "cedict-bundle\cedict_ts.u8"; DestDir: "{userappdata}\zh-en-translator"; Flags: ignoreversion; Check: BundleExists('cedict-bundle\cedict_ts.u8')
+; Bundled Argos zh->en model (pre-populated packages dir)
+Source: "argos-bundle\*"; DestDir: "{userappdata}\argos-translate\packages"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: BundleDirExists('argos-bundle')
 
 [Icons]
 ; Start Menu shortcut
@@ -95,6 +97,20 @@ Filename: "reg.exe"; \
   Flags: runhidden; RunOnceId: "RemoveStartupEntry"
 
 [Code]
+// ---------------------------------------------------------------------------
+// Bundle presence checks — used as Check: guards in [Files] so missing
+// bundles (e.g. CI builds) don't cause compiler or installer errors.
+// ---------------------------------------------------------------------------
+function BundleExists(RelPath: String): Boolean;
+begin
+  Result := FileExists(ExpandConstant('{src}\' + RelPath));
+end;
+
+function BundleDirExists(RelDir: String): Boolean;
+begin
+  Result := DirExists(ExpandConstant('{src}\' + RelDir));
+end;
+
 // ---------------------------------------------------------------------------
 // Detect if the app is already running before the wizard starts.
 // Offers to kill it automatically so files can be overwritten cleanly.
@@ -134,7 +150,6 @@ end;
 var
   InstallTypePage: TInputOptionWizardPage;
   WinOcrAvailable: Boolean;
-  TesseractAutoChecked: Boolean;
 
 // ---------------------------------------------------------------------------
 // Check whether Windows.Media.Ocr has a Chinese recogniser installed.
@@ -173,8 +188,6 @@ end;
 // ---------------------------------------------------------------------------
 procedure InitializeWizard;
 begin
-  TesseractAutoChecked := False;
-
   // Check Windows OCR availability early (before wizard pages are shown)
   WinOcrAvailable := CheckWindowsOcrAvailable();
 
@@ -204,19 +217,11 @@ begin
 end;
 
 // ---------------------------------------------------------------------------
-// When the Tasks page appears, auto-check Tesseract if Windows OCR is absent
+// CurPageChanged — no Tesseract task to auto-check (Tesseract is now bundled)
 // ---------------------------------------------------------------------------
 procedure CurPageChanged(CurPageID: Integer);
 begin
-  if CurPageID = wpSelectTasks then
-  begin
-    if (not WinOcrAvailable) and (not TesseractAutoChecked) then
-    begin
-      // Pre-select Tesseract since Windows OCR won't handle Chinese
-      WizardSelectTasks('tesseract');
-      TesseractAutoChecked := True;
-    end;
-  end;
+  // Tesseract is now always bundled in the installer — no task auto-selection needed.
 end;
 
 
@@ -232,7 +237,8 @@ begin
   if CurStep = ssPostInstall then
   begin
     // Argos translation model (Full install only)
-    if IsFullInstall then
+    // Skip download_packs.ps1 if the Argos bundle was pre-populated in the installer.
+    if IsFullInstall and not BundleDirExists('argos-bundle') then
     begin
       WizardForm.StatusLabel.Caption :=
         'Downloading offline translation model (~50-100 MB)...' + #13#10 +
@@ -254,21 +260,7 @@ begin
           'To retry later, run download_packs.ps1 from the install folder.',
           mbInformation, MB_OK);
     end;
-    // Tesseract OCR (only if task was checked)
-    // Script always exits 0; Tesseract is optional so no error dialog shown.
-    if WizardIsTaskSelected('tesseract') then
-    begin
-      WizardForm.StatusLabel.Caption :=
-        'Downloading and installing Tesseract OCR (~30 MB)...' + #13#10 +
-        'A terminal window shows installation progress. Please wait.';
-      WizardForm.Update();
-      Exec('powershell.exe',
-        '-ExecutionPolicy Bypass' +
-        ' -File "' + ExpandConstant('{tmp}\install_tesseract.ps1') + '"',
-        '',
-        SW_SHOWNORMAL, ewWaitUntilTerminated, ResultCode);
-      // ResultCode ignored — Tesseract is optional; failures are non-fatal.
-    end;
+    // Tesseract OCR is now always bundled in the installer — no separate install step needed.
   end;
 end;
 
@@ -279,24 +271,15 @@ function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo,
   MemoTypeInfo, MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
 var
   InstallType: String;
-  OcrNote: String;
 begin
   if IsFullInstall then
     InstallType := 'Full install — dictionary, pinyin + offline sentence translation'
   else
     InstallType := 'Lite install — dictionary and pinyin only';
 
-  if not WinOcrAvailable then
-    OcrNote := NewLine +
-      'Note: Windows OCR for Chinese not detected. ' +
-      'Tesseract is recommended for OCR support.'
-  else
-    OcrNote := '';
-
   Result :=
     MemoDirInfo + NewLine + NewLine +
     'Install type:' + NewLine +
     Space + InstallType + NewLine + NewLine +
-    MemoTasksInfo +
-    OcrNote;
+    MemoTasksInfo;
 end;
