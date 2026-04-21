@@ -43,6 +43,27 @@ function Write-Fail([string]$msg) {
     Write-Host "    FAIL: $msg" -ForegroundColor Red
 }
 
+function Download-FileWithRetry([string]$Url, [string]$OutPath, [int]$MaxRetries = 3, [int]$TimeoutSeconds = 300) {
+    $attempt = 0
+    while ($attempt -lt $MaxRetries) {
+        $attempt++
+        try {
+            Write-Host "    Attempt $attempt/$MaxRetries..." -ForegroundColor Gray
+            $client = New-Object System.Net.WebClient
+            $client.Timeout = $TimeoutSeconds * 1000
+            $client.DownloadFile($Url, $OutPath)
+            return $true
+        } catch {
+            Write-Host "    Failed: $_" -ForegroundColor Yellow
+            if ($attempt -lt $MaxRetries) {
+                Write-Host "    Retrying in 5 seconds..." -ForegroundColor Gray
+                Start-Sleep -Seconds 5
+            }
+        }
+    }
+    return $false
+}
+
 # ---------------------------------------------------------------------------
 # Locate repo root (script lives in installer\, repo root is one level up)
 # ---------------------------------------------------------------------------
@@ -166,8 +187,13 @@ if (Test-Path $TessBundle) {
     # Download installer
     $TessSetup = Join-Path $env:TEMP "tesseract-ocr-setup.exe"
     $TessUrl = "https://github.com/UB-Mannheim/tesseract/releases/download/v5.5.0.20241111/tesseract-ocr-w64-setup-5.5.0.20241111.exe"
-    Write-Host "    Downloading Tesseract from $TessUrl" -ForegroundColor Gray
-    (New-Object System.Net.WebClient).DownloadFile($TessUrl, $TessSetup)
+    Write-Host "    Downloading Tesseract (~180 MB, may take a few minutes)..." -ForegroundColor Gray
+    if (-not (Download-FileWithRetry -Url $TessUrl -OutPath $TessSetup -MaxRetries 3 -TimeoutSeconds 600)) {
+        Write-Fail "Tesseract download failed after 3 attempts"
+        Write-Host "    You can download manually from: $TessUrl" -ForegroundColor Yellow
+        Write-Host "    And place the exe at: $TessSetup" -ForegroundColor Yellow
+        exit 1
+    }
 
     # Install silently to tesseract-bundle/
     Write-Host "    Installing Tesseract to tesseract-bundle\..." -ForegroundColor Gray
@@ -180,11 +206,11 @@ if (Test-Path $TessBundle) {
     New-Item -ItemType Directory -Force -Path $TessData | Out-Null
     $ChiSim = Join-Path $TessData "chi_sim.traineddata"
     if (-not (Test-Path $ChiSim)) {
-        Write-Host "    Downloading chi_sim.traineddata..." -ForegroundColor Gray
-        (New-Object System.Net.WebClient).DownloadFile(
-            "https://github.com/tesseract-ocr/tessdata_fast/raw/main/chi_sim.traineddata",
-            $ChiSim
-        )
+        Write-Host "    Downloading chi_sim.traineddata (~30 MB)..." -ForegroundColor Gray
+        $ChiSimUrl = "https://github.com/tesseract-ocr/tessdata_fast/raw/main/chi_sim.traineddata"
+        if (-not (Download-FileWithRetry -Url $ChiSimUrl -OutPath $ChiSim -MaxRetries 3 -TimeoutSeconds 300)) {
+            Write-Host "    WARNING: chi_sim.traineddata download failed. Tesseract may not work for Chinese OCR." -ForegroundColor Yellow
+        }
     }
     Write-Ok "Tesseract bundle ready at: $TessBundle"
 }
