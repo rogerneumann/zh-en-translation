@@ -339,8 +339,8 @@ class TranslatorApp(QObject):
             return
 
         # Snapshot clipboard image BEFORE text capture.
-        # capture_selection() does Ctrl+C and restores clipboard via pyperclip
-        # (text only), which wipes any image that was in the clipboard.
+        # capture_selection() does Ctrl+C and restores the clipboard via
+        # QClipboard, which may wipe any image that was in the clipboard.
         clipboard = QApplication.instance().clipboard()
         pre_capture_image = None
         if clipboard.mimeData().hasImage():
