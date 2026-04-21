@@ -1,7 +1,7 @@
 # Popup Translator (Chinese → English) — v3 Enhancement Roadmap
 
-**Status:** M1 ✅ | M2 ✅ | M3 ✅ | M4 ✅ (partial) | M5 ✅  
-**Last Updated:** 2026-04-21 (End of session)
+**Status:** M1 ✅ | M2 ✅ | M3 ✅ | M4 ✅ (partial) | M5 ✅ | Build System ✅  
+**Last Updated:** 2026-04-21 (Build system debugging complete)
 
 This document outlines improvements and new features for v3, informed by v1/v2 completion and user feedback.
 
@@ -151,6 +151,25 @@ This document outlines improvements and new features for v3, informed by v1/v2 c
    - No internet access required during or after setup
 
 **Status:** **COMPLETE** (Branch `v3-m5`)
+
+---
+
+### Build System: PowerShell Encoding Issues ✅ FIXED
+
+**Issue (2026-04-21):** `installer/build.ps1` failed to parse on Windows PowerShell 5.1.
+
+**Root cause:** Windows PowerShell 5.1 reads `.ps1` files **without UTF-8 BOM using CP1252 encoding**. UTF-8 em-dashes (`—`, bytes `0xE2 0x80 0x94`) decode as three CP1252 characters; the third is `"` (RIGHT DOUBLE QUOTATION MARK), which PowerShell treats as a string terminator, corrupting the entire parse tree.
+
+**Solution:**
+1. Replaced all 15 em-dashes with ASCII `--` (double hyphen)
+2. Replaced right-arrow `→` with ASCII equivalent
+3. Added UTF-8 BOM (`0xEF 0xBB 0xBF`) to force correct encoding detection
+4. Corrected `.gitattributes` rule order: general rules first, specific rules after (last rule wins)
+5. Replaced here-string with array-join for line-ending independence
+
+**Documentation:** Created `CLAUDE.md` with permanent knowledge base for PowerShell encoding and git configuration.
+
+**Status:** **FIXED** — build.ps1 parses and executes on Windows PowerShell 5.1+
 
 ---
 

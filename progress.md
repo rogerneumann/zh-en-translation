@@ -7,6 +7,23 @@ Source of truth for plan/scope: `PLAN.md` and `plan-v2.md`.
 
 ---
 
+## Latest: Build System Fixes (2026-04-21)
+
+**Issue:** `installer/build.ps1` had PowerShell parse errors on Windows.
+
+**Root Cause:** Windows PowerShell 5.1 reads `.ps1` files without UTF-8 BOM using CP1252 encoding, causing UTF-8 em-dashes (`—`) to be misinterpreted as string terminators.
+
+**Resolution:**
+- ✅ Replaced all em-dashes with ASCII double-hyphens (`--`)
+- ✅ Added UTF-8 BOM to build.ps1
+- ✅ Corrected `.gitattributes` rule order (general rules first, specific rules override)
+- ✅ Replaced here-string with array-join for README generation (line-ending independent)
+- ✅ Created **CLAUDE.md** with permanent knowledge base for PowerShell encoding issues
+
+**Status:** build.ps1 now parses and runs successfully on Windows PowerShell 5.1.
+
+---
+
 ## Status at a glance (v1 Plan)
 
 | Milestone | Status | Notes |
