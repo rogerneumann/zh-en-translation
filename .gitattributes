@@ -1,0 +1,11 @@
+# Ensure PowerShell scripts are checked out with CRLF on Windows
+*.ps1 text eol=crlf
+*.psm1 text eol=crlf
+*.psd1 text eol=crlf
+
+# Batch files always need CRLF
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# All other text files: normalize to LF in repo, native on checkout
+* text=auto
