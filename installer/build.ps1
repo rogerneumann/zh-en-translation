@@ -62,6 +62,44 @@ function Download-FileWithRetry([string]$Url, [string]$OutPath, [int]$MaxRetries
     return $false
 }
 
+function Find-TesseractInstallation {
+    # Check standard Windows installation paths
+    $TesseractPaths = @(
+        "C:\Program Files\Tesseract-OCR",
+        "C:\Program Files (x86)\Tesseract-OCR",
+        "$env:LOCALAPPDATA\Programs\Tesseract-OCR",
+        "$env:LOCALAPPDATA\Tesseract-OCR"
+    )
+
+    foreach ($path in $TesseractPaths) {
+        if (Test-Path (Join-Path $path "tesseract.exe")) {
+            return $path
+        }
+    }
+
+    # Check registry for Tesseract installation
+    try {
+        $regPaths = @(
+            "HKLM:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Tesseract-OCR",
+            "HKLM:\SOFTWARE\Wow6432Node\Microsoft\Windows\CurrentVersion\Uninstall\Tesseract-OCR",
+            "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\Tesseract-OCR"
+        )
+
+        foreach ($regPath in $regPaths) {
+            if (Test-Path $regPath) {
+                $installLocation = (Get-ItemProperty $regPath).InstallLocation
+                if ($installLocation -and (Test-Path (Join-Path $installLocation "tesseract.exe"))) {
+                    return $installLocation
+                }
+            }
+        }
+    } catch {
+        # Registry lookup failed, continue
+    }
+
+    return $null
+}
+
 # ---------------------------------------------------------------------------
 # Locate repo root (script lives in installer\, repo root is one level up)
 # ---------------------------------------------------------------------------
@@ -175,41 +213,98 @@ if (-not $SkipPyInstaller) {
 }
 
 # ---------------------------------------------------------------------------
-# Step 2.5 -- Download Tesseract portable for bundling
+# Step 2.5 -- Bundle Tesseract OCR (portable)
 # ---------------------------------------------------------------------------
 Write-Step "Step 2.5: Bundling Tesseract OCR (portable)"
 $TessBundle = Join-Path $PSScriptRoot "tesseract-bundle"
-if (Test-Path $TessBundle) {
-    Write-Ok "tesseract-bundle already exists -- skipping download"
-} else {
-    # Download installer
-    $TessSetup = Join-Path $env:TEMP "tesseract-ocr-setup.exe"
-    $TessUrl = "https://github.com/UB-Mannheim/tesseract/releases/download/v5.4.0.20240606/tesseract-ocr-w64-setup-5.4.0.20240606.exe"
-    Write-Host "    Downloading Tesseract (~100 MB, may take a few minutes)..." -ForegroundColor Gray
-    if (-not (Download-FileWithRetry -Url $TessUrl -OutPath $TessSetup -MaxRetries 3 -TimeoutSeconds 600)) {
-        Write-Fail "Tesseract download failed after 3 attempts"
-        Write-Host "    Check GitHub releases: https://github.com/UB-Mannheim/tesseract/releases" -ForegroundColor Yellow
-        exit 1
-    }
 
-    # Install silently to tesseract-bundle/
-    Write-Host "    Installing Tesseract to tesseract-bundle\..." -ForegroundColor Gray
-    $p = Start-Process $TessSetup -ArgumentList "/VERYSILENT /NORESTART /DIR=`"$TessBundle`"" -Wait -PassThru -Verb RunAs
-    Remove-Item $TessSetup -Force -ErrorAction SilentlyContinue
-    if ($p.ExitCode -ne 0) { Write-Fail "Tesseract install failed (exit $($p.ExitCode))"; exit 1 }
+# First, check if Tesseract is already installed on this system
+$ExistingTessPath = Find-TesseractInstallation
+if ($ExistingTessPath) {
+    Write-Host "    Found existing Tesseract installation at: $ExistingTessPath" -ForegroundColor Cyan
+    $userChoice = Read-Host "    Use existing installation? (y/n, default: y)"
+    if ($userChoice -ne "n" -and $userChoice -ne "N") {
+        Write-Ok "Using existing Tesseract at: $ExistingTessPath"
+        # Create a symlink or copy to tesseract-bundle for consistency
+        if (-not (Test-Path $TessBundle)) {
+            Write-Host "    Creating reference to existing installation..." -ForegroundColor Gray
+            New-Item -ItemType Directory -Force -Path $TessBundle | Out-Null
+            # For simplicity, just note that we're using the system installation
+            @"
+This folder is a placeholder. The actual Tesseract installation is at:
+$ExistingTessPath
 
-    # Download chi_sim.traineddata into tessdata/
-    $TessData = Join-Path $TessBundle "tessdata"
-    New-Item -ItemType Directory -Force -Path $TessData | Out-Null
-    $ChiSim = Join-Path $TessData "chi_sim.traineddata"
-    if (-not (Test-Path $ChiSim)) {
-        Write-Host "    Downloading chi_sim.traineddata (~30 MB)..." -ForegroundColor Gray
-        $ChiSimUrl = "https://github.com/tesseract-ocr/tessdata_fast/raw/main/chi_sim.traineddata"
-        if (-not (Download-FileWithRetry -Url $ChiSimUrl -OutPath $ChiSim -MaxRetries 3 -TimeoutSeconds 600)) {
-            Write-Host "    WARNING: chi_sim.traineddata download failed. Tesseract may not work for Chinese OCR." -ForegroundColor Yellow
+The build script detected an existing installation and used it instead of bundling.
+"@ | Set-Content (Join-Path $TessBundle "README.txt")
         }
+        Write-Ok "Tesseract bundling skipped (using system installation)"
+    } else {
+        Write-Host "    Proceeding with fresh download..." -ForegroundColor Gray
+        if (Test-Path $TessBundle) {
+            Write-Host "    Removing old tesseract-bundle..." -ForegroundColor Gray
+            Remove-Item -Recurse -Force $TessBundle
+        }
+        # Download and install fresh
+        $TessSetup = Join-Path $env:TEMP "tesseract-ocr-setup.exe"
+        $TessUrl = "https://github.com/UB-Mannheim/tesseract/releases/download/v5.4.0.20240606/tesseract-ocr-w64-setup-5.4.0.20240606.exe"
+        Write-Host "    Downloading Tesseract (~100 MB, may take a few minutes)..." -ForegroundColor Gray
+        if (-not (Download-FileWithRetry -Url $TessUrl -OutPath $TessSetup -MaxRetries 3 -TimeoutSeconds 600)) {
+            Write-Fail "Tesseract download failed after 3 attempts"
+            Write-Host "    Check GitHub releases: https://github.com/UB-Mannheim/tesseract/releases" -ForegroundColor Yellow
+            exit 1
+        }
+
+        Write-Host "    Installing Tesseract to tesseract-bundle\..." -ForegroundColor Gray
+        $p = Start-Process $TessSetup -ArgumentList "/VERYSILENT /NORESTART /DIR=`"$TessBundle`"" -Wait -PassThru -Verb RunAs
+        Remove-Item $TessSetup -Force -ErrorAction SilentlyContinue
+        if ($p.ExitCode -ne 0) { Write-Fail "Tesseract install failed (exit $($p.ExitCode))"; exit 1 }
+
+        # Download chi_sim.traineddata into tessdata/
+        $TessData = Join-Path $TessBundle "tessdata"
+        New-Item -ItemType Directory -Force -Path $TessData | Out-Null
+        $ChiSim = Join-Path $TessData "chi_sim.traineddata"
+        if (-not (Test-Path $ChiSim)) {
+            Write-Host "    Downloading chi_sim.traineddata (~30 MB)..." -ForegroundColor Gray
+            $ChiSimUrl = "https://github.com/tesseract-ocr/tessdata_fast/raw/main/chi_sim.traineddata"
+            if (-not (Download-FileWithRetry -Url $ChiSimUrl -OutPath $ChiSim -MaxRetries 3 -TimeoutSeconds 600)) {
+                Write-Host "    WARNING: chi_sim.traineddata download failed. Tesseract may not work for Chinese OCR." -ForegroundColor Yellow
+            }
+        }
+        Write-Ok "Tesseract bundle ready at: $TessBundle"
     }
-    Write-Ok "Tesseract bundle ready at: $TessBundle"
+} else {
+    # No existing installation found, download and bundle
+    if (Test-Path $TessBundle) {
+        Write-Ok "tesseract-bundle already exists -- skipping download"
+    } else {
+        Write-Host "    No existing Tesseract installation found. Downloading..." -ForegroundColor Gray
+        $TessSetup = Join-Path $env:TEMP "tesseract-ocr-setup.exe"
+        $TessUrl = "https://github.com/UB-Mannheim/tesseract/releases/download/v5.4.0.20240606/tesseract-ocr-w64-setup-5.4.0.20240606.exe"
+        Write-Host "    Downloading Tesseract (~100 MB, may take a few minutes)..." -ForegroundColor Gray
+        if (-not (Download-FileWithRetry -Url $TessUrl -OutPath $TessSetup -MaxRetries 3 -TimeoutSeconds 600)) {
+            Write-Fail "Tesseract download failed after 3 attempts"
+            Write-Host "    Check GitHub releases: https://github.com/UB-Mannheim/tesseract/releases" -ForegroundColor Yellow
+            exit 1
+        }
+
+        Write-Host "    Installing Tesseract to tesseract-bundle\..." -ForegroundColor Gray
+        $p = Start-Process $TessSetup -ArgumentList "/VERYSILENT /NORESTART /DIR=`"$TessBundle`"" -Wait -PassThru -Verb RunAs
+        Remove-Item $TessSetup -Force -ErrorAction SilentlyContinue
+        if ($p.ExitCode -ne 0) { Write-Fail "Tesseract install failed (exit $($p.ExitCode))"; exit 1 }
+
+        # Download chi_sim.traineddata into tessdata/
+        $TessData = Join-Path $TessBundle "tessdata"
+        New-Item -ItemType Directory -Force -Path $TessData | Out-Null
+        $ChiSim = Join-Path $TessData "chi_sim.traineddata"
+        if (-not (Test-Path $ChiSim)) {
+            Write-Host "    Downloading chi_sim.traineddata (~30 MB)..." -ForegroundColor Gray
+            $ChiSimUrl = "https://github.com/tesseract-ocr/tessdata_fast/raw/main/chi_sim.traineddata"
+            if (-not (Download-FileWithRetry -Url $ChiSimUrl -OutPath $ChiSim -MaxRetries 3 -TimeoutSeconds 600)) {
+                Write-Host "    WARNING: chi_sim.traineddata download failed. Tesseract may not work for Chinese OCR." -ForegroundColor Yellow
+            }
+        }
+        Write-Ok "Tesseract bundle ready at: $TessBundle"
+    }
 }
 
 # ---------------------------------------------------------------------------
