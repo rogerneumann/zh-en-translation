@@ -227,10 +227,14 @@ if (Test-Path $CedictFile) {
     if (Download-FileWithRetry -Url "https://www.mdbg.net/chinese/export/cedict/cedict_1_0_ts_utf-8_mdbg.zip" -OutPath $CedictZip -MaxRetries 3 -TimeoutSeconds 300) {
         try {
             Add-Type -AssemblyName System.IO.Compression.FileSystem
-            $zip = [System.IO.Compression.ZipFile]::OpenRead($CedictZip)
+            $zip = New-Object System.IO.Compression.ZipFile($CedictZip, [System.IO.Compression.ZipArchiveMode]::Read)
             $entry = $zip.Entries | Where-Object { $_.Name -eq "cedict_ts.u8" } | Select-Object -First 1
             if ($entry) {
-                [System.IO.Compression.ZipFileExtensions]::ExtractToFile($entry, $CedictFile, $true)
+                $stream = $entry.Open()
+                $out = [System.IO.File]::Create($CedictFile)
+                $stream.CopyTo($out)
+                $out.Close()
+                $stream.Close()
                 Write-Ok "CC-CEDICT saved to: $CedictFile"
             } else {
                 Write-Host "    WARNING: cedict_ts.u8 not found in zip archive" -ForegroundColor Yellow
