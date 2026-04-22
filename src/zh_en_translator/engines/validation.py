@@ -62,16 +62,16 @@ def extract_content_tokens(text: str, dictionary) -> list[str]:
     return content_tokens
 
 
-def is_translation_complete(
+def get_translation_completeness_score(
     source_tokens: list[str],
     translation: str,
     dictionary,
-) -> bool:
-    """Check if all content tokens from source appear (in English) in translation.
+) -> float:
+    """Compute translation completeness ratio (0.0 to 1.0).
 
     Uses dictionary lookup to get English glosses for each source token and
-    checks if those glosses appear in the translation. Returns True if >= 70%
-    of source content tokens have English equivalents in the translation.
+    checks if those glosses appear in the translation. Returns the ratio of
+    tokens found in the translation.
 
     Args:
         source_tokens: Content tokens extracted from source Chinese.
@@ -79,13 +79,13 @@ def is_translation_complete(
         dictionary: Dictionary instance for lookups.
 
     Returns:
-        True if >= 70% of source tokens are covered in translation, else False.
+        Completeness ratio (0.0 to 1.0), where 1.0 = all tokens found.
     """
     if not source_tokens:
-        return True  # No content to check; consider complete
+        return 1.0  # No content to check; consider complete
 
     if not translation or not translation.strip():
-        return False  # Empty translation; not complete
+        return 0.0  # Empty translation; not complete
 
     translation_lower = translation.lower()
     found_count = 0
@@ -118,7 +118,27 @@ def is_translation_complete(
         len(source_tokens),
         completeness_ratio * 100,
     )
-    return completeness_ratio >= 0.7
+    return completeness_ratio
+
+
+def is_translation_complete(
+    source_tokens: list[str],
+    translation: str,
+    dictionary,
+) -> bool:
+    """Check if translation is complete (>= 70% of tokens found).
+
+    Convenience wrapper around get_translation_completeness_score.
+
+    Args:
+        source_tokens: Content tokens extracted from source Chinese.
+        translation: English translation output to validate.
+        dictionary: Dictionary instance for lookups.
+
+    Returns:
+        True if >= 70% of source tokens are covered in translation, else False.
+    """
+    return get_translation_completeness_score(source_tokens, translation, dictionary) >= 0.7
 
 
 def recover_missing_content(

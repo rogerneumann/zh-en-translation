@@ -38,7 +38,7 @@ class TranslationWorker(QThread):
         self.text = text
         self.config = config  # Config | None
 
-    def _apply_validation(self, source: str, translation: str) -> str:
+    def _apply_validation(self, source: str, translation: str) -> tuple[str, float]:
         """Apply translation validation and recovery pipeline (Phase 1).
 
         Detects missing content from the source and recovers it using dictionary lookup.
@@ -48,13 +48,14 @@ class TranslationWorker(QThread):
             translation: Current English translation from Argos.
 
         Returns:
-            Enhanced translation with recovered content inserted.
+            Tuple of (enhanced_translation, completeness_score) where completeness_score
+            is between 0.0 and 1.0.
         """
         try:
             from zh_en_translator.engines.dictionary import Dictionary, ensure_cedict
             from zh_en_translator.engines.validation import (
                 extract_content_tokens,
-                is_translation_complete,
+                get_translation_completeness_score,
                 recover_missing_content,
             )
 
@@ -68,13 +69,13 @@ class TranslationWorker(QThread):
             try:
                 # Extract content tokens and check completeness
                 source_tokens = extract_content_tokens(source, dictionary)
-                is_complete = is_translation_complete(
+                completeness = get_translation_completeness_score(
                     source_tokens,
                     translation,
                     dictionary,
                 )
 
-                if not is_complete:
+                if completeness < 0.7:
                     # Recover missing content
                     enhanced = recover_missing_content(
                         source,
@@ -82,17 +83,49 @@ class TranslationWorker(QThread):
                         missing_tokens=None,
                         dictionary=dictionary,
                     )
-                    logger.debug("Validation result: incomplete translation, recovered content")
-                    return enhanced
+                    logger.debug(
+                        "Phase 1 incomplete (%.1f%%), recovered content",
+                        completeness * 100,
+                    )
+                    return enhanced, completeness
                 else:
-                    logger.debug("Validation result: translation complete")
-                    return translation
+                    logger.debug("Phase 1 complete (%.1f%%)", completeness * 100)
+                    return translation, completeness
 
             finally:
                 dictionary.close()
 
         except Exception as e:
             logger.warning("Translation validation failed: %s (continuing with original)", e)
+            return translation, 0.0
+
+    def _apply_clause_fallback(self, source: str, translation: str) -> str:
+        """Apply clause-level translation fallback (Phase 2).
+
+        For incomplete translations, splits into clauses, translates each,
+        and recombines intelligently.
+
+        Args:
+            source: Original Chinese text.
+            translation: Current English translation from Phase 1.
+
+        Returns:
+            Enhanced translation with clause-level fallback applied, or original
+            if fallback fails.
+        """
+        try:
+            from zh_en_translator.engines.argos import translate_with_clause_fallback
+
+            result = translate_with_clause_fallback(source)
+            if result and _is_valid_translation(result, source):
+                logger.debug("Phase 2 clause-level fallback succeeded")
+                return result
+            else:
+                logger.debug("Phase 2 clause-level fallback failed or empty result")
+                return translation
+
+        except Exception as e:
+            logger.warning("Phase 2 clause-level fallback failed: %s", e)
             return translation
 
     def run(self):
@@ -152,7 +185,11 @@ class TranslationWorker(QThread):
             logger.info("Translation path: Argos")
             # Post-process with validation and recovery if enabled
             if self.config and self.config.validation_enabled:
-                result = self._apply_validation(self.text, result)
+                result, completeness = self._apply_validation(self.text, result)
+                # If Phase 1 is still incomplete, try Phase 2 clause-level fallback
+                if completeness < 0.7:
+                    logger.info("Phase 1 incomplete (%.1f%%), attempting Phase 2", completeness * 100)
+                    result = self._apply_clause_fallback(self.text, result)
             self.result_ready.emit(result)
             return
 
