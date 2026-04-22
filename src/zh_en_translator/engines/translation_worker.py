@@ -38,6 +38,63 @@ class TranslationWorker(QThread):
         self.text = text
         self.config = config  # Config | None
 
+    def _apply_validation(self, source: str, translation: str) -> str:
+        """Apply translation validation and recovery pipeline.
+
+        Detects missing content from the source and recovers it using dictionary lookup.
+
+        Args:
+            source: Original Chinese text.
+            translation: Current English translation from Argos.
+
+        Returns:
+            Enhanced translation with recovered content inserted.
+        """
+        try:
+            from zh_en_translator.engines.dictionary import Dictionary, ensure_cedict
+            from zh_en_translator.engines.validation import (
+                extract_content_tokens,
+                is_translation_complete,
+                recover_missing_content,
+            )
+
+            # Load dictionary
+            cedict_path = ensure_cedict()
+            db_path = cedict_path.with_suffix(".db")
+            if not db_path.exists():
+                Dictionary.build_from_cedict(cedict_path, db_path)
+            dictionary = Dictionary(db_path)
+
+            try:
+                # Extract content tokens and check completeness
+                source_tokens = extract_content_tokens(source, dictionary)
+                is_complete = is_translation_complete(
+                    source_tokens,
+                    translation,
+                    dictionary,
+                )
+
+                if not is_complete:
+                    # Recover missing content
+                    enhanced = recover_missing_content(
+                        source,
+                        translation,
+                        missing_tokens=None,
+                        dictionary=dictionary,
+                    )
+                    logger.debug("Validation result: incomplete translation, recovered content")
+                    return enhanced
+                else:
+                    logger.debug("Validation result: translation complete")
+                    return translation
+
+            finally:
+                dictionary.close()
+
+        except Exception as e:
+            logger.warning("Translation validation failed: %s (continuing with original)", e)
+            return translation
+
     def run(self):
         logger.info("Translation started (input length: %d chars)", len(self.text))
 
@@ -93,6 +150,9 @@ class TranslationWorker(QThread):
 
         if result and _is_valid_translation(result, self.text):
             logger.info("Translation path: Argos")
+            # Post-process with validation and recovery if enabled
+            if self.config and self.config.validation_enabled:
+                result = self._apply_validation(self.text, result)
             self.result_ready.emit(result)
             return
 
