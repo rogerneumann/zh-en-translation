@@ -3,7 +3,37 @@
 Running log of what has been built, what deviated from the plan, and what still
 needs verification. Update this file at the end of every milestone.
 
-Source of truth for plan/scope: `PLAN.md` and `plan-v2.md`.
+Source of truth for plan/scope: `PLAN.md`, `plan-v2.md`, `plan-v3.md`, and **`v4_completeness.md`** (NEW).
+
+---
+
+## Current Initiative: Translation Completeness (v4) — 2026-04-22
+
+**Issue Identified:** Sentence-level translation (Argos/ctranslate2) drops clauses and details on complex Chinese sentences.
+
+**Example:**
+```
+Original:  "NADCC氯片... 狗骨头浸泡测试已完成 实验室今天提供给@杨中宝"
+Current:   "NADCC chlorine tablets... test completed."
+Missing:   "The laboratory provided the results to @YangZhongbao today."
+Completeness: ~60%
+```
+
+**Root Cause:** Neural MT models compress content on complex run-on sentences lacking explicit structural markers.
+
+**Solution:** Three-phase hybrid approach (see `v4_completeness.md` for full plan):
+- **Phase 1:** Post-processing validation & recovery (1.2x speed, +30-50% completeness)
+- **Phase 2:** Clause-level translation fallback (3-5x on complex, +20-30% total gain)
+- **Phase 3:** Adaptive orchestration (1.5x average, final optimization)
+
+**Effort:** ~7-9 hours total | **Expected outcome:** 95% completeness (up from 60%)
+
+**Status:** 
+- ✅ Problem analysis complete
+- ✅ Solution designed (agent-assisted)
+- ⏳ Phase 1 implementation in progress
+- 📅 Phase 2 pending
+- 📅 Phase 3 pending
 
 ---
 
@@ -199,3 +229,53 @@ Source of truth for plan/scope: `PLAN.md` and `plan-v2.md`.
 - `pyproject.toml` — Removed `pyperclip` dependency (fully replaced by QClipboard).
 - `tests/test_segmentation.py` — 12 new regression tests for compound phrase segmentation; jieba-gated tests use `skipif`.
 - `src/zh_en_translator/engines/translation_worker.py` — Argos call wrapped in 8s `ThreadPoolExecutor` timeout; `_is_valid_translation()` rejects empty/echo-back results; translation path logged for all engines.
+
+---
+
+## Status at a glance (v4 Completeness)
+
+| Milestone | Status | Notes |
+|---|---|---|
+| M1 — Post-Processing Validation | ⏳ In Progress | Extract, detect, recover missing content |
+| M2 — Clause-Level Fallback | 📅 Pending | Split, translate, recombine clauses |
+| M3 — Adaptive Orchestration | 📅 Pending | Heuristic-based fallback decisions |
+
+---
+
+## v4 Milestone 1 — Post-Processing Validation & Recovery (IN PROGRESS)
+
+**Objective:** After Argos translates, detect missing content and recover it using word-by-word dictionary.
+
+**Deliverables** (planned):
+1. ✅ Plan complete (via agent design)
+2. ⏳ `src/zh_en_translator/engines/validation.py` (NEW) — Core validation logic
+3. ⏳ `src/zh_en_translator/engines/translation_worker.py` (MODIFY) — Integrate validation
+4. ⏳ `src/zh_en_translator/config.py` (MODIFY) — Feature flags
+5. ⏳ `tests/test_validation.py` (NEW) — Comprehensive tests
+
+**Expected outcome:** 1.2x speed, +30-50% completeness gain
+
+---
+
+## v4 Milestone 2 — Clause-Level Translation (PENDING)
+
+**Objective:** Split complex Chinese into clauses, translate each, recombine intelligently.
+
+**Deliverables** (planned):
+1. `src/zh_en_translator/engines/argos.py` (ENHANCE) — Clause splitting + fallback
+2. `src/zh_en_translator/engines/translation_worker.py` (MODIFY) — Conditional fallback
+3. `tests/test_clause_translation.py` (NEW) — Clause splitting & recombination tests
+
+**Expected outcome:** +20-30% additional gain (total 50-70%), 3-5x on complex sentences
+
+---
+
+## v4 Milestone 3 — Adaptive Orchestration (PENDING)
+
+**Objective:** Use heuristics to decide validation-only (fast) vs. clause-level (thorough).
+
+**Deliverables** (planned):
+1. `src/zh_en_translator/engines/translation_worker.py` (REFACTOR) — Adaptive decision logic
+2. Integration tests for fallback decisions
+
+**Expected outcome:** 1.5x average speed, 50-70% completeness (final)
