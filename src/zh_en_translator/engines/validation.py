@@ -97,6 +97,7 @@ def is_translation_complete(
             continue
 
         # Check if any gloss appears in the translation
+        found = False
         for entry in entries:
             if not entry.glosses:
                 continue
@@ -105,9 +106,9 @@ def is_translation_complete(
                 # Check if gloss (or a substring) appears in translation
                 if gloss_lower in translation_lower:
                     found_count += 1
+                    found = True
                     break  # Count this token as found (once per token)
-            if found_count > 0 and found_count >= len(source_tokens) * 0.7:
-                # Early exit once we meet threshold
+            if found:
                 break
 
     completeness_ratio = found_count / len(source_tokens) if source_tokens else 0.0
@@ -147,9 +148,15 @@ def recover_missing_content(
         logger.warning("No dictionary provided for recovery")
         return translation
 
+    if not translation or not translation.strip():
+        return translation  # No translation to enhance
+
     # Determine which tokens are missing
     if missing_tokens is None:
         source_tokens = extract_content_tokens(source, dictionary)
+        if not source_tokens:
+            return translation  # No content tokens to check
+
         translation_lower = translation.lower()
         missing_tokens = []
         for token in source_tokens:
