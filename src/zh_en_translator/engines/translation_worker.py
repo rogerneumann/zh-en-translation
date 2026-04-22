@@ -39,7 +39,7 @@ class TranslationWorker(QThread):
         self.config = config  # Config | None
 
     def _apply_validation(self, source: str, translation: str) -> str:
-        """Apply translation validation and recovery pipeline.
+        """Apply translation validation and recovery pipeline (Phase 1).
 
         Detects missing content from the source and recovers it using dictionary lookup.
 
