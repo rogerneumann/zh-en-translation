@@ -63,6 +63,8 @@ class Config:
 
     # [translation]
     traditional_to_simplified: bool = True
+    validation_enabled: bool = True
+    validation_completeness_threshold: float = 0.7
 
     # [cloud]
     ms_translator_enabled: bool = False
@@ -118,6 +120,12 @@ def load_config(config_path: Path | None = None) -> Config:
         traditional_to_simplified=_get(
             "translation", "traditional_to_simplified", defaults.traditional_to_simplified
         ),
+        validation_enabled=_get(
+            "translation", "validation_enabled", defaults.validation_enabled
+        ),
+        validation_completeness_threshold=_get(
+            "translation", "validation_completeness_threshold", defaults.validation_completeness_threshold
+        ),
         ms_translator_enabled=_get("cloud", "ms_translator_enabled", defaults.ms_translator_enabled),
         ms_translator_api_key=_get("cloud", "ms_translator_api_key", defaults.ms_translator_api_key),
         ms_translator_region=_get("cloud", "ms_translator_region", defaults.ms_translator_region),
@@ -166,6 +174,8 @@ pinyin_max_chars = {cfg.pinyin_max_chars}
 
 [translation]
 traditional_to_simplified = {_toml_bool(cfg.traditional_to_simplified)}
+validation_enabled = {_toml_bool(cfg.validation_enabled)}
+validation_completeness_threshold = {cfg.validation_completeness_threshold}
 
 [cloud]
 ms_translator_enabled = {_toml_bool(cfg.ms_translator_enabled)}
