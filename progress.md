@@ -44,6 +44,29 @@ Result:    ~95% completeness ✅
 
 ---
 
+## Latest: Domain-Specific Improvements Research (2026-04-22)
+
+**Research Completed:** Technical and manufacturing translation improvements identified
+
+**Key Findings:**
+- Jieba segmentation (81.6% F1) is bottleneck; PKUSEG/HanLP (87.8%) proven upgrade
+- CC-CEDICT missing 15-30% of manufacturing technical terms
+- Clause-level translation (v4) + domain glossaries = proven best practice
+- Professional services (Tencent Hunyuan-MT) use mixed fine-tuning + glossaries
+
+**Roadmap:**
+- **Priority 1 (1-2 weeks):** Switch segmenter + 500-term glossary (+2-7% gain)
+- **Priority 2 (1-3 months):** Corpus collection + glossary pipeline (+3-5% gain)
+- **Priority 3 (3-6 months):** Domain fine-tuning + back-translation (+4-8% gain)
+- **Priority 4 (6-12 months):** Multi-domain support + UI (+3-5% gain)
+- **Total potential:** 12-25% accuracy improvement across all phases
+
+**Status:** Research complete (82+ sources), recommendations ready for implementation
+
+See `DOMAIN_IMPROVEMENTS.md` for full technical details and implementation roadmap.
+
+---
+
 ## Latest: Build System Fixes (2026-04-21)
 
 **Issue:** `installer/build.ps1` had PowerShell parse errors on Windows.
