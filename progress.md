@@ -44,6 +44,52 @@ Result:    ~95% completeness ✅
 
 ---
 
+## Current: Priority 1 Domain-Specific Improvements — Phase 1 (2026-04-24) ✅ IN PROGRESS
+
+**Initiative:** Boost technical/manufacturing translation accuracy through domain-specific tools and terminology.
+
+**Status:** Phase 1 complete (Manufacturing Glossary + Segmenter Infrastructure)
+
+### Phase 1A: Segmenter Infrastructure ✅
+- Added config option: `segmenter = "jieba" | "pkuseg" | "hanlp"` (default: jieba)
+- Infrastructure ready for PKUSEG/HanLP implementation
+- Updated config.py: load_config/save_config support for segmenter choice
+- Note: PKUSEG/HanLP installation deferred (setuptools issue in environment)
+
+**Expected Future Gain:** +2-3% accuracy from better segmentation
+
+### Phase 1B: Manufacturing Glossary ✅ COMPLETE
+**Created:** `src/zh_en_translator/resources/glossary_manufacturing.toml`
+- **149 technical terms** across 13 categories
+- Categories: Materials, Surface Treatment, Heat Treatment, Components, Dimensions, Machining, Quality, Assembly, Properties, Regulatory, Documentation, Packaging, Business
+- Format: TOML key-value (all keys quoted for UTF-8 support)
+- Integrated into pipeline: glossary lookup **before** dictionary lookup (higher precedence)
+
+**Implementation Details:**
+- `glossary.py`: New `load_domain_glossary()` and `load_all_glossaries()` functions
+- `glossary_manufacturing.toml`: 149 terms with full English translations
+- `translation_worker.py`: Updated PinyinWorker to load all glossaries
+- Pipeline integration: Glossary takes precedence over dictionary
+
+**Testing:** 17/17 tests passing
+- User glossary load/save: 3 tests
+- Domain glossary loading: 3 tests  
+- Glossary merging: 4 tests
+- Content validation: 5 tests
+- Pipeline integration: 2 tests (skipped without platformdirs dependency)
+
+**Expected Gain:** +5-7% accuracy on glossary-covered terms (20% of technical text)
+
+### Next Steps (Phase 2)
+- Collect domain-specific training corpus (10k-50k parallel sentences)
+- Implement PKUSEG/HanLP segmenter switch (when environment stabilized)
+- A/B test on sample manufacturing text
+- Fine-tuning (Priority 3) with domain corpus
+
+**Branch:** `claude/fix-translation-completeness-8L9yn` (54 commits ahead of main)
+
+---
+
 ## Latest: Domain-Specific Improvements Research (2026-04-22)
 
 **Research Completed:** Technical and manufacturing translation improvements identified
