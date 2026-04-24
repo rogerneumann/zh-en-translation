@@ -75,6 +75,16 @@ class Config:
     deepl_api_key: str = ""
     deepl_pro: bool = False
 
+    # [domains]
+    # List of domain glossaries to load. Empty list means "all available".
+    # Recognised values: "manufacturing", "medical", "legal", "electronics"
+    domains_enabled: list = None  # type: ignore[assignment]  # None -> auto-discover all
+
+    def __post_init__(self):
+        # Initialise mutable default for domains_enabled
+        if self.domains_enabled is None:
+            object.__setattr__(self, "domains_enabled", [])
+
 
 def load_config(config_path: Path | None = None) -> Config:
     """Read config from TOML file and return a Config instance.
@@ -134,6 +144,7 @@ def load_config(config_path: Path | None = None) -> Config:
         deepl_enabled=_get("cloud", "deepl_enabled", defaults.deepl_enabled),
         deepl_api_key=_get("cloud", "deepl_api_key", defaults.deepl_api_key),
         deepl_pro=_get("cloud", "deepl_pro", defaults.deepl_pro),
+        domains_enabled=_get("domains", "domains_enabled", defaults.domains_enabled),
     )
 
 
@@ -144,6 +155,7 @@ def save_config(cfg: Config, config_path: Path | None = None) -> None:
 
     config_path.parent.mkdir(parents=True, exist_ok=True)
 
+    domains_list = _toml_list(cfg.domains_enabled)
     toml_content = f"""\
 [general]
 hotkey = {_toml_str(cfg.hotkey)}
@@ -187,6 +199,9 @@ ms_translator_region = {_toml_str(cfg.ms_translator_region)}
 deepl_enabled = {_toml_bool(cfg.deepl_enabled)}
 deepl_api_key = {_toml_str(cfg.deepl_api_key)}
 deepl_pro = {_toml_bool(cfg.deepl_pro)}
+
+[domains]
+domains_enabled = {domains_list}
 """
     config_path.write_text(toml_content, encoding="utf-8")
 
@@ -202,3 +217,11 @@ def _toml_str(value: str) -> str:
         value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n").replace("\r", "\\r")
     )
     return f'"{escaped}"'
+
+
+def _toml_list(value: list) -> str:
+    """Format a Python list of strings as a TOML inline array."""
+    if not value:
+        return "[]"
+    items = ", ".join(_toml_str(str(v)) for v in value)
+    return f"[{items}]"
