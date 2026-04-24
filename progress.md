@@ -44,6 +44,64 @@ Result:    ~95% completeness ✅
 
 ---
 
+## Priority 3 Fine-Tuning Infrastructure — Planning Complete (2026-04-24) ✅
+
+**Objective:** Scaffold domain-specific fine-tuning of the Argos zh->en model on manufacturing text.
+No GPU training in this session -- data pipeline + architecture design only.
+
+**Status:** Planning and scaffolding complete.  GPU training session implements `trainer.py::FineTuneTrainer.train()`.
+
+### What Was Built
+- `FINETUNING_PLAN.md` -- Complete architecture design (mixed fine-tuning, OpenNMT-py, evaluation protocol)
+- `FINETUNING_SETUP.md` -- Prerequisites and quick-start guide for GPU session
+- `src/zh_en_translator/finetuning/__init__.py` -- Module entry points
+- `src/zh_en_translator/finetuning/config.py` -- `FineTuningConfig` dataclass (implemented, validated, serialisable)
+- `src/zh_en_translator/finetuning/data_preparation.py` -- Full data pipeline (implemented):
+  - `load_corpus()` -- JSONL -> list[CorpusEntry] via CorpusManager
+  - `split_train_val()` -- 90/10 train/val split, seed-reproducible, no overlap
+  - `prepare_training_data()` -- CorpusEntry -> TrainingPair with verified/unverified weights
+  - `build_vocabulary()` -- word-frequency vocab for pipeline testing (real training uses SentencePiece)
+  - `mix_corpora()` -- 30% in-domain / 70% general data mixing
+- `src/zh_en_translator/finetuning/trainer.py` -- `FineTuneTrainer` scaffold:
+  - `__init__`, `history`, `_should_stop_early` implemented
+  - `train()`, `evaluate()`, `save_model()` raise `NotImplementedError` with full implementation checklist
+- `src/zh_en_translator/finetuning/evaluation.py` -- Evaluation utilities (implemented):
+  - `evaluate_finetuned_model()` -- BLEU + CER + glossary coverage for a model's output
+  - `compute_bleu_improvement()` -- absolute BLEU delta between baseline and fine-tuned
+  - `compare_models()` -- side-by-side comparison of two models
+- `tests/test_finetuning_prep.py` -- 71 tests, all passing (no GPU needed)
+- `pyproject.toml` -- Added `finetuning = [opennmt-py, ctranslate2, sentencepiece, torch]` optional extra
+
+### Test Results
+71 tests passing across:
+- Config creation, validation (boundary conditions, multi-error), and to_dict/from_dict roundtrip
+- Corpus loading from real bundled samples and temp JSONL files
+- Train/val splitting (ratios, seeds, overlap, edge cases)
+- Training data preparation (weights, whitespace, domain preservation)
+- Vocabulary building
+- Corpus mixing
+- Trainer scaffold (init, stub NotImplementedError, early stopping logic)
+- Evaluation: EvalResult, BLEU improvement, compare_models, glossary coverage
+
+### Architecture Design
+- **Approach:** Mixed fine-tuning (30% in-domain + 70% general)
+- **Framework:** OpenNMT-py 3.0 with CTranslate2 conversion
+- **Expected gain:** +4-8 BLEU points on manufacturing/technical text
+- **Risk mitigations:** Catastrophic forgetting (general data mix), overfitting (dropout, label smoothing, early stopping)
+
+### Next Session (GPU Training)
+Implement `src/zh_en_translator/finetuning/trainer.py::FineTuneTrainer.train()`:
+1. Convert Argos CTranslate2 base model to OpenNMT-py
+2. Tokenise corpus with SentencePiece
+3. Run OpenNMT-py training loop with early stopping
+4. Convert best checkpoint back to CTranslate2
+5. Run `evaluate_finetuned_model()` on held-out manufacturing test set
+
+**Branch:** `claude/fix-translation-completeness-8L9yn`
+**Expected total gain (P1+P2+P3):** +10-20% accuracy on manufacturing text
+
+---
+
 ## Current: Priority 1 Domain-Specific Improvements — Phase 1 (2026-04-24) ✅ IN PROGRESS
 
 **Initiative:** Boost technical/manufacturing translation accuracy through domain-specific tools and terminology.
