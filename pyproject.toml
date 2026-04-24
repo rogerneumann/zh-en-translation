@@ -31,6 +31,7 @@ ocr-windows-legacy = ["winsdk"]
 ocr-tesseract = ["pytesseract", "Pillow"]
 ocr-paddle = ["paddleocr", "Pillow"]
 traditional = ["opencc-python-reimplemented>=1.1.0"]
+pkuseg = ["spacy-pkuseg>=1.0.0"]
 
 [project.scripts]
 zh-en-translator = "zh_en_translator.app:main"
