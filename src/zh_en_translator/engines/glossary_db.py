@@ -307,6 +307,73 @@ class GlossaryDB:
         for row in cur:
             yield row["chinese"], row["english"], row["notes"]
 
+    # ------------------------------------------------------------------
+    # Multi-domain helpers (Priority 4)
+    # ------------------------------------------------------------------
+
+    def get_available_domains(self) -> list[str]:
+        """Return sorted list of all domains with at least one term.
+
+        Alias for :meth:`list_domains` with a more descriptive name for
+        multi-domain use cases.
+        """
+        return self.list_domains()
+
+    def load_domain(self, domain_name: str) -> dict[str, str]:
+        """Load a specific domain glossary by name.
+
+        Alias for :meth:`load` with a more descriptive name.
+
+        Args:
+            domain_name: Domain identifier (e.g., ``'medical'``, ``'legal'``).
+
+        Returns:
+            Dict of ``{chinese: english}`` for the domain. Empty dict if not found.
+        """
+        return self.load(domain_name)
+
+    def search_across_domains(self, term: str) -> list[dict]:
+        """Find a Chinese term in all domains.
+
+        Args:
+            term: Chinese term to search for (exact match).
+
+        Returns:
+            List of dicts with keys ``domain``, ``chinese``, ``english``, ``notes``.
+            Ordered by domain name.
+        """
+        conn = self._ensure_open()
+        rows = conn.execute(
+            "SELECT domain, chinese, english, notes FROM glossaries "
+            "WHERE chinese = ? ORDER BY domain",
+            (term,),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+    def merge_domains(self, domains_list: list[str]) -> dict[str, str]:
+        """Combine multiple domain glossaries into a single dict.
+
+        When a Chinese term appears in multiple domains, the first domain
+        in *domains_list* wins (earlier entries take priority).
+
+        Args:
+            domains_list: Ordered list of domain names to merge.
+
+        Returns:
+            Merged ``{chinese: english}`` dict.
+        """
+        merged: dict[str, str] = {}
+        # Load in reverse order so earlier domains overwrite later ones
+        for domain in reversed(domains_list):
+            domain_terms = self.load(domain)
+            merged.update(domain_terms)
+        logger.debug(
+            "merge_domains: merged %d domains -> %d unique terms",
+            len(domains_list),
+            len(merged),
+        )
+        return merged
+
 
 # ---------------------------------------------------------------------------
 # Module-level helper: return the default (bundled) glossary DB path
