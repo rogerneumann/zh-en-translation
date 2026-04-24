@@ -1,7 +1,8 @@
-"""User glossary: CSV-based custom Chinese→English term pairs."""
+"""User glossary: CSV-based custom Chinese→English term pairs + domain glossaries from TOML."""
 from __future__ import annotations
 import csv
 import logging
+import tomllib
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
@@ -45,3 +46,68 @@ def save_glossary(terms: dict[str, str], path: Path | None = None) -> None:
         for zh, en in sorted(terms.items()):
             writer.writerow({"zh": zh, "en": en})
     logger.info("Saved %d glossary entries to %s", len(terms), path)
+
+
+def load_domain_glossary(domain: str = "manufacturing") -> dict[str, str]:
+    """Load domain-specific glossary from TOML file.
+
+    Args:
+        domain: Domain name (e.g., 'manufacturing'). Looks for
+                glossary_{domain}.toml in resources directory.
+
+    Returns:
+        Dict of {zh: en} terms from the domain glossary.
+        Returns empty dict if file not found or parse error.
+    """
+    try:
+        from zh_en_translator import __file__ as module_file
+        resources_dir = Path(module_file).parent / "resources"
+        glossary_file = resources_dir / f"glossary_{domain}.toml"
+
+        if not glossary_file.exists():
+            logger.debug("Domain glossary not found: %s", glossary_file)
+            return {}
+
+        with open(glossary_file, "rb") as f:
+            data = tomllib.load(f)
+
+        result = {}
+        for section in data.values():
+            if isinstance(section, dict):
+                for chinese, english in section.items():
+                    if isinstance(english, str):
+                        result[chinese] = english
+
+        logger.info("Loaded %d domain glossary entries from %s", len(result), glossary_file)
+        return result
+    except Exception as e:
+        logger.warning("Failed to load domain glossary '%s': %s", domain, e)
+        return {}
+
+
+def load_all_glossaries(include_domains: list[str] | None = None) -> dict[str, str]:
+    """Load user glossary + domain glossaries and merge them.
+
+    User glossary takes precedence over domain glossaries.
+
+    Args:
+        include_domains: List of domain glossaries to load (default: ["manufacturing"]).
+
+    Returns:
+        Merged dict of all glossary entries.
+    """
+    if include_domains is None:
+        include_domains = ["manufacturing"]
+
+    merged = {}
+
+    # Load domain glossaries first
+    for domain in include_domains:
+        domain_terms = load_domain_glossary(domain)
+        merged.update(domain_terms)
+
+    # User glossary overrides domain glossaries
+    user_terms = load_glossary()
+    merged.update(user_terms)
+
+    return merged
