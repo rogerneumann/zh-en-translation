@@ -40,7 +40,8 @@ zh-en-translator = "zh_en_translator.app:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"zh_en_translator.resources" = ["*.svg", "*.png", "*.txt", "*.toml"]
+"zh_en_translator.resources" = ["*.svg", "*.png", "*.txt", "*.toml", "*.db"]
+"zh_en_translator.corpus" = ["*.jsonl", "examples/*.jsonl"]
 
 [tool.ruff]
 line-length = 100
