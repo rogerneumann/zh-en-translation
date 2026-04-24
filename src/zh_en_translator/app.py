@@ -268,7 +268,13 @@ class TranslatorApp(QObject):
         """Build/load the dictionary and user segmentation dict in a background thread."""
         def _task():
             from zh_en_translator.engines.dictionary import ensure_cedict, Dictionary
-            from zh_en_translator.engines.segmentation import load_user_dict
+            from zh_en_translator.engines.segmentation import load_user_dict, set_segmenter
+            # Apply segmenter choice from config before any segmentation happens.
+            segmenter_name = getattr(self.config, "segmenter", "jieba")
+            try:
+                set_segmenter(segmenter_name)
+            except ValueError:
+                logger.warning("Unknown segmenter '%s' in config; using jieba", segmenter_name)
             # Prime jieba with domain-specific manufacturing/technical terms so
             # that multi-char compounds (e.g. 激光模块, 手板样机) are not split.
             _user_dict = _resources_dir() / "user_dict_technical.txt"
