@@ -1,4 +1,9 @@
-"""User glossary: CSV-based custom Chinese→English term pairs + domain glossaries from TOML."""
+"""User glossary: CSV-based custom Chinese-English term pairs + domain glossaries.
+
+Domain glossaries are loaded from the SQLite backend (glossary_db.py) with a
+TOML fallback for first-run seeding and development.  The user's personal
+CSV glossary continues to work unchanged.
+"""
 from __future__ import annotations
 import csv
 import logging
@@ -49,16 +54,34 @@ def save_glossary(terms: dict[str, str], path: Path | None = None) -> None:
 
 
 def load_domain_glossary(domain: str = "manufacturing") -> dict[str, str]:
-    """Load domain-specific glossary from TOML file.
+    """Load domain-specific glossary, preferring the SQLite backend.
+
+    First tries the SQLite database (via GlossaryDB / open_default_db).
+    Falls back to the legacy TOML file if the database is unavailable or empty.
 
     Args:
-        domain: Domain name (e.g., 'manufacturing'). Looks for
-                glossary_{domain}.toml in resources directory.
+        domain: Domain name (e.g., 'manufacturing').
 
     Returns:
         Dict of {zh: en} terms from the domain glossary.
-        Returns empty dict if file not found or parse error.
+        Returns empty dict if neither source is available.
     """
+    # --- Try SQLite backend first -----------------------------------------
+    try:
+        from zh_en_translator.engines.glossary_db import open_default_db
+
+        with open_default_db() as db:
+            result = db.load(domain)
+        if result:
+            logger.info(
+                "Loaded %d domain glossary entries for '%s' from SQLite", len(result), domain
+            )
+            return result
+        logger.debug("SQLite domain '%s' is empty, falling back to TOML", domain)
+    except Exception as exc:
+        logger.debug("SQLite backend unavailable (%s), falling back to TOML", exc)
+
+    # --- TOML fallback (legacy / development) -----------------------------
     try:
         from zh_en_translator import __file__ as module_file
         resources_dir = Path(module_file).parent / "resources"
@@ -78,7 +101,7 @@ def load_domain_glossary(domain: str = "manufacturing") -> dict[str, str]:
                     if isinstance(english, str):
                         result[chinese] = english
 
-        logger.info("Loaded %d domain glossary entries from %s", len(result), glossary_file)
+        logger.info("Loaded %d domain glossary entries from %s (TOML)", len(result), glossary_file)
         return result
     except Exception as e:
         logger.warning("Failed to load domain glossary '%s': %s", domain, e)
