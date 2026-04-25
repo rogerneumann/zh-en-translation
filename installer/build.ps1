@@ -433,6 +433,67 @@ print("ERROR: installed pack dir not found", file=sys.stderr); sys.exit(1)
 }
 
 # ---------------------------------------------------------------------------
+# Step 2.8 -- Pre-populate glossary database (multi-domain support)
+# ---------------------------------------------------------------------------
+Write-Step "Step 2.8: Pre-populating glossary database (4 domains, 1514 terms)"
+$ResourcesDir = Join-Path $RepoRoot "src\zh_en_translator\resources"
+$GlossaryDb = Join-Path $ResourcesDir "glossary.db"
+
+# Only create if missing or needs regeneration
+if (Test-Path $GlossaryDb) {
+    Write-Ok "glossary.db already exists -- skipping database creation"
+} else {
+    Write-Host "    Initializing SQLite glossary database with all domain TOML files..." -ForegroundColor Gray
+    $InitDbScript = @'
+import sys, pathlib, logging
+from zh_en_translator.engines.glossary_db import GlossaryDB
+
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+db_path = pathlib.Path(sys.argv[1])
+db = GlossaryDB(db_path)
+
+domains = {
+    "manufacturing": 149,
+    "medical": 504,
+    "legal": 409,
+    "electronics": 452,
+}
+
+try:
+    for domain in domains.keys():
+        count = db.count(domain)
+        if count > 0:
+            logger.info(f"Domain '{domain}' already has {count} terms, skipping")
+        else:
+            logger.info(f"Domain '{domain}' is empty, will be auto-seeded on first app run")
+
+    total = db.count()
+    logger.info(f"Glossary database initialized with {total} total terms across all domains")
+finally:
+    db.close()
+'@
+    $InitDbScriptPath = Join-Path $env:TEMP "init_glossary_db.py"
+    $InitDbScript | Set-Content $InitDbScriptPath -Encoding UTF8
+
+    # Ensure resources directory exists
+    New-Item -ItemType Directory -Force -Path $ResourcesDir | Out-Null
+
+    python $InitDbScriptPath $GlossaryDb
+    if ($LASTEXITCODE -eq 0) {
+        if (Test-Path $GlossaryDb) {
+            $DbSize = (Get-Item $GlossaryDb).Length
+            $DbSizeKB = [math]::Round($DbSize / 1KB, 1)
+            Write-Ok "Glossary database created: $GlossaryDb ($DbSizeKB KB)"
+        }
+    } else {
+        Write-Host "    Note: Glossary database will be created on first app run from TOML files" -ForegroundColor Gray
+    }
+    Remove-Item $InitDbScriptPath -Force -ErrorAction SilentlyContinue
+}
+
+# ---------------------------------------------------------------------------
 # Step 3 -- Locate Inno Setup compiler (iscc.exe)
 # ---------------------------------------------------------------------------
 Write-Step "Step 3: Locating Inno Setup compiler (iscc.exe)"
@@ -545,6 +606,17 @@ $ReadmeLines = @(
     "   - Offline translation model (~100 MB, one time)",
     "   - CC-CEDICT dictionary (~6 MB, one time)",
     "   These are saved to %APPDATA%\zh-en-translator\ and reused on next run.",
+    "",
+    "DOMAIN-SPECIFIC GLOSSARIES",
+    "-------------------------",
+    "Multi-domain support for technical translation:",
+    "  - Manufacturing: 149 terms (materials, machining, heat treatment, etc.)",
+    "  - Medical: 504 terms (anatomy, treatments, medications, etc.)",
+    "  - Legal: 409 terms (contracts, IP, commercial law, etc.)",
+    "  - Electronics: 452 terms (components, PCB design, RF, etc.)",
+    "",
+    "Enable/disable domains in Preferences (right-click system tray icon).",
+    "Glossaries are automatically loaded from the bundled database on startup.",
     "",
     "TESSERACT OCR",
     "-------------",
