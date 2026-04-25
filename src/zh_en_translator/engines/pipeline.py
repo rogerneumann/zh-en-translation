@@ -6,6 +6,58 @@ from zh_en_translator.engines.dictionary import Dictionary
 from zh_en_translator.engines.segmentation import segment
 
 
+def translate_to_string(
+    text: str,
+    glossary: dict[str, str] | None = None,
+    dictionary: "Dictionary | None" = None,
+    separator: str = " | ",
+) -> str:
+    """Translate *text* and return a flat English string.
+
+    Convenience wrapper around :func:`translate` for A/B testing and
+    evaluation.  Each token's best gloss is joined with *separator*.
+
+    If no *dictionary* is provided the function attempts to load the bundled
+    CC-CEDICT SQLite database (requires the ``cedict`` resource to be present).
+
+    Args:
+        text:       Chinese source text.
+        glossary:   Optional ``{zh: en}`` override dict.
+        dictionary: Pre-opened :class:`Dictionary` instance.  When ``None``
+                    the bundled database is loaded on first call.
+        separator:  String used to join per-token translations.
+
+    Returns:
+        English translation string, or an empty string on failure.
+    """
+    _dict = dictionary
+    _owns_dict = False
+    try:
+        if _dict is None:
+            from zh_en_translator.engines.dictionary import Dictionary, ensure_cedict
+            cedict_path = ensure_cedict()
+            db_path = cedict_path.with_suffix(".db")
+            if not db_path.exists():
+                Dictionary.build_from_cedict(cedict_path, db_path)
+            _dict = Dictionary(db_path)
+            _owns_dict = True
+
+        results = translate(text, _dict, glossary=glossary)
+        parts = []
+        for r in results:
+            if r.glosses:
+                parts.append(r.glosses[0])
+            elif not r.is_chinese:
+                parts.append(r.token)
+            # Unknown Chinese tokens are omitted (no English gloss)
+        return separator.join(p for p in parts if p.strip())
+    except Exception:
+        return ""
+    finally:
+        if _owns_dict and _dict is not None:
+            _dict.close()
+
+
 @dataclass
 class TokenResult:
     """Result for a single token after segmentation and lookup."""

@@ -1,4 +1,14 @@
-"""Chinese text segmentation using jieba (preferred) with character-run fallback."""
+"""Chinese text segmentation with pluggable backends.
+
+Supported backends (in priority order when auto-selecting):
+  - jieba: fast, dictionary-based, good general accuracy (~81.6% F1)
+  - pkuseg: statistical model, better on technical/domain text (~82.3% F1)
+  - fallback: character-run grouping (no third-party dependency)
+
+The active segmenter is chosen by calling ``set_segmenter(name)`` or by
+passing a ``segmenter`` name to ``segment()``.  The module-level default is
+``"jieba"`` for backwards compatibility.
+"""
 
 import logging
 from pathlib import Path
@@ -11,7 +21,70 @@ try:
 except ImportError:
     _JIEBA_AVAILABLE = False
 
+try:
+    import spacy_pkuseg as _pkuseg_module
+
+    _PKUSEG_AVAILABLE = True
+except ImportError:
+    _PKUSEG_AVAILABLE = False
+
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Module-level segmenter state
+# ---------------------------------------------------------------------------
+
+# Name of the currently active segmenter backend ("jieba", "pkuseg", "fallback")
+_active_segmenter: str = "jieba"
+
+# Cached pkuseg instance (created lazily; creation is expensive ~0.5 s)
+_pkuseg_instance = None
+
+
+def set_segmenter(name: str) -> None:
+    """Set the active segmenter backend for subsequent ``segment()`` calls.
+
+    Args:
+        name: One of ``"jieba"``, ``"pkuseg"``, or ``"fallback"``.
+              If the requested backend is unavailable it falls back gracefully
+              (pkuseg -> jieba -> fallback).
+
+    Raises:
+        ValueError: If *name* is not a recognised backend identifier.
+    """
+    global _active_segmenter
+    valid = {"jieba", "pkuseg", "fallback"}
+    if name not in valid:
+        raise ValueError(f"Unknown segmenter '{name}'; choose one of {sorted(valid)}")
+
+    if name == "pkuseg" and not _PKUSEG_AVAILABLE:
+        logger.warning(
+            "pkuseg requested but spacy-pkuseg is not installed; falling back to jieba"
+        )
+        name = "jieba" if _JIEBA_AVAILABLE else "fallback"
+
+    if name == "jieba" and not _JIEBA_AVAILABLE:
+        logger.warning("jieba requested but not installed; falling back to character-run segmenter")
+        name = "fallback"
+
+    _active_segmenter = name
+    logger.info("Segmenter set to: %s", _active_segmenter)
+
+
+def get_segmenter() -> str:
+    """Return the name of the currently active segmenter backend."""
+    return _active_segmenter
+
+
+def _get_pkuseg() -> object:
+    """Return (and lazily initialise) the shared pkuseg instance."""
+    global _pkuseg_instance
+    if _pkuseg_instance is None:
+        if not _PKUSEG_AVAILABLE:
+            raise RuntimeError("spacy-pkuseg is not installed")
+        logger.debug("Initialising pkuseg segmenter (first use may be slow)")
+        _pkuseg_instance = _pkuseg_module.pkuseg()
+    return _pkuseg_instance
 
 
 def load_user_dict(dict_path: str | Path) -> None:
@@ -57,6 +130,60 @@ def add_custom_words(words: list[tuple[str, int, str]] | list[str]) -> None:
                           tag=word_data[2] if len(word_data) > 2 else None)
 
 
+# ---------------------------------------------------------------------------
+# Backend-specific segment helpers
+# ---------------------------------------------------------------------------
+
+
+def _segment_jieba(text: str) -> list[str]:
+    """Segment using jieba (must be available)."""
+    return [tok for tok in jieba.cut(text, cut_all=False) if tok]
+
+
+def _segment_pkuseg(text: str) -> list[str]:
+    """Segment Chinese text using pkuseg statistical model.
+
+    For non-Chinese spans (ASCII, digits, punctuation) pkuseg sometimes merges
+    them unexpectedly, so we pre-split on Chinese / non-Chinese boundaries,
+    run pkuseg only on the Chinese portions, and reassemble.
+
+    Args:
+        text: Text to segment.
+
+    Returns:
+        List of tokens (empty strings filtered out).
+    """
+    seg = _get_pkuseg()
+
+    # Split into Chinese and non-Chinese runs so ASCII words are preserved
+    result: list[str] = []
+    current_chinese: list[str] = []
+    current_non_chinese: list[str] = []
+
+    def _flush_chinese() -> None:
+        if current_chinese:
+            chunk = "".join(current_chinese)
+            result.extend(tok for tok in seg.cut(chunk) if tok)
+            current_chinese.clear()
+
+    def _flush_non_chinese() -> None:
+        if current_non_chinese:
+            result.append("".join(current_non_chinese))
+            current_non_chinese.clear()
+
+    for char in text:
+        cp = ord(char)
+        is_chinese = (0x4E00 <= cp <= 0x9FFF) or (0x3400 <= cp <= 0x4DBF)
+        if is_chinese:
+            _flush_non_chinese()
+            current_chinese.append(char)
+        else:
+            _flush_chinese()
+            current_non_chinese.append(char)
+
+    _flush_chinese()
+    _flush_non_chinese()
+    return result
 
 
 
@@ -112,15 +239,24 @@ def _segment_fallback(text: str) -> list[str]:
     return result
 
 
-def segment(text: str) -> list[str]:
-    """
-    Segment Chinese text into tokens.
+def segment(text: str, segmenter: str | None = None) -> list[str]:
+    """Segment Chinese text into tokens using the configured backend.
 
-    Uses jieba for accurate word segmentation when available; falls back to
-    character-run grouping when jieba is not installed.
+    Uses the module-level active segmenter (set via ``set_segmenter()``) unless
+    *segmenter* is given explicitly for this call.
+
+    Backends:
+    - ``"jieba"`` -- fast dictionary-based segmentation (default).
+    - ``"pkuseg"`` -- statistical model; better on technical/domain text.
+    - ``"fallback"`` -- character-run grouping; no third-party dependency.
+
+    When a requested backend is unavailable the function degrades gracefully:
+    pkuseg -> jieba -> fallback.
 
     Args:
         text: Text to segment.
+        segmenter: Override the active backend for this call only.
+                   One of ``"jieba"``, ``"pkuseg"``, or ``"fallback"``.
 
     Returns:
         List of tokens (empty strings filtered out).
@@ -128,7 +264,21 @@ def segment(text: str) -> list[str]:
     if not text:
         return []
 
-    if _JIEBA_AVAILABLE:
-        return [tok for tok in jieba.cut(text, cut_all=False) if tok]
+    backend = segmenter if segmenter is not None else _active_segmenter
+
+    if backend == "pkuseg":
+        if _PKUSEG_AVAILABLE:
+            try:
+                return _segment_pkuseg(text)
+            except Exception as exc:
+                logger.warning("pkuseg segmentation failed (%s); falling back to jieba", exc)
+        else:
+            logger.debug("pkuseg not available; falling back to jieba")
+        backend = "jieba"  # fall through
+
+    if backend == "jieba":
+        if _JIEBA_AVAILABLE:
+            return _segment_jieba(text)
+        logger.debug("jieba not available; falling back to character-run segmenter")
 
     return _segment_fallback(text)

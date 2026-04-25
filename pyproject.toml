@@ -31,6 +31,13 @@ ocr-windows-legacy = ["winsdk"]
 ocr-tesseract = ["pytesseract", "Pillow"]
 ocr-paddle = ["paddleocr", "Pillow"]
 traditional = ["opencc-python-reimplemented>=1.1.0"]
+pkuseg = ["spacy-pkuseg>=1.0.0"]
+finetuning = [
+    "opennmt-py>=3.0",
+    "ctranslate2>=3.0",
+    "sentencepiece>=0.1.99",
+    "torch>=2.0",
+]
 
 [project.scripts]
 zh-en-translator = "zh_en_translator.app:main"
@@ -39,7 +46,8 @@ zh-en-translator = "zh_en_translator.app:main"
 where = ["src"]
 
 [tool.setuptools.package-data]
-"zh_en_translator.resources" = ["*.svg", "*.png", "*.txt", "*.toml"]
+"zh_en_translator.resources" = ["*.svg", "*.png", "*.txt", "*.toml", "*.db"]
+"zh_en_translator.corpus" = ["*.jsonl", "examples/*.jsonl"]
 
 [tool.ruff]
 line-length = 100
