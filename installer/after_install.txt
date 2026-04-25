@@ -39,6 +39,21 @@ Switch modes via:  right-click tray icon -> Switch to Sidebar
                    or: Preferences -> General -> Mode
 
 
+DOMAIN-SPECIFIC GLOSSARIES (NEW!)
+--------------------------------
+zh-en-translator now supports specialized terminology for 4 technical domains:
+
+  Manufacturing  (149 terms) — materials, machining, heat treatment, quality control
+  Medical        (504 terms) — anatomy, treatments, medications, diagnostics
+  Legal          (409 terms) — contracts, intellectual property, commercial law
+  Electronics    (452 terms) — components, PCB design, RF, embedded systems
+
+Enable/disable domain glossaries in:  right-click tray icon -> Preferences -> General
+
+Enabled domains are automatically applied during translation and OCR.
+The glossaries are pre-loaded from a bundled database (no network required).
+
+
 OCR (IMAGE TRANSLATION)
 -----------------------
 Copy an image containing Chinese text to your clipboard, then press the
@@ -46,6 +61,9 @@ hotkey. The app will extract the text via OCR and translate it.
 
 Windows OCR is used by default. If you installed Tesseract during setup,
 it is available as a fallback (configurable in Preferences -> OCR).
+
+The active domain glossaries are used during OCR translation, improving
+accuracy for domain-specific technical content.
 
 
 FIRST RUN NOTE
