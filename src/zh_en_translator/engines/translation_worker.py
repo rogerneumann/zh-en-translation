@@ -181,7 +181,6 @@ class TranslationWorker(QThread):
             from zh_en_translator.engines.validation import (
                 extract_content_tokens,
                 get_translation_completeness_score,
-                recover_missing_content,
             )
 
             # Load dictionary
@@ -201,21 +200,13 @@ class TranslationWorker(QThread):
                 )
 
                 if completeness < 0.7:
-                    # Recover missing content
-                    enhanced = recover_missing_content(
-                        source,
-                        translation,
-                        missing_tokens=None,
-                        dictionary=dictionary,
-                    )
                     logger.debug(
-                        "Phase 1 incomplete (%.1f%%), recovered content",
+                        "Phase 1 incomplete (%.1f%%) -- preserving MT output (dictionary recovery disabled)",
                         completeness * 100,
                     )
-                    return enhanced, completeness
                 else:
                     logger.debug("Phase 1 complete (%.1f%%)", completeness * 100)
-                    return translation, completeness
+                return translation, completeness
 
             finally:
                 dictionary.close()
