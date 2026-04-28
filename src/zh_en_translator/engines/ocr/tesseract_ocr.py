@@ -69,11 +69,36 @@ def is_available() -> bool:
         return False
 
 
+def _available_zh_lang() -> str:
+    """Return the best available Tesseract language string for Chinese.
+
+    Tries chi_sim+chi_tra first (both scripts), falls back to whichever single
+    traineddata file is present. Returns empty string if neither is found.
+    """
+    import pytesseract
+
+    try:
+        available = pytesseract.get_languages()
+    except Exception:
+        available = []
+
+    has_sim = "chi_sim" in available
+    has_tra = "chi_tra" in available
+
+    if has_sim and has_tra:
+        return "chi_sim+chi_tra"
+    if has_sim:
+        return "chi_sim"
+    if has_tra:
+        return "chi_tra"
+    return ""
+
+
 def ocr_image(image_bytes: bytes, lang: str = "zh") -> str | None:
     """
     Run pytesseract on image bytes.
 
-    lang "zh" → tesseract lang string "chi_sim+chi_tra"
+    lang "zh" → best available Chinese tessdata (chi_sim+chi_tra, chi_sim, or chi_tra)
     lang "en" → "eng"
     Returns extracted text or None on failure.
     """
@@ -82,7 +107,14 @@ def ocr_image(image_bytes: bytes, lang: str = "zh") -> str | None:
         from PIL import Image
         import io
 
-        tess_lang = "chi_sim+chi_tra" if lang == "zh" else "eng"
+        if lang == "zh":
+            tess_lang = _available_zh_lang()
+            if not tess_lang:
+                logger.debug("No Chinese tessdata found; skipping Tesseract OCR")
+                return None
+        else:
+            tess_lang = "eng"
+
         img = Image.open(io.BytesIO(image_bytes))
         text = pytesseract.image_to_string(img, lang=tess_lang)
         return text.strip() or None
