@@ -339,9 +339,68 @@ class PreferencesDialog(QDialog):
         ocr_layout.addWidget(self._ocr_combo)
         layout.addWidget(ocr_group)
 
-        # Tesseract status
+        # Windows OCR status
         import sys, shutil, os
-        tess_group = QGroupBox("Tesseract Status")
+        from zh_en_translator.engines.ocr import windows_ocr as _wocr
+
+        win_group = QGroupBox("Windows OCR (primary engine)")
+        win_layout = QVBoxLayout(win_group)
+
+        wstatus = _wocr.ocr_status()
+        if not wstatus["api"]:
+            _wlabel = QLabel("Windows OCR API unavailable — winrt/winsdk package not installed.")
+            _wlabel.setWordWrap(True)
+            _wlabel.setStyleSheet("color: #888;")
+            win_layout.addWidget(_wlabel)
+        elif not wstatus["chinese"]:
+            _wlabel = QLabel(
+                "Windows OCR ready, but no Chinese language pack is installed.\n"
+                "OCR will fall back to Tesseract until the Chinese pack is added."
+            )
+            _wlabel.setWordWrap(True)
+            _wlabel.setStyleSheet("color: #b85c00; font-weight: bold;")
+            win_layout.addWidget(_wlabel)
+
+            if sys.platform == "win32":
+                def _install_win_ocr():
+                    import subprocess, pathlib
+                    candidates = [
+                        pathlib.Path(sys.executable).parent / "setup_elevated.ps1",
+                        pathlib.Path(__file__).parents[3] / "installer" / "setup_elevated.ps1",
+                    ]
+                    script = next((p for p in candidates if p.exists()), None)
+                    if not script:
+                        QMessageBox.warning(
+                            self, "Script Not Found",
+                            "setup_elevated.ps1 not found.\n\n"
+                            "Install manually via Windows Settings -> Time & Language -> "
+                            "Language & Region -> Add a language (Chinese Simplified).",
+                        )
+                        return
+                    subprocess.Popen(
+                        ["powershell.exe", "-ExecutionPolicy", "Bypass",
+                         "-WindowStyle", "Normal", "-File", str(script)],
+                        creationflags=subprocess.CREATE_NEW_CONSOLE,
+                    )
+                    QMessageBox.information(
+                        self, "Installing Windows OCR",
+                        "A terminal window has opened.\n"
+                        "You will see a UAC (administrator) prompt — please allow it.\n"
+                        "Reopen Preferences when it finishes to verify the status.",
+                    )
+
+                btn_win_ocr = QPushButton("Install Chinese OCR (requires admin)")
+                btn_win_ocr.clicked.connect(_install_win_ocr)
+                win_layout.addWidget(btn_win_ocr)
+        else:
+            _wlabel = QLabel("Windows OCR: ready — Chinese language pack installed.")
+            _wlabel.setStyleSheet("color: #1a7a1a; font-weight: bold;")
+            win_layout.addWidget(_wlabel)
+
+        layout.addWidget(win_group)
+
+        # Tesseract status
+        tess_group = QGroupBox("Tesseract Status (optional fallback — Windows OCR is primary)")
         tess_layout = QVBoxLayout(tess_group)
 
         tess_path = shutil.which("tesseract")
@@ -349,6 +408,8 @@ class PreferencesDialog(QDialog):
             candidates = [
                 os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe"),
                 r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+                os.path.expandvars(r"%LOCALAPPDATA%\Tesseract-OCR\tesseract.exe"),
+                os.path.expandvars(r"%APPDATA%\Tesseract-OCR\tesseract.exe"),
             ]
             for c in candidates:
                 if os.path.isfile(c):
@@ -360,9 +421,43 @@ class PreferencesDialog(QDialog):
             status_label.setStyleSheet("color: #1a7a1a; font-weight: bold;")
             tess_layout.addWidget(status_label)
         else:
-            status_label = QLabel("Tesseract: Not found. Check install log:")
-            status_label.setStyleSheet("color: #b85c00; font-weight: bold;")
-            tess_layout.addWidget(status_label)
+            note = QLabel(
+                "Tesseract not found. OCR still works via Windows OCR (the primary engine).\n"
+                "Install Tesseract only if Windows OCR is unavailable on your system."
+            )
+            note.setWordWrap(True)
+            note.setStyleSheet("color: #555;")
+            tess_layout.addWidget(note)
+
+            btn_row = QHBoxLayout()
+
+            if sys.platform == "win32":
+                def _install_tesseract():
+                    import subprocess, pathlib
+                    script = pathlib.Path(__file__).parents[3] / "installer" / "install_tesseract.ps1"
+                    if not script.exists():
+                        QMessageBox.warning(
+                            self,
+                            "Script Not Found",
+                            f"install_tesseract.ps1 not found at:\n{script}\n\n"
+                            "Download and install Tesseract manually from:\n"
+                            "https://github.com/UB-Mannheim/tesseract/wiki",
+                        )
+                        return
+                    subprocess.Popen(
+                        ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", str(script)],
+                        creationflags=subprocess.CREATE_NEW_CONSOLE,
+                    )
+                    QMessageBox.information(
+                        self,
+                        "Installing Tesseract",
+                        "A terminal window has opened to install Tesseract.\n"
+                        "Reopen Preferences when it finishes to verify the status.",
+                    )
+
+                btn_install = QPushButton("Install Tesseract")
+                btn_install.clicked.connect(_install_tesseract)
+                btn_row.addWidget(btn_install)
 
             def _open_tess_log():
                 log_path = os.path.join(os.environ.get("TEMP", ""), "zh-en-translator-tesseract-install.log")
@@ -373,14 +468,15 @@ class PreferencesDialog(QDialog):
                     QMessageBox.information(
                         self,
                         "Log Not Found",
-                        f"Install log not found:\n{log_path}\n\n"
-                        "Run the Tesseract installer to generate it.",
+                        f"No install log found at:\n{log_path}\n\n"
+                        "Click 'Install Tesseract' to run the installer.",
                     )
 
-            btn_open_log = QPushButton("Open Log")
-            btn_open_log.setFixedWidth(100)
+            btn_open_log = QPushButton("View Log")
             btn_open_log.clicked.connect(_open_tess_log)
-            tess_layout.addWidget(btn_open_log)
+            btn_row.addWidget(btn_open_log)
+            btn_row.addStretch()
+            tess_layout.addLayout(btn_row)
 
         layout.addWidget(tess_group)
         layout.addStretch()
