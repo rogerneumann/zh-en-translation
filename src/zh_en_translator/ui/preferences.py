@@ -339,8 +339,67 @@ class PreferencesDialog(QDialog):
         ocr_layout.addWidget(self._ocr_combo)
         layout.addWidget(ocr_group)
 
-        # Tesseract status
+        # Windows OCR status
         import sys, shutil, os
+        from zh_en_translator.engines.ocr import windows_ocr as _wocr
+
+        win_group = QGroupBox("Windows OCR (primary engine)")
+        win_layout = QVBoxLayout(win_group)
+
+        wstatus = _wocr.ocr_status()
+        if not wstatus["api"]:
+            _wlabel = QLabel("Windows OCR API unavailable — winrt/winsdk package not installed.")
+            _wlabel.setWordWrap(True)
+            _wlabel.setStyleSheet("color: #888;")
+            win_layout.addWidget(_wlabel)
+        elif not wstatus["chinese"]:
+            _wlabel = QLabel(
+                "Windows OCR ready, but no Chinese language pack is installed.\n"
+                "OCR will fall back to Tesseract until the Chinese pack is added."
+            )
+            _wlabel.setWordWrap(True)
+            _wlabel.setStyleSheet("color: #b85c00; font-weight: bold;")
+            win_layout.addWidget(_wlabel)
+
+            if sys.platform == "win32":
+                def _install_win_ocr():
+                    import subprocess, pathlib
+                    candidates = [
+                        pathlib.Path(sys.executable).parent / "setup_elevated.ps1",
+                        pathlib.Path(__file__).parents[3] / "installer" / "setup_elevated.ps1",
+                    ]
+                    script = next((p for p in candidates if p.exists()), None)
+                    if not script:
+                        QMessageBox.warning(
+                            self, "Script Not Found",
+                            "setup_elevated.ps1 not found.\n\n"
+                            "Install manually via Windows Settings -> Time & Language -> "
+                            "Language & Region -> Add a language (Chinese Simplified).",
+                        )
+                        return
+                    subprocess.Popen(
+                        ["powershell.exe", "-ExecutionPolicy", "Bypass",
+                         "-WindowStyle", "Normal", "-File", str(script)],
+                        creationflags=subprocess.CREATE_NEW_CONSOLE,
+                    )
+                    QMessageBox.information(
+                        self, "Installing Windows OCR",
+                        "A terminal window has opened.\n"
+                        "You will see a UAC (administrator) prompt — please allow it.\n"
+                        "Reopen Preferences when it finishes to verify the status.",
+                    )
+
+                btn_win_ocr = QPushButton("Install Chinese OCR (requires admin)")
+                btn_win_ocr.clicked.connect(_install_win_ocr)
+                win_layout.addWidget(btn_win_ocr)
+        else:
+            _wlabel = QLabel("Windows OCR: ready — Chinese language pack installed.")
+            _wlabel.setStyleSheet("color: #1a7a1a; font-weight: bold;")
+            win_layout.addWidget(_wlabel)
+
+        layout.addWidget(win_group)
+
+        # Tesseract status
         tess_group = QGroupBox("Tesseract Status (optional fallback — Windows OCR is primary)")
         tess_layout = QVBoxLayout(tess_group)
 
