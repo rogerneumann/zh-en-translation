@@ -1,9 +1,10 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Install Tesseract OCR + Chinese Simplified language data.
-    Exits 0 in all cases — OCR is optional, failures are informational only.
-    Logs all output to %TEMP%\zh-en-translator-tesseract-install.log for diagnostics.
+    Install Tesseract OCR (user-level) + Chinese Simplified/Traditional language data.
+    Does NOT require administrator rights -- installs to LocalAppData or via winget.
+    For a system-wide install to Program Files, run setup_elevated.ps1 instead.
+    Exits 0 in all cases. Log: %TEMP%\zh-en-translator-tesseract-install.log
 #>
 
 $ErrorActionPreference = "Continue"
@@ -66,16 +67,16 @@ function Find-TessDataDir {
 }
 
 # ---------------------------------------------------------------------------
-# Main — wrapped so any unexpected error still reaches exit 0
+# Main -- wrapped so any unexpected error still reaches exit 0
 # ---------------------------------------------------------------------------
 try {
 
-    # Step 1 — Skip if already installed
+    # Step 1 -- Skip if already installed
     $TessDataDir = Find-TessDataDir
     if ($TessDataDir) {
         Log-Success "Tesseract already installed. tessdata: $TessDataDir"
     } else {
-        # Attempt A — winget
+        # Attempt A -- winget (no UAC required)
         Log-Info "Attempting Tesseract install via winget..."
         $WingetOk = $false
         try {
@@ -100,8 +101,8 @@ try {
         }
 
         if (-not $WingetOk) {
-            # Attempt B — direct download + silent install to LocalAppData (no UAC)
-            Log-Info "winget unavailable or failed — trying direct install..."
+            # Attempt B -- direct download + silent install to LocalAppData (no UAC)
+            Log-Info "winget unavailable or failed -- trying direct install to LocalAppData..."
             $InstallerPath = Join-Path $env:TEMP "tesseract-ocr-setup.exe"
             $DownloadUrl   = $null
 
@@ -129,18 +130,19 @@ try {
             try {
                 Log-Info "Downloading Tesseract from: $DownloadUrl"
                 (New-Object System.Net.WebClient).DownloadFile($DownloadUrl, $InstallerPath)
-                Log-Info "Download complete. Running silent installer..."
+                Log-Info "Download complete. Running silent installer to LocalAppData..."
 
                 $p = Start-Process $InstallerPath `
-                    -ArgumentList "/VERYSILENT /NORESTART /DIR=""$env:LOCALAPPDATA\Programs\Tesseract-OCR""" `
+                    -ArgumentList "/VERYSILENT /NORESTART /DIR="$env:LOCALAPPDATA\Programs\Tesseract-OCR"" `
                     -Wait -PassThru
 
                 if ($p -eq $null) {
-                    Log-Error "Start-Process returned null (elevation may have been blocked)"
+                    Log-Error "Start-Process returned null"
                 } elseif ($p.ExitCode -eq 0) {
                     Log-Success "Direct install to LocalAppData succeeded (exit code 0)."
                 } else {
                     Log-Error "Direct install failed with exit code: $($p.ExitCode)"
+                    Log-Info "For a system-wide install to Program Files, run setup_elevated.ps1"
                 }
             } catch {
                 Log-Error "Direct install exception: $_"
@@ -148,51 +150,6 @@ try {
                 if (Test-Path $InstallerPath) {
                     Remove-Item $InstallerPath -Force -ErrorAction SilentlyContinue
                     Log-Info "Cleaned up installer file."
-                }
-            }
-
-            # Attempt C — elevated install to Program Files (triggers UAC prompt)
-            $TessDataDirAfterB = Find-TessDataDir
-            if (-not $TessDataDirAfterB) {
-                Log-Info "Attempt B did not produce a working install. Trying elevated install to 'C:\Program Files\Tesseract-OCR'..."
-                $ElevatedInstallerPath = Join-Path $env:TEMP "tesseract-ocr-setup-elevated.exe"
-
-                # Re-download the installer for the elevated attempt
-                try {
-                    Log-Info "Downloading Tesseract installer for elevated install..."
-                    (New-Object System.Net.WebClient).DownloadFile($DownloadUrl, $ElevatedInstallerPath)
-                    Log-Info "Download complete. Launching elevated installer (UAC prompt will appear)..."
-
-                    try {
-                        $p = Start-Process $ElevatedInstallerPath `
-                            -ArgumentList "/VERYSILENT /NORESTART /DIR=""C:\Program Files\Tesseract-OCR""" `
-                            -Verb RunAs -Wait -PassThru
-
-                        if ($p -eq $null) {
-                            Log-Error "Elevated Start-Process returned null (UAC may have been denied or elevation failed)"
-                        } elseif ($p.ExitCode -eq 0) {
-                            Log-Success "Elevated install to 'C:\Program Files\Tesseract-OCR' succeeded (exit code 0)."
-                        } else {
-                            Log-Error "Elevated install failed with exit code: $($p.ExitCode)"
-                        }
-                    } catch {
-                        Log-Error "Elevated install exception (UAC may have been cancelled): $_"
-                    }
-                } catch {
-                    Log-Error "Download for elevated install failed: $_"
-                } finally {
-                    if (Test-Path $ElevatedInstallerPath) {
-                        Remove-Item $ElevatedInstallerPath -Force -ErrorAction SilentlyContinue
-                        Log-Info "Cleaned up elevated installer file."
-                    }
-                }
-
-                # Re-probe after Attempt C
-                $TessDataDirAfterC = Find-TessDataDir
-                if ($TessDataDirAfterC) {
-                    Log-Success "Elevated install succeeded. Found tessdata at: $TessDataDirAfterC"
-                } else {
-                    Log-Error "Tesseract tessdata directory not found after elevated install attempt."
                 }
             }
         }
@@ -203,13 +160,13 @@ try {
         if ($TessDataDir) {
             Log-Success "Found tessdata at: $TessDataDir"
         } else {
-            Log-Error "Tesseract tessdata directory not found after installation attempt."
+            Log-Error "Tesseract tessdata not found after install attempt."
+            Log-Info "For a system-wide install (Program Files), run setup_elevated.ps1 from the app folder."
         }
     }
 
-    # Step 2 — Download chi_sim.traineddata and chi_tra.traineddata
-    # NOTE: Use the tessdata GitHub releases (not raw/main) so we get the real
-    # binary files rather than Git LFS pointer stubs.
+    # Step 2 -- Download chi_sim.traineddata and chi_tra.traineddata
+    # NOTE: Use GitHub releases URL -- raw/main may return LFS pointer stubs.
     $TESSDATA_BASE = "https://github.com/tesseract-ocr/tessdata_fast/releases/download/4.1.0"
     $TrainedFiles = @("chi_sim.traineddata", "chi_tra.traineddata")
 
@@ -229,7 +186,7 @@ try {
                     if (Test-Path $dest) {
                         $size = (Get-Item $dest).Length / 1MB
                         if ($size -lt 0.5) {
-                            Log-Error "$fname downloaded but is only $([Math]::Round($size*1024,0)) KB -- likely an LFS pointer, not the real file. Removing."
+                            Log-Error "$fname downloaded but is only $([Math]::Round($size*1024,0)) KB -- likely an LFS pointer. Removing."
                             Remove-Item $dest -Force -ErrorAction SilentlyContinue
                         } else {
                             Log-Success "$fname downloaded successfully ($([Math]::Round($size, 2)) MB)."
@@ -238,7 +195,7 @@ try {
                         Log-Error "$fname not found after download."
                     }
                 } catch {
-                    Log-Error "Failed to download ${fname}: $_"
+                    Log-Error "Failed to download $fname: $_"
                 }
             }
         }
@@ -249,10 +206,10 @@ try {
         if ($simOk -or $traOk) {
             Log-Success "Tesseract setup complete. chi_sim=$simOk chi_tra=$traOk"
         } else {
-            Log-Error "Neither chi_sim nor chi_tra traineddata found. OCR will not work for Chinese."
+            Log-Error "Neither chi_sim nor chi_tra traineddata found. Chinese OCR will not work."
         }
     } else {
-        Log-Error "Tesseract tessdata directory could not be located. Manual installation may be required."
+        Log-Error "Tesseract tessdata directory not found. Manual installation may be required."
         Log-Info "Install manually: https://github.com/UB-Mannheim/tesseract/wiki"
     }
 
