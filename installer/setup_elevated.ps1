@@ -71,7 +71,7 @@ try {
     # -------------------------------------------------------------------------
     # Part 2 -- Tesseract to Program Files (elevated fallback only)
     # -------------------------------------------------------------------------
-    $tessExe = "C:\Program Files\Tesseract-OCR	esseract.exe"
+    $tessExe = "C:\Program Files\Tesseract-OCR\tesseract.exe"
     if (Test-Path $tessExe) {
         Write-Log "Tesseract already at Program Files -- skipping install." "Green"
     } else {
@@ -79,10 +79,9 @@ try {
 
         $DownloadUrl = $null
         try {
-            $rel = Invoke-RestMethod                 -Uri "https://api.github.com/repos/UB-Mannheim/tesseract/releases/latest"                 -Headers @{"User-Agent"="zh-en-translator"} -UseBasicParsing
-            $asset = $rel.assets |
-                Where-Object { $_.name -like "tesseract-ocr-w64-setup-*.exe" } |
-                Select-Object -First 1
+            $GhApi = "https://api.github.com/repos/UB-Mannheim/tesseract/releases/latest"
+            $rel = Invoke-RestMethod -Uri $GhApi -Headers @{"User-Agent"="zh-en-translator"} -UseBasicParsing
+            $asset = $rel.assets | Where-Object { $_.name -like "tesseract-ocr-w64-setup-*.exe" } | Select-Object -First 1
             if ($asset) {
                 $DownloadUrl = $asset.browser_download_url
                 Write-Log "Latest release: $($asset.name)" "Cyan"
@@ -97,10 +96,11 @@ try {
         }
 
         $InstallerPath = Join-Path $env:TEMP "tesseract-ocr-setup-elevated.exe"
+        $TessInstallDir = "C:\Program Files\Tesseract-OCR"
         try {
             Write-Log "Downloading Tesseract installer..." "Cyan"
             (New-Object System.Net.WebClient).DownloadFile($DownloadUrl, $InstallerPath)
-            $p = Start-Process $InstallerPath                 -ArgumentList "/VERYSILENT /NORESTART /DIR="C:\Program Files\Tesseract-OCR""                 -Wait -PassThru
+            $p = Start-Process $InstallerPath -ArgumentList @("/VERYSILENT", "/NORESTART", "/DIR=`"$TessInstallDir`"") -Wait -PassThru
             if ($p -and $p.ExitCode -eq 0) {
                 Write-Log "Tesseract installed to Program Files (exit 0)." "Green"
             } else {
