@@ -10,10 +10,9 @@ logger = logging.getLogger(__name__)
 
 _ARGOS_TIMEOUT_S = 8  # seconds before the Argos/MT call is considered hung
 
-# Phase 3 heuristic thresholds for adaptive orchestration
+# Heuristic thresholds for clause-level fallback decision
 _ADAPTIVE_LENGTH_THRESHOLD = 80  # chars: short text rarely needs clause-level
-_ADAPTIVE_COMPLETENESS_THRESHOLD = 0.75  # if completeness >= this, skip Phase 2
-_ADAPTIVE_MIN_TOKENS = 5  # if source has fewer content tokens, skip Phase 2
+_ADAPTIVE_MIN_TOKENS = 5  # if source has fewer content tokens, skip clause fallback
 
 
 def _count_clauses(text: str) -> int:
@@ -101,128 +100,56 @@ class TranslationWorker(QThread):
         self.text = text
         self.config = config  # Config | None
 
-    def _should_use_clause_fallback(self, text: str, completeness: float) -> bool:
-        """Decide per-sentence whether to use Phase 2 clause-level fallback (Phase 3 heuristics).
+    def _should_use_clause_fallback(self, text: str) -> bool:
+        """Decide whether to attempt clause-level translation fallback.
 
-        Applies several heuristics to determine if input is simple enough to skip Phase 2:
-        - If completeness >= 0.75: already quite complete, skip Phase 2
-        - If text length < 80 chars: short text rarely needs clause-level splitting
-        - If clause count <= 1: no complex clause structure to split
-        - If content token count < 5: too simple; dictionary recovery sufficient
+        Uses structural heuristics on the source text to determine if clause-level
+        splitting is likely to help:
+        - Text length < 80 chars: short text rarely needs clause-level splitting
+        - Clause count <= 1: no complex clause structure to split
+        - Content token count < 5: too simple to benefit from splitting
 
         Args:
             text: Original Chinese text.
-            completeness: Translation completeness score (0.0 to 1.0) from Phase 1.
 
         Returns:
-            True if Phase 2 should be attempted (complex case), False otherwise (simple case).
+            True if clause-level fallback should be attempted, False otherwise.
         """
-        # Heuristic 1: Already quite complete; skip Phase 2
-        if completeness >= _ADAPTIVE_COMPLETENESS_THRESHOLD:
-            logger.debug(
-                "Skipping Phase 2 heuristics: already complete (%.1f%% >= %.1f%%)",
-                completeness * 100,
-                _ADAPTIVE_COMPLETENESS_THRESHOLD * 100,
-            )
-            return False
-
-        # Heuristic 2: Short text rarely needs clause-level splitting
+        # Short text rarely needs clause-level splitting
         if len(text) < _ADAPTIVE_LENGTH_THRESHOLD:
             logger.debug(
-                "Skipping Phase 2 (simple: %d chars < %d chars)",
+                "Skipping clause fallback (short: %d chars < %d)",
                 len(text),
                 _ADAPTIVE_LENGTH_THRESHOLD,
             )
             return False
 
-        # Heuristic 3: No complex clauses to split
+        # No complex clause structure to split
         clause_count = _count_clauses(text)
         if clause_count <= 1:
             logger.debug(
-                "Skipping Phase 2 (simple: %d clause(s) <= 1)",
+                "Skipping clause fallback (single clause: %d)",
                 clause_count,
             )
             return False
 
-        # Heuristic 4: Too simple; dictionary recovery sufficient
+        # Too simple to benefit from splitting
         token_count = _count_content_tokens(text)
         if token_count < _ADAPTIVE_MIN_TOKENS:
             logger.debug(
-                "Skipping Phase 2 (simple: %d tokens < %d tokens)",
+                "Skipping clause fallback (few tokens: %d < %d)",
                 token_count,
                 _ADAPTIVE_MIN_TOKENS,
             )
             return False
 
-        # Complex case: use Phase 2
         logger.debug(
-            "Attempting Phase 2 (complex: %d chars, %d clauses, %d tokens)",
+            "Using clause fallback (complex: %d chars, %d clauses, %d tokens)",
             len(text),
             clause_count,
             token_count,
         )
         return True
-
-    def _apply_validation(self, source: str, translation: str) -> tuple[str, float]:
-        """Apply translation validation and recovery pipeline (Phase 1).
-
-        Detects missing content from the source and recovers it using dictionary lookup.
-
-        Args:
-            source: Original Chinese text.
-            translation: Current English translation from Argos.
-
-        Returns:
-            Tuple of (enhanced_translation, completeness_score) where completeness_score
-            is between 0.0 and 1.0.
-        """
-        try:
-            from zh_en_translator.engines.dictionary import Dictionary, ensure_cedict
-            from zh_en_translator.engines.validation import (
-                extract_content_tokens,
-                get_translation_completeness_score,
-                recover_missing_content,
-            )
-
-            # Load dictionary
-            cedict_path = ensure_cedict()
-            db_path = cedict_path.with_suffix(".db")
-            if not db_path.exists():
-                Dictionary.build_from_cedict(cedict_path, db_path)
-            dictionary = Dictionary(db_path)
-
-            try:
-                # Extract content tokens and check completeness
-                source_tokens = extract_content_tokens(source, dictionary)
-                completeness = get_translation_completeness_score(
-                    source_tokens,
-                    translation,
-                    dictionary,
-                )
-
-                if completeness < 0.7:
-                    # Recover missing content
-                    enhanced = recover_missing_content(
-                        source,
-                        translation,
-                        missing_tokens=None,
-                        dictionary=dictionary,
-                    )
-                    logger.debug(
-                        "Phase 1 incomplete (%.1f%%), recovered content",
-                        completeness * 100,
-                    )
-                    return enhanced, completeness
-                else:
-                    logger.debug("Phase 1 complete (%.1f%%)", completeness * 100)
-                    return translation, completeness
-
-            finally:
-                dictionary.close()
-
-        except Exception as e:
-            logger.warning("Translation validation failed: %s (continuing with original)", e)
-            return translation, 0.0
 
     def _apply_clause_fallback(self, source: str, translation: str) -> str:
         """Apply clause-level translation fallback (Phase 2).
@@ -308,15 +235,10 @@ class TranslationWorker(QThread):
 
         if result and _is_valid_translation(result, self.text):
             logger.info("Translation path: Argos")
-            # Post-process with validation and recovery if enabled
-            if self.config and self.config.validation_enabled:
-                result, completeness = self._apply_validation(self.text, result)
-                # Phase 3: Adaptive orchestration - decide whether to use Phase 2 based on heuristics
-                if self._should_use_clause_fallback(self.text, completeness):
-                    logger.info("Phase 1 incomplete (%.1f%%), attempting Phase 2 (adaptive)", completeness * 100)
+            if self.config and self.config.clause_fallback_enabled:
+                if self._should_use_clause_fallback(self.text):
+                    logger.info("Complex input detected, attempting clause-level fallback")
                     result = self._apply_clause_fallback(self.text, result)
-                else:
-                    logger.debug("Phase 1 incomplete but complexity heuristics suggest Phase 2 unnecessary")
             self.result_ready.emit(result)
             return
 

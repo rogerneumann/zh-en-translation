@@ -42,12 +42,30 @@ def _imports():
 
 
 def is_available() -> bool:
-    """Return True if winrt or winsdk is installed and Windows OCR is accessible."""
+    """Return True if winrt/winsdk is accessible AND a Chinese OCR recogniser is installed.
+
+    Both conditions must hold for this engine to be useful in the zh->en pipeline.
+    """
     try:
         _imports()
-        return True
+        return has_chinese_language()
     except ImportError:
         return False
+
+
+def ocr_status() -> dict:
+    """Return a dict describing Windows OCR availability for Chinese.
+
+    Keys:
+        api       (bool) -- winrt or winsdk package is importable
+        chinese   (bool) -- at least one zh-* OCR recogniser is installed
+    """
+    try:
+        _imports()
+        api = True
+    except ImportError:
+        return {"api": False, "chinese": False}
+    return {"api": api, "chinese": has_chinese_language()}
 
 
 def has_chinese_language() -> bool:

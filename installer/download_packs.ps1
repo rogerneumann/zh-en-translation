@@ -1,7 +1,7 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Download and install the Argos Translate zh→en language pack.
+    Download and install the Argos Translate zh->en language pack.
 
 .DESCRIPTION
     Called automatically after install by the Inno Setup [Run] section.
@@ -10,7 +10,7 @@
     The script:
     1. Locates the bundled Python interpreter inside the install directory.
     2. Calls argostranslate.package to update the package index and install
-       the zh→en translation pack (~50-100 MB download).
+       the zh->en translation pack (~50-100 MB download).
     3. Reports success or failure.
 
 .PARAMETER InstallDir
@@ -81,7 +81,7 @@ if ($SystemPython) {
 } elseif (Test-Path $BundledExe) {
     # The bundled exe can run Python snippets via a special internal path.
     # We write a small wrapper .py to the temp directory and call the bundled exe
-    # indirectly — but since it's a windowed exe this won't work well for
+    # indirectly -- but since it's a windowed exe this won't work well for
     # stdout capture. Instead, look for _pyi_bootloader or similar.
     # Best fallback: print instructions and exit gracefully.
     Write-Host "WARNING: System Python with argostranslate not found." -ForegroundColor Yellow
@@ -100,7 +100,7 @@ if ($SystemPython) {
 }
 
 # ---------------------------------------------------------------------------
-# Download and install the zh→en Argos pack
+# Download and install the zh->en Argos pack
 # ---------------------------------------------------------------------------
 $DownloadScript = @'
 import sys
