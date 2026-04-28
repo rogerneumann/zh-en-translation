@@ -16,7 +16,6 @@ from PyQt6.QtWidgets import (
     QSpinBox,
     QRadioButton,
     QButtonGroup,
-    QFontComboBox,
     QPushButton,
     QColorDialog,
     QComboBox,
@@ -48,6 +47,29 @@ _PREVIEW_TRANS  = "Hello, world."
 
 # Windows 11 / Microsoft 365 modern font stack
 _FONT_STACK = "'Segoe UI Variable Display', 'Aptos', 'Segoe UI', 'Microsoft YaHei', 'sans-serif'"
+
+# Curated font list shown in the font picker (user can still type any name)
+_FONT_CHOICES = [
+    "",                        # (system default)
+    "Aptos",
+    "Aptos Display",
+    "Segoe UI Variable Display",
+    "Segoe UI",
+    "Calibri",
+    "Arial",
+    "Verdana",
+    "Tahoma",
+    "Trebuchet MS",
+    "Georgia",
+    "Cambria",
+    "Consolas",
+    "Courier New",
+    "Microsoft YaHei",
+    "Microsoft JhengHei",
+    "SimSun",
+    "SimHei",
+    "Noto Sans",
+]
 
 class _ColorSwatchButton(QPushButton):
     """Button that shows a colour swatch and opens QColorDialog on click."""
@@ -208,6 +230,7 @@ class PreferencesDialog(QDialog):
         update_layout.addWidget(self._auto_update_check)
         self._btn_check_now = QPushButton("Check for Updates Now")
         self._btn_check_now.setFixedWidth(180)
+        self._btn_check_now.clicked.connect(self._check_updates_now)
         update_layout.addWidget(self._btn_check_now)
         layout.addWidget(update_group)
 
@@ -239,8 +262,11 @@ class PreferencesDialog(QDialog):
         font_layout = QVBoxLayout(font_group)
         font_row = QHBoxLayout()
         font_row.addWidget(QLabel("Family:"))
-        self._font_combo = QFontComboBox()
+        self._font_combo = QComboBox()
         self._font_combo.setEditable(True)
+        self._font_combo.setMaxVisibleItems(15)
+        for name in _FONT_CHOICES:
+            self._font_combo.addItem(name if name else "(system default)", userData=name)
         self._font_combo.lineEdit().setPlaceholderText("(system default)")
         font_row.addWidget(self._font_combo, 1)
         font_layout.addLayout(font_row)
@@ -294,6 +320,7 @@ class PreferencesDialog(QDialog):
 
         for w in [self._theme_combo, self._font_combo, self._font_size_spin]:
             w.currentIndexChanged.connect(self._update_preview) if hasattr(w, "currentIndexChanged") else w.valueChanged.connect(self._update_preview)
+        self._font_combo.editTextChanged.connect(self._update_preview)
         self._bg_color_btn.color_changed.connect(self._update_preview)
 
         layout.addStretch()
@@ -623,6 +650,11 @@ class PreferencesDialog(QDialog):
         palette = resolve_palette(theme, False)
         bg = bg_col if bg_col else palette.bg
         self._preview_frame.setStyleSheet(f"background: {bg}; border: 1px solid {palette.border}; border-radius: 12px; color: {palette.text};")
+        ff = self._font_combo.currentData() if self._font_combo.currentIndex() >= 0 else self._font_combo.currentText().strip()
+        fs = self._font_size_spin.value()
+        font = QFont(ff, fs) if ff else QFont("", fs)
+        for lbl in (self._preview_pinyin, self._preview_source, self._preview_trans):
+            lbl.setFont(font)
 
     def _on_apply(self):
         self.config = self._collect_config()
@@ -643,13 +675,41 @@ class PreferencesDialog(QDialog):
 
     def _load_config_into_ui(self):
         cfg = self.config
+        # General tab
         self._hotkey_edit.setText(cfg.hotkey)
+        (self._mode_sidebar if cfg.mode == "sidebar" else self._mode_popup).setChecked(True)
+        self._trad_to_simp_check.setChecked(cfg.traditional_to_simplified)
         self._auto_update_check.setChecked(cfg.auto_check_updates)
+        # Display tab
+        idx = self._theme_combo.findData(cfg.theme)
+        self._theme_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        ff = cfg.font_family or ""
+        fidx = self._font_combo.findData(ff)
+        if fidx >= 0:
+            self._font_combo.setCurrentIndex(fidx)
+        elif ff:
+            self._font_combo.setCurrentText(ff)
+        else:
+            self._font_combo.setCurrentIndex(0)
         self._font_size_spin.setValue(cfg.font_size)
-        self._ms_api_key_edit.setText(cfg.ms_translator_api_key)
-        self._deepl_key_edit.setText(cfg.deepl_api_key)
+        self._bg_color_btn.set_color_str(cfg.bg_color)
+        self._show_pinyin_check.setChecked(cfg.show_pinyin)
+        self._pinyin_max_spin.setValue(cfg.pinyin_max_chars)
+        self._pinyin_max_spin.setEnabled(cfg.show_pinyin)
+        # Sidebar tab
+        (self._side_right if cfg.side == "right" else self._side_left).setChecked(True)
+        # Lookup & OCR tab
+        self._lookup_url_edit.setText(cfg.external_lookup_url)
+        idx = self._ocr_combo.findData(cfg.ocr_engine)
+        self._ocr_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        # Glossary tab
         from zh_en_translator.engines.glossary import load_glossary
         self._glossary_load_terms(load_glossary())
+        # Cloud tab
+        self._ms_enabled_check.setChecked(cfg.ms_translator_enabled)
+        self._ms_api_key_edit.setText(cfg.ms_translator_api_key)
+        self._deepl_enabled_check.setChecked(cfg.deepl_enabled)
+        self._deepl_key_edit.setText(cfg.deepl_api_key)
         self._update_preview()
         self._connect_dirty_signals()
 
@@ -659,7 +719,7 @@ class PreferencesDialog(QDialog):
             mode="sidebar" if self._mode_sidebar.isChecked() else "popup",
             startup=self.config.startup,
             auto_check_updates=self._auto_update_check.isChecked(),
-            font_family=self._font_combo.currentText(),
+            font_family=self._font_combo.currentData() if self._font_combo.currentIndex() >= 0 else self._font_combo.currentText().strip(),
             font_size=self._font_size_spin.value(),
             bg_color=self._bg_color_btn.get_color_str(),
             theme=self._theme_combo.currentData(),
@@ -680,6 +740,27 @@ class PreferencesDialog(QDialog):
             deepl_api_key=self._deepl_key_edit.text(),
             deepl_pro=self.config.deepl_pro,
         )
+
+    def _check_updates_now(self):
+        from zh_en_translator.engines.updates import get_latest_release, is_newer
+        from zh_en_translator import __version__
+        self._btn_check_now.setEnabled(False)
+        self._btn_check_now.setText("Checking…")
+        QApplication.processEvents()
+        try:
+            info = get_latest_release()
+        finally:
+            self._btn_check_now.setEnabled(True)
+            self._btn_check_now.setText("Check for Updates Now")
+        if info is None:
+            QMessageBox.information(self, "Update Check", "Could not reach the update server. Check your internet connection.")
+        elif is_newer(info["tag_name"], __version__):
+            QMessageBox.information(
+                self, "Update Available",
+                f"A new version is available: {info['tag_name']}\n\nDownload: {info['html_url']}",
+            )
+        else:
+            QMessageBox.information(self, "Up to Date", f"You are running the latest version ({__version__}).")
 
     def closeEvent(self, event):
         if not self._skip_close_check and self._dirty:
