@@ -63,8 +63,7 @@ class Config:
 
     # [translation]
     traditional_to_simplified: bool = True
-    validation_enabled: bool = True
-    validation_completeness_threshold: float = 0.7
+    clause_fallback_enabled: bool = True
     segmenter: str = "jieba"      # "jieba" | "pkuseg" | "hanlp" (future)
 
     # [cloud]
@@ -131,11 +130,8 @@ def load_config(config_path: Path | None = None) -> Config:
         traditional_to_simplified=_get(
             "translation", "traditional_to_simplified", defaults.traditional_to_simplified
         ),
-        validation_enabled=_get(
-            "translation", "validation_enabled", defaults.validation_enabled
-        ),
-        validation_completeness_threshold=_get(
-            "translation", "validation_completeness_threshold", defaults.validation_completeness_threshold
+        clause_fallback_enabled=_get(
+            "translation", "clause_fallback_enabled", defaults.clause_fallback_enabled
         ),
         segmenter=_get("translation", "segmenter", defaults.segmenter),
         ms_translator_enabled=_get("cloud", "ms_translator_enabled", defaults.ms_translator_enabled),
@@ -188,8 +184,7 @@ pinyin_max_chars = {cfg.pinyin_max_chars}
 
 [translation]
 traditional_to_simplified = {_toml_bool(cfg.traditional_to_simplified)}
-validation_enabled = {_toml_bool(cfg.validation_enabled)}
-validation_completeness_threshold = {cfg.validation_completeness_threshold}
+clause_fallback_enabled = {_toml_bool(cfg.clause_fallback_enabled)}
 segmenter = {_toml_str(cfg.segmenter)}
 
 [cloud]
