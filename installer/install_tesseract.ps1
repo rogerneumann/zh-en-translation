@@ -207,33 +207,49 @@ try {
         }
     }
 
-    # Step 2 — Download chi_sim.traineddata
-    if ($TessDataDir) {
-        Log-Info "Attempting to download chi_sim.traineddata..."
-        New-Item -ItemType Directory -Force -Path $TessDataDir | Out-Null
-        $dest = Join-Path $TessDataDir "chi_sim.traineddata"
+    # Step 2 — Download chi_sim.traineddata and chi_tra.traineddata
+    # NOTE: Use the tessdata GitHub releases (not raw/main) so we get the real
+    # binary files rather than Git LFS pointer stubs.
+    $TESSDATA_BASE = "https://github.com/tesseract-ocr/tessdata_fast/releases/download/4.1.0"
+    $TrainedFiles = @("chi_sim.traineddata", "chi_tra.traineddata")
 
-        # Check if already exists
-        if (Test-Path $dest) {
-            Log-Success "chi_sim.traineddata already exists at: $dest"
-        } else {
-            try {
-                (New-Object System.Net.WebClient).DownloadFile(
-                    "https://github.com/tesseract-ocr/tessdata_fast/raw/main/chi_sim.traineddata",
-                    $dest
-                )
-                Log-Success "chi_sim.traineddata successfully downloaded to: $dest"
-            } catch {
-                Log-Error "chi_sim download failed: $_"
+    if ($TessDataDir) {
+        New-Item -ItemType Directory -Force -Path $TessDataDir | Out-Null
+
+        foreach ($fname in $TrainedFiles) {
+            $dest = Join-Path $TessDataDir $fname
+            if (Test-Path $dest) {
+                $size = (Get-Item $dest).Length / 1MB
+                Log-Success "$fname already exists ($([Math]::Round($size, 2)) MB) -- skipping download."
+            } else {
+                Log-Info "Downloading $fname ..."
+                $url = "$TESSDATA_BASE/$fname"
+                try {
+                    (New-Object System.Net.WebClient).DownloadFile($url, $dest)
+                    if (Test-Path $dest) {
+                        $size = (Get-Item $dest).Length / 1MB
+                        if ($size -lt 0.5) {
+                            Log-Error "$fname downloaded but is only $([Math]::Round($size*1024,0)) KB -- likely an LFS pointer, not the real file. Removing."
+                            Remove-Item $dest -Force -ErrorAction SilentlyContinue
+                        } else {
+                            Log-Success "$fname downloaded successfully ($([Math]::Round($size, 2)) MB)."
+                        }
+                    } else {
+                        Log-Error "$fname not found after download."
+                    }
+                } catch {
+                    Log-Error "Failed to download ${fname}: $_"
+                }
             }
         }
 
         # Final validation
-        if (Test-Path $dest) {
-            $size = (Get-Item $dest).Length / 1MB
-            Log-Success "Tesseract setup complete. chi_sim.traineddata size: $([Math]::Round($size, 2)) MB"
+        $simOk = Test-Path (Join-Path $TessDataDir "chi_sim.traineddata")
+        $traOk = Test-Path (Join-Path $TessDataDir "chi_tra.traineddata")
+        if ($simOk -or $traOk) {
+            Log-Success "Tesseract setup complete. chi_sim=$simOk chi_tra=$traOk"
         } else {
-            Log-Error "chi_sim.traineddata not found after download attempt."
+            Log-Error "Neither chi_sim nor chi_tra traineddata found. OCR will not work for Chinese."
         }
     } else {
         Log-Error "Tesseract tessdata directory could not be located. Manual installation may be required."
