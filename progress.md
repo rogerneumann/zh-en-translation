@@ -7,6 +7,35 @@ Source of truth for plan/scope: `PLAN.md`, `plan-v2.md`, `plan-v3.md`, and **`v4
 
 ---
 
+## Bug Fix: Duplicate/Garbled Translations (2026-04-28) ✅ COMPLETE
+
+**Issue:** Sentences like `他们只要六个循环吗？还是测六次就出问题了` were producing garbled output:
+> "They only have six cycles? Or six tests? It's a problem to cycle, to survey, (after a suppositional clause) in that case; then, to go out; to come out."
+
+Google Translate gives a clean sentence. The MT engine (Argos) was producing good output; the post-processing pipeline was corrupting it.
+
+**Root Cause:** The v4 M1 validation pipeline (`validation.py`) had two compounding bugs:
+
+1. **Broken completeness scoring** — `get_translation_completeness_score()` used naive exact substring matching (gloss `"cycle"` vs translation `"cycles"`). Almost every valid MT translation scored below 70%, causing the recovery step to fire on good output.
+
+2. **Harmful recovery** — `recover_missing_content()` appended raw CC-CEDICT dictionary glosses directly onto the end of the MT translation when completeness < 0.7. The result was good English followed by a comma-separated dump of Chinese dictionary entries.
+
+A deeper structural review also found: `is_translation_complete()` was never called from production; the SQLite dictionary was opened on every Argos translation just to compute a score that was always wrong; the `_STOP_WORDS` list was duplicated between two modules; and `validation_enabled`/`validation_completeness_threshold` in config were misleadingly named for what they actually controlled.
+
+**Decision:** Remove the validation pipeline entirely rather than patching the completeness scoring. The structural heuristics in Phase 3 (text length, clause count, token count) are objective, accurate, and require no dictionary I/O.
+
+**Changes (2 commits, -690 lines net):**
+- Deleted `src/zh_en_translator/engines/validation.py` (all dead code)
+- Deleted `tests/test_validation.py` (48 tests for deleted functions)
+- Removed `_apply_validation()` and `_ADAPTIVE_COMPLETENESS_THRESHOLD` from `translation_worker.py`
+- Simplified `_should_use_clause_fallback(text)` — completeness parameter removed, now purely structural: length > 80 chars AND clause count > 1 AND token count ≥ 5
+- `config.py`: renamed `validation_enabled` → `clause_fallback_enabled`, removed `validation_completeness_threshold`
+- `tests/test_adaptive_orchestration.py` updated to match new signature
+
+**Branch:** `claude/fix-duplicate-translations-R0f4d`
+
+---
+
 ## Current Initiative: Translation Completeness (v4) — 2026-04-22 ✅ COMPLETE
 
 **Issue Identified:** Sentence-level translation (Argos/ctranslate2) drops clauses and details on complex Chinese sentences.
@@ -370,24 +399,24 @@ See `DOMAIN_IMPROVEMENTS.md` for full technical details and implementation roadm
 
 | Milestone | Status | Notes |
 |---|---|---|
-| M1 — Post-Processing Validation | ✅ Done | Extract, detect, recover missing content (+30-50% gain) |
-| M2 — Clause-Level Fallback | ✅ Done | Split, translate, recombine clauses (+20-30% additional) |
-| M3 — Adaptive Orchestration | ✅ Done | Heuristic-based fallback decisions (1.5x speed) |
+| M1 — Post-Processing Validation | ❌ Removed (2026-04-28) | Produced garbled output; broken completeness scoring + harmful gloss-appending. See bug fix entry above. |
+| M2 — Clause-Level Fallback | ✅ Done | Split, translate, recombine clauses (+20-30% on complex sentences) |
+| M3 — Adaptive Orchestration | ✅ Done (simplified) | Structural heuristics only: length + clause count + token count |
 
 ---
 
-## v4 Milestone 1 — Post-Processing Validation & Recovery (COMPLETE ✅)
+## v4 Milestone 1 — Post-Processing Validation & Recovery (REMOVED ❌)
 
-**Objective:** After Argos translates, detect missing content and recover it using word-by-word dictionary.
+**Original objective:** After Argos translates, detect missing content and recover it using word-by-word dictionary.
 
-**Deliverables** (completed):
-1. ✅ Plan complete (via agent design)
-2. ✅ `src/zh_en_translator/engines/validation.py` (NEW) — Core validation logic
-3. ✅ `src/zh_en_translator/engines/translation_worker.py` (MODIFY) — Integrate validation
-4. ✅ `src/zh_en_translator/config.py` (MODIFY) — Feature flags
-5. ✅ `tests/test_validation.py` (NEW) — 48 comprehensive tests
+**Removed 2026-04-28** — the implementation was found to produce garbled translations in production.
+The completeness scoring used naive exact-string matching which was always wrong, causing the
+recovery step to fire on good MT output and append raw CC-CEDICT dictionary glosses to clean
+English sentences. See the "Bug Fix: Duplicate/Garbled Translations" entry for full analysis.
 
-**Achieved outcome:** 1.2x speed, +30-50% completeness gain
+**Deleted files:**
+- `src/zh_en_translator/engines/validation.py` — removed entirely
+- `tests/test_validation.py` — removed entirely
 
 ---
 
