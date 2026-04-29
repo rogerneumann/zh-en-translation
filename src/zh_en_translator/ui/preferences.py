@@ -652,9 +652,9 @@ class PreferencesDialog(QDialog):
         self._preview_frame.setStyleSheet(f"background: {bg}; border: 1px solid {palette.border}; border-radius: 12px; color: {palette.text};")
         ff = self._font_combo.currentData() if self._font_combo.currentIndex() >= 0 else self._font_combo.currentText().strip()
         fs = self._font_size_spin.value()
-        font = QFont(ff, fs) if ff else QFont("", fs)
+        font_css = f"font-family: '{ff}'; font-size: {fs}pt;" if ff else f"font-size: {fs}pt;"
         for lbl in (self._preview_pinyin, self._preview_source, self._preview_trans):
-            lbl.setFont(font)
+            lbl.setStyleSheet(font_css)
 
     def _on_apply(self):
         self.config = self._collect_config()
