@@ -499,6 +499,7 @@ class TranslatorApp(QObject):
         if not self.sidebar_mode:
             self.sidebar_mode = True
             self.config.mode = "sidebar"
+            save_config(self.config)
             self._update_tray_sidebar_label()
         if not self.sidebar.isVisible():
             self.sidebar.show()
