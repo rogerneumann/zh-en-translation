@@ -192,14 +192,14 @@ Write-Ok "PyInstaller found (via python -m PyInstaller)"
 Write-Step "Step 1.5: Installing package dependencies (pip install -e .)"
 Write-Host "    This ensures PyQt6, ctranslate2 etc. are present for PyInstaller to bundle." -ForegroundColor Gray
 
-& pip install -e . --quiet
+& python -m pip install -e . --quiet
 if ($LASTEXITCODE -ne 0) {
     # WinError 2 on f2py.exe (or similar) means a package's script file is missing
     # from Scripts\ but pip still tries to rename it. Force-reinstall numpy to repair
     # the broken state, then retry.
     Write-Host "    pip install failed -- attempting to repair broken package state..." -ForegroundColor Yellow
-    & pip install --force-reinstall --quiet numpy
-    & pip install -e . --quiet
+    & python -m pip install --force-reinstall --quiet numpy
+    & python -m pip install -e . --quiet
     if ($LASTEXITCODE -ne 0) {
         Write-Fail "pip install -e . failed (exit code $LASTEXITCODE)"
         Write-Host "    If you see a WinError 2 / .deleteme error for a .exe in Scripts\:" -ForegroundColor Yellow
