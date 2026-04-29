@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
@@ -119,32 +121,7 @@ class PreferencesDialog(QDialog):
 
     def __init__(self, config: Config, parent=None):
         super().__init__(parent)
-        self.config = Config(
-            hotkey=config.hotkey,
-            mode=config.mode,
-            startup=config.startup,
-            auto_check_updates=config.auto_check_updates,
-            font_family=config.font_family,
-            font_size=config.font_size,
-            bg_color=config.bg_color,
-            theme=config.theme,
-            side=config.side,
-            sidebar_y=config.sidebar_y,
-            sidebar_width=config.sidebar_width,
-            color_fresh=config.color_fresh,
-            color_idle=config.color_idle,
-            external_lookup_url=config.external_lookup_url,
-            ocr_engine=config.ocr_engine,
-            show_pinyin=config.show_pinyin,
-            pinyin_max_chars=config.pinyin_max_chars,
-            traditional_to_simplified=config.traditional_to_simplified,
-            ms_translator_enabled=config.ms_translator_enabled,
-            ms_translator_api_key=config.ms_translator_api_key,
-            ms_translator_region=config.ms_translator_region,
-            deepl_enabled=config.deepl_enabled,
-            deepl_api_key=config.deepl_api_key,
-            deepl_pro=config.deepl_pro,
-        )
+        self.config = dataclasses.replace(config)
 
         # Unsaved-changes tracking
         self._dirty = False
@@ -224,8 +201,24 @@ class PreferencesDialog(QDialog):
         trad_layout.addWidget(self._trad_to_simp_check)
         layout.addWidget(trad_group)
 
-        update_group = QGroupBox("Updates")
+        engine_group = QGroupBox("Translation Engine")
+        engine_layout = QVBoxLayout(engine_group)
+        seg_row = QHBoxLayout()
+        seg_row.addWidget(QLabel("Word segmenter:"))
+        self._segmenter_combo = QComboBox()
+        self._segmenter_combo.addItem("jieba  (default, fast)", userData="jieba")
+        self._segmenter_combo.addItem("pkuseg  (accurate, slower)", userData="pkuseg")
+        seg_row.addWidget(self._segmenter_combo)
+        seg_row.addStretch()
+        engine_layout.addLayout(seg_row)
+        self._clause_fallback_check = QCheckBox("Enable clause-level fallback for complex sentences")
+        engine_layout.addWidget(self._clause_fallback_check)
+        layout.addWidget(engine_group)
+
+        update_group = QGroupBox("Updates && Startup")
         update_layout = QVBoxLayout(update_group)
+        self._startup_check = QCheckBox("Launch at Windows login")
+        update_layout.addWidget(self._startup_check)
         self._auto_update_check = QCheckBox("Check for updates automatically on startup")
         update_layout.addWidget(self._auto_update_check)
         self._btn_check_now = QPushButton("Check for Updates Now")
@@ -330,6 +323,7 @@ class PreferencesDialog(QDialog):
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setSpacing(12)
+
         side_group = QGroupBox("Side")
         side_layout = QVBoxLayout(side_group)
         self._side_left  = QRadioButton("Left")
@@ -343,6 +337,33 @@ class PreferencesDialog(QDialog):
         pos_hint = QLabel("Interactive repositioning enabled: drag the strip to move, edge to resize.")
         pos_hint.setStyleSheet("color: gray; font-size: 9pt;")
         layout.addWidget(pos_hint)
+
+        width_group = QGroupBox("Width")
+        width_layout = QHBoxLayout(width_group)
+        width_layout.addWidget(QLabel("Sidebar width:"))
+        self._sidebar_width_spin = QSpinBox()
+        self._sidebar_width_spin.setRange(150, 600)
+        self._sidebar_width_spin.setSuffix(" px")
+        width_layout.addWidget(self._sidebar_width_spin)
+        width_layout.addStretch()
+        layout.addWidget(width_group)
+
+        colors_group = QGroupBox("Strip Indicator Colors")
+        colors_layout = QVBoxLayout(colors_group)
+        fresh_row = QHBoxLayout()
+        fresh_row.addWidget(QLabel("Fresh translation:"))
+        self._color_fresh_btn = _ColorSwatchButton()
+        fresh_row.addWidget(self._color_fresh_btn)
+        fresh_row.addStretch()
+        colors_layout.addLayout(fresh_row)
+        idle_row = QHBoxLayout()
+        idle_row.addWidget(QLabel("Idle:"))
+        self._color_idle_btn = _ColorSwatchButton()
+        idle_row.addWidget(self._color_idle_btn)
+        idle_row.addStretch()
+        colors_layout.addLayout(idle_row)
+        layout.addWidget(colors_group)
+
         layout.addStretch()
         return widget
 
@@ -621,25 +642,39 @@ class PreferencesDialog(QDialog):
     def _build_cloud_tab(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
+
         warning_box = QFrame()
         warning_box.setStyleSheet("background: #FFF4F0; border: 1px solid #CC4400; border-radius: 8px;")
         w_layout = QVBoxLayout(warning_box)
         w_layout.addWidget(QLabel(_CLOUD_WARNING))
         layout.addWidget(warning_box)
 
+        ms_group = QGroupBox("Azure Translator")
+        ms_layout = QVBoxLayout(ms_group)
         self._ms_enabled_check = QCheckBox("Enable Azure Cloud translation")
-        layout.addWidget(self._ms_enabled_check)
+        ms_layout.addWidget(self._ms_enabled_check)
+        ms_layout.addWidget(QLabel("API Key:"))
         self._ms_api_key_edit = QLineEdit()
         self._ms_api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        layout.addWidget(QLabel("Azure API Key:"))
-        layout.addWidget(self._ms_api_key_edit)
-        
+        ms_layout.addWidget(self._ms_api_key_edit)
+        ms_layout.addWidget(QLabel("Region (e.g. westeurope):"))
+        self._ms_region_edit = QLineEdit()
+        self._ms_region_edit.setPlaceholderText("Leave empty if not required")
+        ms_layout.addWidget(self._ms_region_edit)
+        layout.addWidget(ms_group)
+
+        deepl_group = QGroupBox("DeepL")
+        deepl_layout = QVBoxLayout(deepl_group)
         self._deepl_enabled_check = QCheckBox("Enable DeepL translation")
-        layout.addWidget(self._deepl_enabled_check)
+        deepl_layout.addWidget(self._deepl_enabled_check)
+        deepl_layout.addWidget(QLabel("API Key:"))
         self._deepl_key_edit = QLineEdit()
         self._deepl_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        layout.addWidget(QLabel("DeepL API Key:"))
-        layout.addWidget(self._deepl_key_edit)
+        deepl_layout.addWidget(self._deepl_key_edit)
+        self._deepl_pro_check = QCheckBox("Use DeepL Pro API endpoint")
+        deepl_layout.addWidget(self._deepl_pro_check)
+        layout.addWidget(deepl_group)
+
         layout.addStretch()
         return widget
 
@@ -680,6 +715,10 @@ class PreferencesDialog(QDialog):
         (self._mode_sidebar if cfg.mode == "sidebar" else self._mode_popup).setChecked(True)
         self._trad_to_simp_check.setChecked(cfg.traditional_to_simplified)
         self._auto_update_check.setChecked(cfg.auto_check_updates)
+        self._startup_check.setChecked(cfg.startup)
+        idx = self._segmenter_combo.findData(cfg.segmenter)
+        self._segmenter_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self._clause_fallback_check.setChecked(cfg.clause_fallback_enabled)
         # Display tab
         idx = self._theme_combo.findData(cfg.theme)
         self._theme_combo.setCurrentIndex(idx if idx >= 0 else 0)
@@ -698,6 +737,9 @@ class PreferencesDialog(QDialog):
         self._pinyin_max_spin.setEnabled(cfg.show_pinyin)
         # Sidebar tab
         (self._side_right if cfg.side == "right" else self._side_left).setChecked(True)
+        self._sidebar_width_spin.setValue(cfg.sidebar_width)
+        self._color_fresh_btn.set_color_str(cfg.color_fresh)
+        self._color_idle_btn.set_color_str(cfg.color_idle)
         # Lookup & OCR tab
         self._lookup_url_edit.setText(cfg.external_lookup_url)
         idx = self._ocr_combo.findData(cfg.ocr_engine)
@@ -708,8 +750,10 @@ class PreferencesDialog(QDialog):
         # Cloud tab
         self._ms_enabled_check.setChecked(cfg.ms_translator_enabled)
         self._ms_api_key_edit.setText(cfg.ms_translator_api_key)
+        self._ms_region_edit.setText(cfg.ms_translator_region)
         self._deepl_enabled_check.setChecked(cfg.deepl_enabled)
         self._deepl_key_edit.setText(cfg.deepl_api_key)
+        self._deepl_pro_check.setChecked(cfg.deepl_pro)
         self._update_preview()
         self._connect_dirty_signals()
 
@@ -717,7 +761,7 @@ class PreferencesDialog(QDialog):
         return Config(
             hotkey=self._hotkey_edit.text(),
             mode="sidebar" if self._mode_sidebar.isChecked() else "popup",
-            startup=self.config.startup,
+            startup=self._startup_check.isChecked(),
             auto_check_updates=self._auto_update_check.isChecked(),
             font_family=self._font_combo.currentData() if self._font_combo.currentIndex() >= 0 else self._font_combo.currentText().strip(),
             font_size=self._font_size_spin.value(),
@@ -725,20 +769,22 @@ class PreferencesDialog(QDialog):
             theme=self._theme_combo.currentData(),
             side="left" if self._side_left.isChecked() else "right",
             sidebar_y=self.config.sidebar_y,
-            sidebar_width=self.config.sidebar_width,
-            color_fresh=self.config.color_fresh,
-            color_idle=self.config.color_idle,
+            sidebar_width=self._sidebar_width_spin.value(),
+            color_fresh=self._color_fresh_btn.get_color_str() or "#00C9CC",
+            color_idle=self._color_idle_btn.get_color_str() or "#9E8080",
             external_lookup_url=self._lookup_url_edit.text(),
             ocr_engine=self._ocr_combo.currentData(),
             show_pinyin=self._show_pinyin_check.isChecked(),
             pinyin_max_chars=self._pinyin_max_spin.value(),
             traditional_to_simplified=self._trad_to_simp_check.isChecked(),
+            clause_fallback_enabled=self._clause_fallback_check.isChecked(),
+            segmenter=self._segmenter_combo.currentData() or "jieba",
             ms_translator_enabled=self._ms_enabled_check.isChecked(),
             ms_translator_api_key=self._ms_api_key_edit.text(),
-            ms_translator_region=self.config.ms_translator_region,
+            ms_translator_region=self._ms_region_edit.text().strip(),
             deepl_enabled=self._deepl_enabled_check.isChecked(),
             deepl_api_key=self._deepl_key_edit.text(),
-            deepl_pro=self.config.deepl_pro,
+            deepl_pro=self._deepl_pro_check.isChecked(),
         )
 
     def _check_updates_now(self):
