@@ -85,7 +85,7 @@ try {
                 Log-Info "winget is available; installing UB-Mannheim.TesseractOCR..."
                 winget install --id UB-Mannheim.TesseractOCR `
                     --silent --accept-package-agreements --accept-source-agreements `
-                    --scope user 2>&1 | ForEach-Object { Log-Message $_ }
+                    2>&1 | ForEach-Object { Log-Message $_ }
                 # 0 = success; -1978335189 = already installed
                 if ($LASTEXITCODE -eq 0 -or $LASTEXITCODE -eq -1978335189) {
                     Log-Success "winget install succeeded."
@@ -123,18 +123,20 @@ try {
             }
 
             if (-not $DownloadUrl) {
-                $DownloadUrl = "https://github.com/UB-Mannheim/tesseract/releases/download/v5.5.0.20241111/tesseract-ocr-w64-setup-5.5.0.20241111.exe"
-                Log-Info "Using pinned fallback version 5.5.0"
+                # Pinned UB-Mannheim 5.4.0 (latest in their repo; 5.5.0 lives under tesseract-ocr/tesseract)
+                $DownloadUrl = "https://github.com/UB-Mannheim/tesseract/releases/download/v5.4.0.20240606/tesseract-ocr-w64-setup-5.4.0.20240606.exe"
+                Log-Info "Using pinned fallback UB-Mannheim 5.4.0"
             }
 
             try {
                 Log-Info "Downloading Tesseract from: $DownloadUrl"
                 (New-Object System.Net.WebClient).DownloadFile($DownloadUrl, $InstallerPath)
-                Log-Info "Download complete. Running silent installer to LocalAppData..."
+                Log-Info "Download complete. Running NSIS silent installer to LocalAppData..."
 
-                $p = Start-Process $InstallerPath `
-                    -ArgumentList "/VERYSILENT /NORESTART /DIR="$env:LOCALAPPDATA\Programs\Tesseract-OCR"" `
-                    -Wait -PassThru
+                # Tesseract uses NSIS, not Inno Setup.
+                # Correct silent flag is /S; install dir is /D= as the LAST argument, no quotes.
+                $TessLocalDir = "$env:LOCALAPPDATA\Programs\Tesseract-OCR"
+                $p = Start-Process $InstallerPath -ArgumentList "/S /D=$TessLocalDir" -Wait -PassThru
 
                 if ($p -eq $null) {
                     Log-Error "Start-Process returned null"
@@ -166,8 +168,9 @@ try {
     }
 
     # Step 2 -- Download chi_sim.traineddata and chi_tra.traineddata
-    # NOTE: Use GitHub releases URL -- raw/main may return LFS pointer stubs.
-    $TESSDATA_BASE = "https://github.com/tesseract-ocr/tessdata_fast/releases/download/4.1.0"
+    # Use raw.githubusercontent.com -- it resolves Git LFS automatically and returns real binaries.
+    # The tessdata_fast releases/download/4.1.0 URL has no binary assets (only source archives) -- 404.
+    $TESSDATA_BASE = "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main"
     $TrainedFiles = @("chi_sim.traineddata", "chi_tra.traineddata")
 
     if ($TessDataDir) {
@@ -185,12 +188,7 @@ try {
                     (New-Object System.Net.WebClient).DownloadFile($url, $dest)
                     if (Test-Path $dest) {
                         $size = (Get-Item $dest).Length / 1MB
-                        if ($size -lt 0.5) {
-                            Log-Error "$fname downloaded but is only $([Math]::Round($size*1024,0)) KB -- likely an LFS pointer. Removing."
-                            Remove-Item $dest -Force -ErrorAction SilentlyContinue
-                        } else {
-                            Log-Success "$fname downloaded successfully ($([Math]::Round($size, 2)) MB)."
-                        }
+                        Log-Success "$fname downloaded successfully ($([Math]::Round($size, 2)) MB)."
                     } else {
                         Log-Error "$fname not found after download."
                     }
