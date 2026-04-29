@@ -267,12 +267,10 @@ begin
     if not (WinOcrAvailable and BundleExists('tesseract-bundle\tesseract.exe')) then
     begin
       if MsgBox(
-          'OCR features need a one-time administrator prompt to complete setup.' + #13#10 +
-          #13#10 +
+          'OCR features need a one-time administrator prompt to complete setup.' + #13#10#13#10 +
           'This will:' + #13#10 +
           '  - Install Windows OCR Chinese language support' + #13#10 +
-          '  - Install Tesseract as an OCR backup (if not already present)' + #13#10 +
-          #13#10 +
+          '  - Install Tesseract as an OCR backup (if not already present)' + #13#10#13#10 +
           'Click OK to allow (one UAC prompt), or Cancel to configure later via Preferences.',
           mbConfirmation, MB_OKCANCEL) = IDOK then
       begin
