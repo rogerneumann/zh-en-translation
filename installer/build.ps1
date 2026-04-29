@@ -308,19 +308,21 @@ and used it instead of bundling a new copy.
         }
 
         Write-Host "    Installing Tesseract to tesseract-bundle\..." -ForegroundColor Gray
-        $p = Start-Process $TessSetup -ArgumentList "/VERYSILENT /NORESTART /DIR=`"$TessBundle`"" -Wait -PassThru -Verb RunAs
+        # Tesseract installer is NSIS. Silent flag is /S; /D= must be last arg with no quotes.
+        $p = Start-Process $TessSetup -ArgumentList "/S /D=$TessBundle" -Wait -PassThru -Verb RunAs
         Remove-Item $TessSetup -Force -ErrorAction SilentlyContinue
         if ($p.ExitCode -ne 0) { Write-Fail "Tesseract install failed (exit $($p.ExitCode))"; exit 1 }
 
         # Download chi_sim + chi_tra traineddata
-        # Use GitHub releases URL -- raw/main serves LFS pointer stubs, not real files
+        # raw.githubusercontent.com resolves Git LFS and returns real binaries (~2-3 MB each).
+        # tessdata_fast/releases/download/4.1.0 has no binary assets -- returns 404.
         $TessData = Join-Path $TessBundle "tessdata"
         New-Item -ItemType Directory -Force -Path $TessData | Out-Null
-        $TessDataBase = "https://github.com/tesseract-ocr/tessdata_fast/releases/download/4.1.0"
+        $TessDataBase = "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main"
         foreach ($tdFile in @("chi_sim.traineddata", "chi_tra.traineddata")) {
             $tdDest = Join-Path $TessData $tdFile
             if (-not (Test-Path $tdDest)) {
-                Write-Host "    Downloading $tdFile (~6-20 MB)..." -ForegroundColor Gray
+                Write-Host "    Downloading $tdFile (~2-3 MB)..." -ForegroundColor Gray
                 if (-not (Download-FileWithRetry -Url "$TessDataBase/$tdFile" -OutPath $tdDest -MaxRetries 3 -TimeoutSeconds 600)) {
                     Write-Host "    WARNING: $tdFile download failed. Chinese OCR may not work." -ForegroundColor Yellow
                 }
@@ -344,19 +346,21 @@ and used it instead of bundling a new copy.
         }
 
         Write-Host "    Installing Tesseract to tesseract-bundle\..." -ForegroundColor Gray
-        $p = Start-Process $TessSetup -ArgumentList "/VERYSILENT /NORESTART /DIR=`"$TessBundle`"" -Wait -PassThru -Verb RunAs
+        # Tesseract installer is NSIS. Silent flag is /S; /D= must be last arg with no quotes.
+        $p = Start-Process $TessSetup -ArgumentList "/S /D=$TessBundle" -Wait -PassThru -Verb RunAs
         Remove-Item $TessSetup -Force -ErrorAction SilentlyContinue
         if ($p.ExitCode -ne 0) { Write-Fail "Tesseract install failed (exit $($p.ExitCode))"; exit 1 }
 
         # Download chi_sim + chi_tra traineddata
-        # Use GitHub releases URL -- raw/main serves LFS pointer stubs, not real files
+        # raw.githubusercontent.com resolves Git LFS and returns real binaries (~2-3 MB each).
+        # tessdata_fast/releases/download/4.1.0 has no binary assets -- returns 404.
         $TessData = Join-Path $TessBundle "tessdata"
         New-Item -ItemType Directory -Force -Path $TessData | Out-Null
-        $TessDataBase = "https://github.com/tesseract-ocr/tessdata_fast/releases/download/4.1.0"
+        $TessDataBase = "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main"
         foreach ($tdFile in @("chi_sim.traineddata", "chi_tra.traineddata")) {
             $tdDest = Join-Path $TessData $tdFile
             if (-not (Test-Path $tdDest)) {
-                Write-Host "    Downloading $tdFile (~6-20 MB)..." -ForegroundColor Gray
+                Write-Host "    Downloading $tdFile (~2-3 MB)..." -ForegroundColor Gray
                 if (-not (Download-FileWithRetry -Url "$TessDataBase/$tdFile" -OutPath $tdDest -MaxRetries 3 -TimeoutSeconds 600)) {
                     Write-Host "    WARNING: $tdFile download failed. Chinese OCR may not work." -ForegroundColor Yellow
                 }

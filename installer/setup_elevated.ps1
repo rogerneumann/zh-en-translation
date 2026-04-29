@@ -91,8 +91,9 @@ try {
         }
 
         if (-not $DownloadUrl) {
-            $DownloadUrl = "https://github.com/UB-Mannheim/tesseract/releases/download/v5.5.0.20241111/tesseract-ocr-w64-setup-5.5.0.20241111.exe"
-            Write-Log "Using pinned fallback version 5.5.0" "Cyan"
+            # Pinned UB-Mannheim 5.4.0 (their latest; 5.5.0 is under tesseract-ocr/tesseract not UB-Mannheim)
+            $DownloadUrl = "https://github.com/UB-Mannheim/tesseract/releases/download/v5.4.0.20240606/tesseract-ocr-w64-setup-5.4.0.20240606.exe"
+            Write-Log "Using pinned fallback UB-Mannheim 5.4.0" "Cyan"
         }
 
         $InstallerPath = Join-Path $env:TEMP "tesseract-ocr-setup-elevated.exe"
@@ -100,7 +101,8 @@ try {
         try {
             Write-Log "Downloading Tesseract installer..." "Cyan"
             (New-Object System.Net.WebClient).DownloadFile($DownloadUrl, $InstallerPath)
-            $p = Start-Process $InstallerPath -ArgumentList @("/VERYSILENT", "/NORESTART", "/DIR=`"$TessInstallDir`"") -Wait -PassThru
+            # Tesseract uses NSIS, not Inno Setup. Silent flag is /S; dir is /D= as LAST arg, no quotes.
+            $p = Start-Process $InstallerPath -ArgumentList "/S /D=$TessInstallDir" -Wait -PassThru
             if ($p -and $p.ExitCode -eq 0) {
                 Write-Log "Tesseract installed to Program Files (exit 0)." "Green"
             } else {
@@ -121,7 +123,9 @@ try {
     $pfTessData = "C:\Program Files\Tesseract-OCR\tessdata"
     if (Test-Path (Split-Path $pfTessData)) {
         New-Item -ItemType Directory -Force -Path $pfTessData | Out-Null
-        $TESSDATA_BASE = "https://github.com/tesseract-ocr/tessdata_fast/releases/download/4.1.0"
+        # raw.githubusercontent.com resolves Git LFS -- returns real binaries, not pointer stubs.
+        # The tessdata_fast releases/download/4.1.0 tag has NO binary assets (only source archives).
+        $TESSDATA_BASE = "https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main"
         foreach ($fname in @("chi_sim.traineddata", "chi_tra.traineddata")) {
             $dest = Join-Path $pfTessData $fname
             if (-not (Test-Path $dest)) {
@@ -129,12 +133,7 @@ try {
                     Write-Log "Downloading $fname to Program Files tessdata..." "Cyan"
                     (New-Object System.Net.WebClient).DownloadFile("$TESSDATA_BASE/$fname", $dest)
                     $size = (Get-Item $dest -ErrorAction SilentlyContinue).Length / 1MB
-                    if ($size -lt 0.5) {
-                        Remove-Item $dest -Force -ErrorAction SilentlyContinue
-                        Write-Log "LFS pointer stub detected for $fname -- removed." "Yellow"
-                    } else {
-                        Write-Log "Downloaded $fname ($([Math]::Round($size, 2)) MB)" "Green"
-                    }
+                    Write-Log "Downloaded $fname ($([Math]::Round($size, 2)) MB)" "Green"
                 } catch {
                     Write-Log "Failed to download $fname: $_" "Yellow"
                 }
