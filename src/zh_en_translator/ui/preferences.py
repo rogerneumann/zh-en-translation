@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import dataclasses
 
-from PyQt6.QtCore import pyqtSignal
+import time as _time
+
+from PyQt6.QtCore import pyqtSignal, QTimer
 from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QDialog,
@@ -72,6 +74,95 @@ _FONT_CHOICES = [
     "Noto Sans",
 ]
 
+_SPIN_FRAMES = ('⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏')
+_INSTALL_LOG_NAME = 'zh-en-translator-elevated-setup.log'
+
+# Muted style for "Reinstall" buttons (already installed, but re-clickable)
+_REINSTALL_STYLE = (
+    "QPushButton { color: #888; background: rgba(0,0,0,0.03); "
+    "border: 1px solid rgba(0,0,0,0.08); border-radius: 12px; padding: 5px 15px; }"
+    "QPushButton:hover { color: #333; background: rgba(0,0,0,0.06); }"
+)
+
+
+class _InstallMonitor:
+    """Polls the elevated-setup log file and drives a spinner QLabel in the UI.
+
+    The elevated PowerShell process writes timestamped lines to the log. This
+    monitor reads the last non-empty line every tick, strips the timestamp
+    prefix, and updates the label with a braille spinner + message + elapsed
+    time counter. It stops when it sees 'SETUP_STATUS:' in the log.
+    """
+
+    def __init__(self, status_label: 'QLabel', on_done):
+        import os
+        self._log_path = os.path.join(
+            os.environ.get('TEMP', os.path.expanduser('~')), _INSTALL_LOG_NAME
+        )
+        self._label = status_label
+        self._on_done = on_done
+        self._frame = 0
+        self._start = 0.0
+        self._last_msg = ''
+        self._timer = QTimer()
+        self._timer.timeout.connect(self._tick)
+
+    def start(self) -> None:
+        self._start = _time.monotonic()
+        self._last_msg = ''
+        self._frame = 0
+        self._label.setVisible(True)
+        self._label.setText('⠋  Starting installer…  (0:00)')
+        self._label.setStyleSheet('color: #555;')
+        self._timer.start(150)
+
+    def stop(self) -> None:
+        self._timer.stop()
+
+    def _elapsed(self) -> str:
+        s = int(_time.monotonic() - self._start)
+        return f'{s // 60}:{s % 60:02d}'
+
+    def _read_last_line(self) -> str:
+        try:
+            with open(self._log_path, encoding='utf-8-sig', errors='replace') as fh:
+                lines = fh.readlines()
+            for raw in reversed(lines):
+                line = raw.strip()
+                if not line:
+                    continue
+                # strip "[YYYY-MM-DD HH:MM:SS] " prefix written by Write-Log
+                if line.startswith('[') and '] ' in line:
+                    line = line[line.index('] ') + 2:]
+                return line
+        except OSError:
+            pass
+        return self._last_msg
+
+    def _tick(self) -> None:
+        self._frame = (self._frame + 1) % len(_SPIN_FRAMES)
+        line = self._read_last_line()
+        if line:
+            self._last_msg = line
+
+        if 'SETUP_STATUS:' in self._last_msg:
+            self.stop()
+            success = 'SUCCESS' in self._last_msg
+            if success:
+                self._label.setText('✓  Setup complete')
+                self._label.setStyleSheet('color: #1a7a1a; font-weight: bold;')
+            else:
+                self._label.setText('Setup encountered errors — check the log')
+                self._label.setStyleSheet('color: #b85c00; font-weight: bold;')
+            self._on_done(success)
+            return
+
+        spin = _SPIN_FRAMES[self._frame]
+        msg = self._last_msg or 'Starting…'
+        self._label.setText(f'{spin}  {msg}  ({self._elapsed()})')
+        self._label.setStyleSheet('color: #555;')
+
+
 class _ColorSwatchButton(QPushButton):
     """Button that shows a colour swatch and opens QColorDialog on click."""
 
@@ -130,6 +221,7 @@ class PreferencesDialog(QDialog):
         self.setMinimumWidth(540)
         self._apply_global_styling()
 
+        self._install_monitor: '_InstallMonitor | None' = None
         self._setup_ui()
         self._load_config_into_ui()
 
@@ -374,9 +466,15 @@ class PreferencesDialog(QDialog):
         return widget
 
     def _build_lookup_ocr_tab(self) -> QWidget:
+        import sys
+        import shutil
+        import os
+        from zh_en_translator.engines.ocr import windows_ocr as _wocr
+
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setSpacing(12)
+
         lookup_group = QGroupBox("External Lookup")
         lookup_layout = QVBoxLayout(lookup_group)
         self._lookup_url_edit = QLineEdit()
@@ -385,181 +483,132 @@ class PreferencesDialog(QDialog):
         hint.setStyleSheet("color: gray; font-size: 9pt;")
         lookup_layout.addWidget(hint)
         layout.addWidget(lookup_group)
+
         ocr_group = QGroupBox("OCR Engine")
         ocr_layout = QVBoxLayout(ocr_group)
         self._ocr_combo = QComboBox()
-        for label, val in [
+        for lbl_text, val in [
             ("Auto", "auto"), ("Windows", "windows"),
             ("Tesseract", "tesseract"), ("PaddleOCR", "paddle"),
         ]:
-            self._ocr_combo.addItem(label, val)
+            self._ocr_combo.addItem(lbl_text, val)
         ocr_layout.addWidget(self._ocr_combo)
         layout.addWidget(ocr_group)
 
-        # Windows OCR status
-        import sys
-        import shutil
-        import os
-        from zh_en_translator.engines.ocr import windows_ocr as _wocr
-
+        # ---- Windows OCR group ----
         win_group = QGroupBox("Windows OCR (primary engine)")
         win_layout = QVBoxLayout(win_group)
 
         wstatus = _wocr.ocr_status()
+        self._btn_win_ocr_install = None
+
         if not wstatus["api"]:
-            _wlabel = QLabel("Windows OCR API unavailable — winrt/winsdk package not installed.")
-            _wlabel.setWordWrap(True)
-            _wlabel.setStyleSheet("color: #888;")
-            win_layout.addWidget(_wlabel)
-        elif not wstatus["chinese"]:
-            _wlabel = QLabel(
-                "Windows OCR ready, but no Chinese language pack is installed.\n"
-                "OCR will fall back to Tesseract until the Chinese pack is added."
+            self._win_ocr_static_lbl = QLabel(
+                "Windows OCR API unavailable — winrt/winsdk package not installed."
             )
-            _wlabel.setWordWrap(True)
-            _wlabel.setStyleSheet("color: #b85c00; font-weight: bold;")
-            win_layout.addWidget(_wlabel)
+            self._win_ocr_static_lbl.setWordWrap(True)
+            self._win_ocr_static_lbl.setStyleSheet("color: #888;")
+            win_layout.addWidget(self._win_ocr_static_lbl)
+        else:
+            if not wstatus["chinese"]:
+                self._win_ocr_static_lbl = QLabel(
+                    "Windows OCR ready, but no Chinese language pack is installed.\n"
+                    "OCR will fall back to Tesseract until the Chinese pack is added."
+                )
+                self._win_ocr_static_lbl.setStyleSheet("color: #b85c00; font-weight: bold;")
+            else:
+                self._win_ocr_static_lbl = QLabel(
+                    "Windows OCR: ready — Chinese language pack installed."
+                )
+                self._win_ocr_static_lbl.setStyleSheet("color: #1a7a1a; font-weight: bold;")
+            self._win_ocr_static_lbl.setWordWrap(True)
+            win_layout.addWidget(self._win_ocr_static_lbl)
 
             if sys.platform == "win32":
-                def _install_win_ocr():
-                    import ctypes
-                    import pathlib
-                    candidates = [
-                        pathlib.Path(sys.executable).parent / "setup_elevated.ps1",
-                        pathlib.Path(__file__).parents[3] / "installer" / "setup_elevated.ps1",
-                    ]
-                    script = next((p for p in candidates if p.exists()), None)
-                    if not script:
-                        QMessageBox.warning(
-                            self, "Script Not Found",
-                            "setup_elevated.ps1 not found.\n\n"
-                            "Install manually via Windows Settings -> Time & Language -> "
-                            "Language & Region -> Add a language (Chinese Simplified).",
-                        )
-                        return
-                    args = f'-ExecutionPolicy Bypass -WindowStyle Normal -File "{script}"'
-                    ret = ctypes.windll.shell32.ShellExecuteW(
-                        None, "runas", "powershell.exe", args, str(script.parent), 1
-                    )
-                    if int(ret) > 32:
-                        QMessageBox.information(
-                            self, "Installing Windows OCR",
-                            "An administrator (UAC) prompt will appear — please allow it.\n"
-                            "Reopen Preferences when it finishes to verify the status.\n\n"
-                            "Log: %TEMP%\\zh-en-translator-elevated-setup.log",
-                        )
-                    elif int(ret) != 5:  # 5 = user cancelled UAC — no message needed
-                        QMessageBox.warning(
-                            self, "Launch Failed",
-                            f"Could not start the elevated installer (error {int(ret)})."
-                        )
+                self._btn_win_ocr_install = QPushButton(
+                    "Reinstall Chinese OCR" if wstatus["chinese"]
+                    else "Install Chinese OCR (requires admin)"
+                )
+                if wstatus["chinese"]:
+                    self._btn_win_ocr_install.setStyleSheet(_REINSTALL_STYLE)
+                self._btn_win_ocr_install.clicked.connect(
+                    lambda: self._do_install(self._btn_win_ocr_install, self._win_ocr_status_lbl)
+                )
+                win_layout.addWidget(self._btn_win_ocr_install)
 
-                btn_win_ocr = QPushButton("Install Chinese OCR (requires admin)")
-                btn_win_ocr.clicked.connect(_install_win_ocr)
-                win_layout.addWidget(btn_win_ocr)
-        else:
-            _wlabel = QLabel("Windows OCR: ready — Chinese language pack installed.")
-            _wlabel.setStyleSheet("color: #1a7a1a; font-weight: bold;")
-            win_layout.addWidget(_wlabel)
-
+        self._win_ocr_status_lbl = QLabel()
+        self._win_ocr_status_lbl.setWordWrap(True)
+        self._win_ocr_status_lbl.setVisible(False)
+        win_layout.addWidget(self._win_ocr_status_lbl)
         layout.addWidget(win_group)
 
-        # Tesseract status
+        # ---- Tesseract group ----
         tess_group = QGroupBox("Tesseract Status (optional fallback — Windows OCR is primary)")
         tess_layout = QVBoxLayout(tess_group)
 
         tess_path = shutil.which("tesseract")
         if not tess_path and sys.platform == "win32":
-            candidates = [
+            for c in [
                 os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe"),
                 r"C:\Program Files\Tesseract-OCR\tesseract.exe",
                 os.path.expandvars(r"%LOCALAPPDATA%\Tesseract-OCR\tesseract.exe"),
                 os.path.expandvars(r"%APPDATA%\Tesseract-OCR\tesseract.exe"),
-            ]
-            for c in candidates:
+            ]:
                 if os.path.isfile(c):
                     tess_path = c
                     break
 
         if tess_path:
-            status_label = QLabel(f"Tesseract: Found at {tess_path}")
-            status_label.setStyleSheet("color: #1a7a1a; font-weight: bold;")
-            tess_layout.addWidget(status_label)
+            self._tess_static_lbl = QLabel(f"Tesseract: Found at {tess_path}")
+            self._tess_static_lbl.setStyleSheet("color: #1a7a1a; font-weight: bold;")
         else:
-            note = QLabel(
+            self._tess_static_lbl = QLabel(
                 "Tesseract not found. OCR still works via Windows OCR (the primary engine).\n"
                 "Install Tesseract only if Windows OCR is unavailable on your system."
             )
-            note.setWordWrap(True)
-            note.setStyleSheet("color: #555;")
-            tess_layout.addWidget(note)
+            self._tess_static_lbl.setWordWrap(True)
+            self._tess_static_lbl.setStyleSheet("color: #555;")
+        tess_layout.addWidget(self._tess_static_lbl)
 
-            btn_row = QHBoxLayout()
+        btn_row = QHBoxLayout()
+        self._btn_tess_install = None
 
-            if sys.platform == "win32":
-                def _install_tesseract():
-                    import ctypes
-                    import pathlib
-                    # setup_elevated.ps1 covers Tesseract + Windows OCR in one elevated pass.
-                    # install_tesseract.ps1 (user-level) cannot work: UB-Mannheim NSIS always
-                    # has RequestExecutionLevel admin, so it needs a real admin token.
-                    candidates = [
-                        pathlib.Path(sys.executable).parent / "setup_elevated.ps1",
-                        pathlib.Path(__file__).parents[3] / "installer" / "setup_elevated.ps1",
-                    ]
-                    script = next((p for p in candidates if p.exists()), None)
-                    if not script:
-                        QMessageBox.warning(
-                            self,
-                            "Script Not Found",
-                            "setup_elevated.ps1 not found.\n\n"
-                            "Download and install Tesseract manually from:\n"
-                            "https://github.com/UB-Mannheim/tesseract/wiki",
-                        )
-                        return
-                    args = f'-ExecutionPolicy Bypass -WindowStyle Normal -File "{script}"'
-                    ret = ctypes.windll.shell32.ShellExecuteW(
-                        None, "runas", "powershell.exe", args, str(script.parent), 1
-                    )
-                    if int(ret) > 32:
-                        QMessageBox.information(
-                            self,
-                            "Installing Tesseract",
-                            "An administrator (UAC) prompt will appear — please allow it.\n"
-                            "Reopen Preferences when it finishes to verify the status.\n\n"
-                            "Log: %TEMP%\\zh-en-translator-elevated-setup.log",
-                        )
-                    elif int(ret) != 5:  # 5 = user cancelled UAC — no message needed
-                        QMessageBox.warning(
-                            self, "Launch Failed",
-                            f"Could not start the elevated installer (error {int(ret)})."
-                        )
+        if sys.platform == "win32":
+            self._btn_tess_install = QPushButton(
+                "Reinstall Tesseract" if tess_path else "Install Tesseract"
+            )
+            if tess_path:
+                self._btn_tess_install.setStyleSheet(_REINSTALL_STYLE)
+            self._btn_tess_install.clicked.connect(
+                lambda: self._do_install(self._btn_tess_install, self._tess_status_lbl)
+            )
+            btn_row.addWidget(self._btn_tess_install)
 
-                btn_install = QPushButton("Install Tesseract")
-                btn_install.clicked.connect(_install_tesseract)
-                btn_row.addWidget(btn_install)
-
-            def _open_tess_log():
-                import subprocess
-                log_path = os.path.join(
-                    os.environ.get("TEMP", os.path.expanduser("~")),
-                    "zh-en-translator-elevated-setup.log",
+        def _open_tess_log():
+            import subprocess
+            log_path = os.path.join(
+                os.environ.get("TEMP", os.path.expanduser("~")),
+                "zh-en-translator-elevated-setup.log",
+            )
+            if os.path.isfile(log_path):
+                subprocess.Popen(["notepad.exe", log_path])
+            else:
+                QMessageBox.information(
+                    self, "Log Not Found",
+                    f"No install log found at:\n{log_path}\n\n"
+                    "Click 'Install Tesseract' to run the installer.",
                 )
-                if os.path.isfile(log_path):
-                    subprocess.Popen(["notepad.exe", log_path])
-                else:
-                    QMessageBox.information(
-                        self,
-                        "Log Not Found",
-                        f"No install log found at:\n{log_path}\n\n"
-                        "Click 'Install Tesseract' to run the installer.",
-                    )
 
-            btn_open_log = QPushButton("View Log")
-            btn_open_log.clicked.connect(_open_tess_log)
-            btn_row.addWidget(btn_open_log)
-            btn_row.addStretch()
-            tess_layout.addLayout(btn_row)
+        btn_open_log = QPushButton("View Log")
+        btn_open_log.clicked.connect(_open_tess_log)
+        btn_row.addWidget(btn_open_log)
+        btn_row.addStretch()
+        tess_layout.addLayout(btn_row)
+
+        self._tess_status_lbl = QLabel()
+        self._tess_status_lbl.setWordWrap(True)
+        self._tess_status_lbl.setVisible(False)
+        tess_layout.addWidget(self._tess_status_lbl)
 
         layout.addWidget(tess_group)
         layout.addStretch()
@@ -851,6 +900,101 @@ class PreferencesDialog(QDialog):
             deepl_pro=self._deepl_pro_check.isChecked(),
         )
 
+    def _do_install(self, trigger_btn: QPushButton, status_lbl: QLabel) -> None:
+        """Launch setup_elevated.ps1 elevated and start the spinner monitor."""
+        import ctypes
+        import sys
+        import pathlib
+
+        if self._install_monitor is not None:
+            return  # already running
+
+        candidates = [
+            pathlib.Path(sys.executable).parent / "setup_elevated.ps1",
+            pathlib.Path(__file__).parents[3] / "installer" / "setup_elevated.ps1",
+        ]
+        script = next((p for p in candidates if p.exists()), None)
+        if not script:
+            QMessageBox.warning(
+                self, "Script Not Found",
+                "setup_elevated.ps1 not found.\n\n"
+                "Install manually via Windows Settings -> Time & Language -> "
+                "Language & Region -> Add a language (Chinese Simplified).",
+            )
+            return
+
+        args = f'-ExecutionPolicy Bypass -WindowStyle Normal -File "{script}"'
+        ret = ctypes.windll.shell32.ShellExecuteW(
+            None, "runas", "powershell.exe", args, str(script.parent), 1
+        )
+        if int(ret) == 5:  # user cancelled UAC — no message needed
+            return
+        if int(ret) <= 32:
+            QMessageBox.warning(
+                self, "Launch Failed",
+                f"Could not start the elevated installer (error {int(ret)}).",
+            )
+            return
+
+        trigger_btn.setEnabled(False)
+        trigger_btn.setText("Installing…")
+        trigger_btn.setStyleSheet("")
+
+        def _on_done(success: bool) -> None:
+            self._install_monitor = None
+            self._refresh_install_buttons()
+
+        self._install_monitor = _InstallMonitor(status_lbl, _on_done)
+        self._install_monitor.start()
+
+    def _refresh_install_buttons(self) -> None:
+        """Re-probe install state after setup completes and update button labels/styles."""
+        import sys
+        import shutil
+        import os
+        from zh_en_translator.engines.ocr import windows_ocr as _wocr
+
+        if self._btn_tess_install is not None:
+            tess_path = shutil.which("tesseract")
+            if not tess_path:
+                for c in [
+                    os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe"),
+                    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+                    os.path.expandvars(r"%LOCALAPPDATA%\Tesseract-OCR\tesseract.exe"),
+                    os.path.expandvars(r"%APPDATA%\Tesseract-OCR\tesseract.exe"),
+                ]:
+                    if os.path.isfile(c):
+                        tess_path = c
+                        break
+            self._btn_tess_install.setEnabled(True)
+            if tess_path:
+                self._btn_tess_install.setText("Reinstall Tesseract")
+                self._btn_tess_install.setStyleSheet(_REINSTALL_STYLE)
+                self._tess_static_lbl.setText(f"Tesseract: Found at {tess_path}")
+                self._tess_static_lbl.setStyleSheet("color: #1a7a1a; font-weight: bold;")
+            else:
+                self._btn_tess_install.setText("Install Tesseract")
+                self._btn_tess_install.setStyleSheet("")
+                self._tess_static_lbl.setText(
+                    "Tesseract not found. OCR still works via Windows OCR (the primary engine).\n"
+                    "Install Tesseract only if Windows OCR is unavailable on your system."
+                )
+                self._tess_static_lbl.setStyleSheet("color: #555;")
+
+        if self._btn_win_ocr_install is not None:
+            wstatus = _wocr.ocr_status()
+            self._btn_win_ocr_install.setEnabled(True)
+            if wstatus["chinese"]:
+                self._btn_win_ocr_install.setText("Reinstall Chinese OCR")
+                self._btn_win_ocr_install.setStyleSheet(_REINSTALL_STYLE)
+                self._win_ocr_static_lbl.setText(
+                    "Windows OCR: ready — Chinese language pack installed."
+                )
+                self._win_ocr_static_lbl.setStyleSheet("color: #1a7a1a; font-weight: bold;")
+            else:
+                self._btn_win_ocr_install.setText("Install Chinese OCR (requires admin)")
+                self._btn_win_ocr_install.setStyleSheet("")
+
     def _check_updates_now(self):
         from zh_en_translator.engines.updates import get_latest_release, is_newer
         from zh_en_translator import __version__
@@ -879,6 +1023,9 @@ class PreferencesDialog(QDialog):
             )
 
     def closeEvent(self, event):
+        if self._install_monitor is not None:
+            self._install_monitor.stop()
+            self._install_monitor = None
         if not self._skip_close_check and self._dirty:
             answer = QMessageBox.question(
                 self, "Unsaved Changes", "Save before closing?",
