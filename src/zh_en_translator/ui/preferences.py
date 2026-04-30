@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import dataclasses
+
 from PyQt6.QtCore import pyqtSignal, Qt
 from PyQt6.QtGui import QColor, QFont
 from PyQt6.QtWidgets import (
@@ -16,7 +18,6 @@ from PyQt6.QtWidgets import (
     QSpinBox,
     QRadioButton,
     QButtonGroup,
-    QFontComboBox,
     QPushButton,
     QColorDialog,
     QComboBox,
@@ -48,6 +49,29 @@ _PREVIEW_TRANS  = "Hello, world."
 
 # Windows 11 / Microsoft 365 modern font stack
 _FONT_STACK = "'Segoe UI Variable Display', 'Aptos', 'Segoe UI', 'Microsoft YaHei', 'sans-serif'"
+
+# Curated font list shown in the font picker (user can still type any name)
+_FONT_CHOICES = [
+    "",                        # (system default)
+    "Aptos",
+    "Aptos Display",
+    "Segoe UI Variable Display",
+    "Segoe UI",
+    "Calibri",
+    "Arial",
+    "Verdana",
+    "Tahoma",
+    "Trebuchet MS",
+    "Georgia",
+    "Cambria",
+    "Consolas",
+    "Courier New",
+    "Microsoft YaHei",
+    "Microsoft JhengHei",
+    "SimSun",
+    "SimHei",
+    "Noto Sans",
+]
 
 class _ColorSwatchButton(QPushButton):
     """Button that shows a colour swatch and opens QColorDialog on click."""
@@ -97,32 +121,7 @@ class PreferencesDialog(QDialog):
 
     def __init__(self, config: Config, parent=None):
         super().__init__(parent)
-        self.config = Config(
-            hotkey=config.hotkey,
-            mode=config.mode,
-            startup=config.startup,
-            auto_check_updates=config.auto_check_updates,
-            font_family=config.font_family,
-            font_size=config.font_size,
-            bg_color=config.bg_color,
-            theme=config.theme,
-            side=config.side,
-            sidebar_y=config.sidebar_y,
-            sidebar_width=config.sidebar_width,
-            color_fresh=config.color_fresh,
-            color_idle=config.color_idle,
-            external_lookup_url=config.external_lookup_url,
-            ocr_engine=config.ocr_engine,
-            show_pinyin=config.show_pinyin,
-            pinyin_max_chars=config.pinyin_max_chars,
-            traditional_to_simplified=config.traditional_to_simplified,
-            ms_translator_enabled=config.ms_translator_enabled,
-            ms_translator_api_key=config.ms_translator_api_key,
-            ms_translator_region=config.ms_translator_region,
-            deepl_enabled=config.deepl_enabled,
-            deepl_api_key=config.deepl_api_key,
-            deepl_pro=config.deepl_pro,
-        )
+        self.config = dataclasses.replace(config)
 
         # Unsaved-changes tracking
         self._dirty = False
@@ -202,12 +201,29 @@ class PreferencesDialog(QDialog):
         trad_layout.addWidget(self._trad_to_simp_check)
         layout.addWidget(trad_group)
 
-        update_group = QGroupBox("Updates")
+        engine_group = QGroupBox("Translation Engine")
+        engine_layout = QVBoxLayout(engine_group)
+        seg_row = QHBoxLayout()
+        seg_row.addWidget(QLabel("Word segmenter:"))
+        self._segmenter_combo = QComboBox()
+        self._segmenter_combo.addItem("jieba  (default, fast)", userData="jieba")
+        self._segmenter_combo.addItem("pkuseg  (accurate, slower)", userData="pkuseg")
+        seg_row.addWidget(self._segmenter_combo)
+        seg_row.addStretch()
+        engine_layout.addLayout(seg_row)
+        self._clause_fallback_check = QCheckBox("Enable clause-level fallback for complex sentences")
+        engine_layout.addWidget(self._clause_fallback_check)
+        layout.addWidget(engine_group)
+
+        update_group = QGroupBox("Updates && Startup")
         update_layout = QVBoxLayout(update_group)
+        self._startup_check = QCheckBox("Launch at Windows login")
+        update_layout.addWidget(self._startup_check)
         self._auto_update_check = QCheckBox("Check for updates automatically on startup")
         update_layout.addWidget(self._auto_update_check)
         self._btn_check_now = QPushButton("Check for Updates Now")
         self._btn_check_now.setFixedWidth(180)
+        self._btn_check_now.clicked.connect(self._check_updates_now)
         update_layout.addWidget(self._btn_check_now)
         layout.addWidget(update_group)
 
@@ -239,8 +255,11 @@ class PreferencesDialog(QDialog):
         font_layout = QVBoxLayout(font_group)
         font_row = QHBoxLayout()
         font_row.addWidget(QLabel("Family:"))
-        self._font_combo = QFontComboBox()
+        self._font_combo = QComboBox()
         self._font_combo.setEditable(True)
+        self._font_combo.setMaxVisibleItems(15)
+        for name in _FONT_CHOICES:
+            self._font_combo.addItem(name if name else "(system default)", userData=name)
         self._font_combo.lineEdit().setPlaceholderText("(system default)")
         font_row.addWidget(self._font_combo, 1)
         font_layout.addLayout(font_row)
@@ -294,6 +313,7 @@ class PreferencesDialog(QDialog):
 
         for w in [self._theme_combo, self._font_combo, self._font_size_spin]:
             w.currentIndexChanged.connect(self._update_preview) if hasattr(w, "currentIndexChanged") else w.valueChanged.connect(self._update_preview)
+        self._font_combo.editTextChanged.connect(self._update_preview)
         self._bg_color_btn.color_changed.connect(self._update_preview)
 
         layout.addStretch()
@@ -303,6 +323,7 @@ class PreferencesDialog(QDialog):
         widget = QWidget()
         layout = QVBoxLayout(widget)
         layout.setSpacing(12)
+
         side_group = QGroupBox("Side")
         side_layout = QVBoxLayout(side_group)
         self._side_left  = QRadioButton("Left")
@@ -316,6 +337,33 @@ class PreferencesDialog(QDialog):
         pos_hint = QLabel("Interactive repositioning enabled: drag the strip to move, edge to resize.")
         pos_hint.setStyleSheet("color: gray; font-size: 9pt;")
         layout.addWidget(pos_hint)
+
+        width_group = QGroupBox("Width")
+        width_layout = QHBoxLayout(width_group)
+        width_layout.addWidget(QLabel("Sidebar width:"))
+        self._sidebar_width_spin = QSpinBox()
+        self._sidebar_width_spin.setRange(150, 600)
+        self._sidebar_width_spin.setSuffix(" px")
+        width_layout.addWidget(self._sidebar_width_spin)
+        width_layout.addStretch()
+        layout.addWidget(width_group)
+
+        colors_group = QGroupBox("Strip Indicator Colors")
+        colors_layout = QVBoxLayout(colors_group)
+        fresh_row = QHBoxLayout()
+        fresh_row.addWidget(QLabel("Fresh translation:"))
+        self._color_fresh_btn = _ColorSwatchButton()
+        fresh_row.addWidget(self._color_fresh_btn)
+        fresh_row.addStretch()
+        colors_layout.addLayout(fresh_row)
+        idle_row = QHBoxLayout()
+        idle_row.addWidget(QLabel("Idle:"))
+        self._color_idle_btn = _ColorSwatchButton()
+        idle_row.addWidget(self._color_idle_btn)
+        idle_row.addStretch()
+        colors_layout.addLayout(idle_row)
+        layout.addWidget(colors_group)
+
         layout.addStretch()
         return widget
 
@@ -339,9 +387,73 @@ class PreferencesDialog(QDialog):
         ocr_layout.addWidget(self._ocr_combo)
         layout.addWidget(ocr_group)
 
-        # Tesseract status
+        # Windows OCR status
         import sys, shutil, os
-        tess_group = QGroupBox("Tesseract Status")
+        from zh_en_translator.engines.ocr import windows_ocr as _wocr
+
+        win_group = QGroupBox("Windows OCR (primary engine)")
+        win_layout = QVBoxLayout(win_group)
+
+        wstatus = _wocr.ocr_status()
+        if not wstatus["api"]:
+            _wlabel = QLabel("Windows OCR API unavailable — winrt/winsdk package not installed.")
+            _wlabel.setWordWrap(True)
+            _wlabel.setStyleSheet("color: #888;")
+            win_layout.addWidget(_wlabel)
+        elif not wstatus["chinese"]:
+            _wlabel = QLabel(
+                "Windows OCR ready, but no Chinese language pack is installed.\n"
+                "OCR will fall back to Tesseract until the Chinese pack is added."
+            )
+            _wlabel.setWordWrap(True)
+            _wlabel.setStyleSheet("color: #b85c00; font-weight: bold;")
+            win_layout.addWidget(_wlabel)
+
+            if sys.platform == "win32":
+                def _install_win_ocr():
+                    import ctypes, pathlib
+                    candidates = [
+                        pathlib.Path(sys.executable).parent / "setup_elevated.ps1",
+                        pathlib.Path(__file__).parents[3] / "installer" / "setup_elevated.ps1",
+                    ]
+                    script = next((p for p in candidates if p.exists()), None)
+                    if not script:
+                        QMessageBox.warning(
+                            self, "Script Not Found",
+                            "setup_elevated.ps1 not found.\n\n"
+                            "Install manually via Windows Settings -> Time & Language -> "
+                            "Language & Region -> Add a language (Chinese Simplified).",
+                        )
+                        return
+                    args = f'-ExecutionPolicy Bypass -WindowStyle Normal -File "{script}"'
+                    ret = ctypes.windll.shell32.ShellExecuteW(
+                        None, "runas", "powershell.exe", args, str(script.parent), 1
+                    )
+                    if int(ret) > 32:
+                        QMessageBox.information(
+                            self, "Installing Windows OCR",
+                            "An administrator (UAC) prompt will appear — please allow it.\n"
+                            "Reopen Preferences when it finishes to verify the status.\n\n"
+                            "Log: %TEMP%\\zh-en-translator-elevated-setup.log",
+                        )
+                    elif int(ret) != 5:  # 5 = user cancelled UAC — no message needed
+                        QMessageBox.warning(
+                            self, "Launch Failed",
+                            f"Could not start the elevated installer (error {int(ret)})."
+                        )
+
+                btn_win_ocr = QPushButton("Install Chinese OCR (requires admin)")
+                btn_win_ocr.clicked.connect(_install_win_ocr)
+                win_layout.addWidget(btn_win_ocr)
+        else:
+            _wlabel = QLabel("Windows OCR: ready — Chinese language pack installed.")
+            _wlabel.setStyleSheet("color: #1a7a1a; font-weight: bold;")
+            win_layout.addWidget(_wlabel)
+
+        layout.addWidget(win_group)
+
+        # Tesseract status
+        tess_group = QGroupBox("Tesseract Status (optional fallback — Windows OCR is primary)")
         tess_layout = QVBoxLayout(tess_group)
 
         tess_path = shutil.which("tesseract")
@@ -349,6 +461,8 @@ class PreferencesDialog(QDialog):
             candidates = [
                 os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe"),
                 r"C:\Program Files\Tesseract-OCR\tesseract.exe",
+                os.path.expandvars(r"%LOCALAPPDATA%\Tesseract-OCR\tesseract.exe"),
+                os.path.expandvars(r"%APPDATA%\Tesseract-OCR\tesseract.exe"),
             ]
             for c in candidates:
                 if os.path.isfile(c):
@@ -360,27 +474,79 @@ class PreferencesDialog(QDialog):
             status_label.setStyleSheet("color: #1a7a1a; font-weight: bold;")
             tess_layout.addWidget(status_label)
         else:
-            status_label = QLabel("Tesseract: Not found. Check install log:")
-            status_label.setStyleSheet("color: #b85c00; font-weight: bold;")
-            tess_layout.addWidget(status_label)
+            note = QLabel(
+                "Tesseract not found. OCR still works via Windows OCR (the primary engine).\n"
+                "Install Tesseract only if Windows OCR is unavailable on your system."
+            )
+            note.setWordWrap(True)
+            note.setStyleSheet("color: #555;")
+            tess_layout.addWidget(note)
+
+            btn_row = QHBoxLayout()
+
+            if sys.platform == "win32":
+                def _install_tesseract():
+                    import ctypes, pathlib
+                    # setup_elevated.ps1 covers Tesseract + Windows OCR in one elevated pass.
+                    # install_tesseract.ps1 (user-level) cannot work: UB-Mannheim NSIS always
+                    # has RequestExecutionLevel admin, so it needs a real admin token.
+                    candidates = [
+                        pathlib.Path(sys.executable).parent / "setup_elevated.ps1",
+                        pathlib.Path(__file__).parents[3] / "installer" / "setup_elevated.ps1",
+                    ]
+                    script = next((p for p in candidates if p.exists()), None)
+                    if not script:
+                        QMessageBox.warning(
+                            self,
+                            "Script Not Found",
+                            "setup_elevated.ps1 not found.\n\n"
+                            "Download and install Tesseract manually from:\n"
+                            "https://github.com/UB-Mannheim/tesseract/wiki",
+                        )
+                        return
+                    args = f'-ExecutionPolicy Bypass -WindowStyle Normal -File "{script}"'
+                    ret = ctypes.windll.shell32.ShellExecuteW(
+                        None, "runas", "powershell.exe", args, str(script.parent), 1
+                    )
+                    if int(ret) > 32:
+                        QMessageBox.information(
+                            self,
+                            "Installing Tesseract",
+                            "An administrator (UAC) prompt will appear — please allow it.\n"
+                            "Reopen Preferences when it finishes to verify the status.\n\n"
+                            "Log: %TEMP%\\zh-en-translator-elevated-setup.log",
+                        )
+                    elif int(ret) != 5:  # 5 = user cancelled UAC — no message needed
+                        QMessageBox.warning(
+                            self, "Launch Failed",
+                            f"Could not start the elevated installer (error {int(ret)})."
+                        )
+
+                btn_install = QPushButton("Install Tesseract")
+                btn_install.clicked.connect(_install_tesseract)
+                btn_row.addWidget(btn_install)
 
             def _open_tess_log():
-                log_path = os.path.join(os.environ.get("TEMP", ""), "zh-en-translator-tesseract-install.log")
+                import subprocess
+                log_path = os.path.join(
+                    os.environ.get("TEMP", os.path.expanduser("~")),
+                    "zh-en-translator-elevated-setup.log",
+                )
                 if os.path.isfile(log_path):
-                    import subprocess
                     subprocess.Popen(["notepad.exe", log_path])
                 else:
                     QMessageBox.information(
                         self,
                         "Log Not Found",
-                        f"Install log not found:\n{log_path}\n\n"
-                        "Run the Tesseract installer to generate it.",
+                        f"No install log found at:\n{log_path}\n\n"
+                        "Click 'Install Tesseract' to run the installer.",
                     )
 
-            btn_open_log = QPushButton("Open Log")
-            btn_open_log.setFixedWidth(100)
+            btn_open_log = QPushButton("View Log")
             btn_open_log.clicked.connect(_open_tess_log)
-            tess_layout.addWidget(btn_open_log)
+            btn_row.addWidget(btn_open_log)
+            btn_row.addStretch()
+            tess_layout.addLayout(btn_row)
 
         layout.addWidget(tess_group)
         layout.addStretch()
@@ -498,25 +664,39 @@ class PreferencesDialog(QDialog):
     def _build_cloud_tab(self) -> QWidget:
         widget = QWidget()
         layout = QVBoxLayout(widget)
+
         warning_box = QFrame()
         warning_box.setStyleSheet("background: #FFF4F0; border: 1px solid #CC4400; border-radius: 8px;")
         w_layout = QVBoxLayout(warning_box)
         w_layout.addWidget(QLabel(_CLOUD_WARNING))
         layout.addWidget(warning_box)
 
+        ms_group = QGroupBox("Azure Translator")
+        ms_layout = QVBoxLayout(ms_group)
         self._ms_enabled_check = QCheckBox("Enable Azure Cloud translation")
-        layout.addWidget(self._ms_enabled_check)
+        ms_layout.addWidget(self._ms_enabled_check)
+        ms_layout.addWidget(QLabel("API Key:"))
         self._ms_api_key_edit = QLineEdit()
         self._ms_api_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        layout.addWidget(QLabel("Azure API Key:"))
-        layout.addWidget(self._ms_api_key_edit)
-        
+        ms_layout.addWidget(self._ms_api_key_edit)
+        ms_layout.addWidget(QLabel("Region (e.g. westeurope):"))
+        self._ms_region_edit = QLineEdit()
+        self._ms_region_edit.setPlaceholderText("Leave empty if not required")
+        ms_layout.addWidget(self._ms_region_edit)
+        layout.addWidget(ms_group)
+
+        deepl_group = QGroupBox("DeepL")
+        deepl_layout = QVBoxLayout(deepl_group)
         self._deepl_enabled_check = QCheckBox("Enable DeepL translation")
-        layout.addWidget(self._deepl_enabled_check)
+        deepl_layout.addWidget(self._deepl_enabled_check)
+        deepl_layout.addWidget(QLabel("API Key:"))
         self._deepl_key_edit = QLineEdit()
         self._deepl_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
-        layout.addWidget(QLabel("DeepL API Key:"))
-        layout.addWidget(self._deepl_key_edit)
+        deepl_layout.addWidget(self._deepl_key_edit)
+        self._deepl_pro_check = QCheckBox("Use DeepL Pro API endpoint")
+        deepl_layout.addWidget(self._deepl_pro_check)
+        layout.addWidget(deepl_group)
+
         layout.addStretch()
         return widget
 
@@ -527,6 +707,11 @@ class PreferencesDialog(QDialog):
         palette = resolve_palette(theme, False)
         bg = bg_col if bg_col else palette.bg
         self._preview_frame.setStyleSheet(f"background: {bg}; border: 1px solid {palette.border}; border-radius: 12px; color: {palette.text};")
+        ff = self._font_combo.currentData() if self._font_combo.currentIndex() >= 0 else self._font_combo.currentText().strip()
+        fs = self._font_size_spin.value()
+        font_css = f"font-family: '{ff}'; font-size: {fs}pt;" if ff else f"font-size: {fs}pt;"
+        for lbl in (self._preview_pinyin, self._preview_source, self._preview_trans):
+            lbl.setStyleSheet(font_css)
 
     def _on_apply(self):
         self.config = self._collect_config()
@@ -547,13 +732,50 @@ class PreferencesDialog(QDialog):
 
     def _load_config_into_ui(self):
         cfg = self.config
+        # General tab
         self._hotkey_edit.setText(cfg.hotkey)
+        (self._mode_sidebar if cfg.mode == "sidebar" else self._mode_popup).setChecked(True)
+        self._trad_to_simp_check.setChecked(cfg.traditional_to_simplified)
         self._auto_update_check.setChecked(cfg.auto_check_updates)
+        self._startup_check.setChecked(cfg.startup)
+        idx = self._segmenter_combo.findData(cfg.segmenter)
+        self._segmenter_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        self._clause_fallback_check.setChecked(cfg.clause_fallback_enabled)
+        # Display tab
+        idx = self._theme_combo.findData(cfg.theme)
+        self._theme_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        ff = cfg.font_family or ""
+        fidx = self._font_combo.findData(ff)
+        if fidx >= 0:
+            self._font_combo.setCurrentIndex(fidx)
+        elif ff:
+            self._font_combo.setCurrentText(ff)
+        else:
+            self._font_combo.setCurrentIndex(0)
         self._font_size_spin.setValue(cfg.font_size)
-        self._ms_api_key_edit.setText(cfg.ms_translator_api_key)
-        self._deepl_key_edit.setText(cfg.deepl_api_key)
+        self._bg_color_btn.set_color_str(cfg.bg_color)
+        self._show_pinyin_check.setChecked(cfg.show_pinyin)
+        self._pinyin_max_spin.setValue(cfg.pinyin_max_chars)
+        self._pinyin_max_spin.setEnabled(cfg.show_pinyin)
+        # Sidebar tab
+        (self._side_right if cfg.side == "right" else self._side_left).setChecked(True)
+        self._sidebar_width_spin.setValue(cfg.sidebar_width)
+        self._color_fresh_btn.set_color_str(cfg.color_fresh)
+        self._color_idle_btn.set_color_str(cfg.color_idle)
+        # Lookup & OCR tab
+        self._lookup_url_edit.setText(cfg.external_lookup_url)
+        idx = self._ocr_combo.findData(cfg.ocr_engine)
+        self._ocr_combo.setCurrentIndex(idx if idx >= 0 else 0)
+        # Glossary tab
         from zh_en_translator.engines.glossary import load_glossary
         self._glossary_load_terms(load_glossary())
+        # Cloud tab
+        self._ms_enabled_check.setChecked(cfg.ms_translator_enabled)
+        self._ms_api_key_edit.setText(cfg.ms_translator_api_key)
+        self._ms_region_edit.setText(cfg.ms_translator_region)
+        self._deepl_enabled_check.setChecked(cfg.deepl_enabled)
+        self._deepl_key_edit.setText(cfg.deepl_api_key)
+        self._deepl_pro_check.setChecked(cfg.deepl_pro)
         self._update_preview()
         self._connect_dirty_signals()
 
@@ -561,29 +783,52 @@ class PreferencesDialog(QDialog):
         return Config(
             hotkey=self._hotkey_edit.text(),
             mode="sidebar" if self._mode_sidebar.isChecked() else "popup",
-            startup=self.config.startup,
+            startup=self._startup_check.isChecked(),
             auto_check_updates=self._auto_update_check.isChecked(),
-            font_family=self._font_combo.currentText(),
+            font_family=self._font_combo.currentData() if self._font_combo.currentIndex() >= 0 else self._font_combo.currentText().strip(),
             font_size=self._font_size_spin.value(),
             bg_color=self._bg_color_btn.get_color_str(),
             theme=self._theme_combo.currentData(),
             side="left" if self._side_left.isChecked() else "right",
             sidebar_y=self.config.sidebar_y,
-            sidebar_width=self.config.sidebar_width,
-            color_fresh=self.config.color_fresh,
-            color_idle=self.config.color_idle,
+            sidebar_width=self._sidebar_width_spin.value(),
+            color_fresh=self._color_fresh_btn.get_color_str() or "#00C9CC",
+            color_idle=self._color_idle_btn.get_color_str() or "#9E8080",
             external_lookup_url=self._lookup_url_edit.text(),
             ocr_engine=self._ocr_combo.currentData(),
             show_pinyin=self._show_pinyin_check.isChecked(),
             pinyin_max_chars=self._pinyin_max_spin.value(),
             traditional_to_simplified=self._trad_to_simp_check.isChecked(),
+            clause_fallback_enabled=self._clause_fallback_check.isChecked(),
+            segmenter=self._segmenter_combo.currentData() or "jieba",
             ms_translator_enabled=self._ms_enabled_check.isChecked(),
             ms_translator_api_key=self._ms_api_key_edit.text(),
-            ms_translator_region=self.config.ms_translator_region,
+            ms_translator_region=self._ms_region_edit.text().strip(),
             deepl_enabled=self._deepl_enabled_check.isChecked(),
             deepl_api_key=self._deepl_key_edit.text(),
-            deepl_pro=self.config.deepl_pro,
+            deepl_pro=self._deepl_pro_check.isChecked(),
         )
+
+    def _check_updates_now(self):
+        from zh_en_translator.engines.updates import get_latest_release, is_newer
+        from zh_en_translator import __version__
+        self._btn_check_now.setEnabled(False)
+        self._btn_check_now.setText("Checking…")
+        QApplication.processEvents()
+        try:
+            info = get_latest_release()
+        finally:
+            self._btn_check_now.setEnabled(True)
+            self._btn_check_now.setText("Check for Updates Now")
+        if info is None:
+            QMessageBox.information(self, "Update Check", "Could not reach the update server. Check your internet connection.")
+        elif is_newer(info["tag_name"], __version__):
+            QMessageBox.information(
+                self, "Update Available",
+                f"A new version is available: {info['tag_name']}\n\nDownload: {info['html_url']}",
+            )
+        else:
+            QMessageBox.information(self, "Up to Date", f"You are running the latest version ({__version__}).")
 
     def closeEvent(self, event):
         if not self._skip_close_check and self._dirty:
