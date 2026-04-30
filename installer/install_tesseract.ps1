@@ -10,7 +10,7 @@
 $ErrorActionPreference = "Continue"
 
 # Set up logging
-$LogPath = Join-Path $env:TEMP "zh-en-translator-tesseract-install.log"
+$LogPath = Join-Path $env:TEMP "zh-en-translator-elevated-setup.log"
 $LogStream = [System.IO.StreamWriter]::new($LogPath, $false)
 
 function Log-Message {

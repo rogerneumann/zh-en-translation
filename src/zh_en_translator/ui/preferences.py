@@ -528,22 +528,17 @@ class PreferencesDialog(QDialog):
 
             def _open_tess_log():
                 import subprocess
-                temp = os.environ.get("TEMP", os.path.expanduser("~"))
-                candidates = [
-                    os.path.join(temp, "zh-en-translator-elevated-setup.log"),
-                    os.path.join(temp, "zh-en-translator-tesseract-install.log"),
-                ]
-                found = [p for p in candidates if os.path.isfile(p)]
-                if found:
-                    found.sort(key=os.path.getmtime, reverse=True)
-                    subprocess.Popen(["notepad.exe", found[0]])
+                log_path = os.path.join(
+                    os.environ.get("TEMP", os.path.expanduser("~")),
+                    "zh-en-translator-elevated-setup.log",
+                )
+                if os.path.isfile(log_path):
+                    subprocess.Popen(["notepad.exe", log_path])
                 else:
                     QMessageBox.information(
                         self,
                         "Log Not Found",
-                        "No install log found. Expected at one of:\n"
-                        f"  {candidates[0]}\n"
-                        f"  {candidates[1]}\n\n"
+                        f"No install log found at:\n{log_path}\n\n"
                         "Click 'Install Tesseract' to run the installer.",
                     )
 
