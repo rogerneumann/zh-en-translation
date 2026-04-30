@@ -23,7 +23,10 @@ for the rest of the file.
 powershell -NoProfile -Command "& { [System.Management.Automation.Language.Parser]::ParseFile('installer\build.ps1', [ref]$null, [ref]$null) }"
 ```
 
-Files that have the BOM and ASCII-only content: `installer/build.ps1`, `installer/install_tesseract.ps1`.
+Files that have the BOM and ASCII-only content: `installer/build.ps1`, `installer/install_tesseract.ps1`, `installer/setup_elevated.ps1`.
+
+**Additional PS1 string interpolation rule:**
+Never write `"$varname: text"` where the colon immediately follows a variable name. PowerShell's parser treats `$varname:` as a scope qualifier (like `$env:`), causing a **parse-time failure** before the script runs a single line. Use `"${varname}: text"` to delimit the variable name explicitly.
 
 ---
 

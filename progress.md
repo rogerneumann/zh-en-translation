@@ -1,5 +1,41 @@
 # zh-en-translator — Progress Log
 
+## Session: Tesseract PS1 Parse Error (2026-04-30)
+
+### Bug 11 — PowerShell parse error silently killed both setup scripts
+
+**Symptom:** Clicking "Install Tesseract" in Preferences caused a PowerShell
+window to flash and close instantly with no log file created, no UAC prompt,
+and no error message. Confirmed on Windows 11 with a Program Files install.
+
+**Root cause:** `$fname:` in a double-quoted string was parsed as a
+scope-qualified variable reference (like `$env:TEMP` or `$global:`). Since a
+space followed the colon rather than a valid variable name character, PowerShell
+raised a **parse error at script load time** — before a single statement
+executed. Both scripts were affected:
+
+- `installer/setup_elevated.ps1` line ~139: `"Failed to download $fname: $_"`
+- `installer/install_tesseract.ps1` line ~196: `"Failed to download $fname: $_"`
+
+**Fix:** Delimit the variable with braces so PowerShell knows exactly where the
+name ends: `"Failed to download ${fname}: $_"`
+
+**Additional hardening in `setup_elevated.ps1`:**
+- `StreamWriter` construction moved inside the `try` block with a `Write-Host`
+  fallback — a log-open failure no longer silently kills the script
+- A `Write-Host` banner fires before the `StreamWriter` is opened, so there is
+  always at least one console line visible on early failure
+
+**Debugging method:** The PowerShell parser validates the full script before
+running any code, so the fix was confirmed by running the script manually from
+an elevated PowerShell prompt and reading the parse error output. The error
+pinpointed the exact line and character position.
+
+**Rule added to CLAUDE.md:** Avoid `$varname: ` (variable followed immediately
+by colon-space) in double-quoted PS strings. Use `${varname}:` instead.
+
+---
+
 ## Session: Tesseract / OCR Fix (2026-04-29)
 
 ### Root causes found and fixed across three sessions
