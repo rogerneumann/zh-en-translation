@@ -6,7 +6,7 @@ import logging
 import re
 import urllib.parse
 from PyQt6.QtCore import Qt, QTimer, QRectF, QUrl, QPoint
-from PyQt6.QtGui import QCursor, QFont, QPainter, QPainterPath, QPen, QColor, QDesktopServices, QKeyEvent
+from PyQt6.QtGui import QCursor, QFont, QPainter, QPainterPath, QPen, QColor, QDesktopServices
 from PyQt6.QtWidgets import (
     QWidget,
     QVBoxLayout,
@@ -20,7 +20,7 @@ from PyQt6.QtWidgets import (
     QScrollArea,
 )
 
-from zh_en_translator.engines.dictionary import Dictionary, Entry
+from zh_en_translator.engines.dictionary import Dictionary
 from zh_en_translator.engines.translation_worker import TranslationWorker, PinyinWorker
 
 logger = logging.getLogger(__name__)
@@ -156,7 +156,7 @@ class TranslatorPopup(QWidget):
         # ── Source text ─────────────────────────────────────────────────
         source_row = QHBoxLayout()
         source_row.setSpacing(6)
-        
+
         self.text_display = QTextEdit()
         self.text_display.setPlainText(self.captured_text)
         self.text_display.setReadOnly(False)
@@ -170,7 +170,7 @@ class TranslatorPopup(QWidget):
         self.btn_retranslate.setToolTip("Retranslate (Ctrl+Enter)")
         self.btn_retranslate.clicked.connect(self._retranslate)
         source_row.addWidget(self.btn_retranslate)
-        
+
         layout.addLayout(source_row)
 
         # ── Divider ─────────────────────────────────────────────────────
@@ -208,7 +208,7 @@ class TranslatorPopup(QWidget):
         self._details_area.setFrameShape(QFrame.Shape.NoFrame)
         self._details_area.setMaximumHeight(0)  # Collapsed by default
         self._details_area.setVisible(False)
-        
+
         self._details_content = QLabel("Word-by-word breakdown...")
         self._details_content.setWordWrap(True)
         self._details_content.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -260,7 +260,9 @@ class TranslatorPopup(QWidget):
 
     def eventFilter(self, obj, event):
         if obj is self.text_display and event.type() == event.Type.KeyPress:
-            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and (event.modifiers() & Qt.KeyboardModifier.ControlModifier):
+            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and (
+                event.modifiers() & Qt.KeyboardModifier.ControlModifier
+            ):
                 self._retranslate()
                 return True
         return super().eventFilter(obj, event)
@@ -271,10 +273,14 @@ class TranslatorPopup(QWidget):
         self.translation_label.setAccessibleName("Translation")
         self.btn_copy.setAccessibleDescription("Copy the English translation to the clipboard")
         self.btn_lookup.setAccessibleDescription("Open the source text in an external dictionary")
-        self.btn_replace.setAccessibleDescription("Replace the original selected text with the English translation")
+        self.btn_replace.setAccessibleDescription(
+            "Replace the original selected text with the English translation"
+        )
         self.btn_pin.setAccessibleName("Pin")
         self.btn_close.setAccessibleName("Close")
-        self.btn_pin_sidebar.setAccessibleDescription("Pin this translation to the persistent sidebar panel")
+        self.btn_pin_sidebar.setAccessibleDescription(
+            "Pin this translation to the persistent sidebar panel"
+        )
         QWidget.setTabOrder(self.text_display, self.translation_label)
         QWidget.setTabOrder(self.translation_label, self.btn_copy)
 
@@ -342,16 +348,18 @@ class TranslatorPopup(QWidget):
                 border: 1px solid rgba(0,160,255,0.4);
             }}
         """)
-        
+
         # Header buttons: circular hover
         _hdr = (
             f"QPushButton {{ background: transparent; border: none; border-radius: 12px;"
             f" padding: 0; font-size: 11pt; color: {palette.muted}; }}"
             f"QPushButton:hover {{ background: {palette.btn_hover}; color: {palette.text}; }}"
         )
-        self.btn_pin.setStyleSheet(_hdr + f"QPushButton:checked {{ background: {palette.btn_pressed}; }}")
+        self.btn_pin.setStyleSheet(
+            _hdr + f"QPushButton:checked {{ background: {palette.btn_pressed}; }}"
+        )
         self.btn_close.setStyleSheet(_hdr)
-        
+
         # Retranslate button style
         self.btn_retranslate.setStyleSheet(f"""
             QPushButton {{ border-radius: 14px; background: {palette.btn_bg}; border: none; font-size: 12pt; }}
@@ -365,7 +373,7 @@ class TranslatorPopup(QWidget):
         text_palette = self.text_display.palette()
         text_palette.setColor(text_palette.ColorRole.Text, QColor(palette.text))
         self.text_display.setPalette(text_palette)
-        
+
         # Details toggle style
         self._details_toggle.setStyleSheet(f"""
             QPushButton {{ font-size: 9pt; padding: 2px 8px; border-radius: 10px; background: {palette.btn_bg}; border: none; }}
@@ -415,7 +423,8 @@ class TranslatorPopup(QWidget):
         cursor_pos = QCursor.pos()
         w, h = self.width(), self.height()
         screen = QApplication.screenAt(cursor_pos)
-        if not screen: return
+        if not screen:
+            return
         avail = screen.availableGeometry()
         x = max(avail.left() + 14, min(cursor_pos.x() + 14, avail.right() - w - 14))
         y = max(avail.top() + 14, min(cursor_pos.y() + 14, avail.bottom() - h - 14))
@@ -427,14 +436,17 @@ class TranslatorPopup(QWidget):
         self._worker.start()
 
     def _start_pinyin(self, text: str):
-        if self._config is None or not self._config.show_pinyin: return
-        if len(text) > self._config.pinyin_max_chars: return
+        if self._config is None or not self._config.show_pinyin:
+            return
+        if len(text) > self._config.pinyin_max_chars:
+            return
         self._pinyin_worker = PinyinWorker(text)
         self._pinyin_worker.result_ready.connect(self._on_pinyin_ready)
         self._pinyin_worker.start()
 
     def set_ocr_result(self, text: str):
-        if self._dismissed: return
+        if self._dismissed:
+            return
         if text.startswith("⚠"):
             self._loading_timer.stop()
             self.translation_label.setText(text)
@@ -449,7 +461,8 @@ class TranslatorPopup(QWidget):
 
     def _retranslate(self):
         new_text = self.text_display.toPlainText().strip()
-        if not new_text: return
+        if not new_text:
+            return
         self.captured_text = new_text
         self.translation_label.setText("Translating…")
         self._loading_timer.start()
@@ -457,31 +470,37 @@ class TranslatorPopup(QWidget):
         self._start_pinyin(new_text)
 
     def _on_translation_ready(self, text: str):
-        if self._dismissed: return
+        if self._dismissed:
+            return
         self._loading_timer.stop()
         if not text.startswith("⚠"):
             self.translation_label.setText(wrap_words(text))
             self._update_details()
         else:
             self.translation_label.setText(text)
-        
+
         self.translation_label.adjustSize()
         needed_h = (self.layout().sizeHint().height() + 20)
         self.resize(self.width(), min(520, max(180, needed_h)))
-        
+
         is_real = not text.startswith("⚠") and text != "Translating…"
         self.btn_copy.setEnabled(is_real)
         self.btn_lookup.setEnabled(is_real)
         self.btn_replace.setEnabled(is_real)
         self.btn_pin.setEnabled(is_real)
-        if self._on_pin: self.btn_pin_sidebar.setEnabled(is_real)
+        if self._on_pin:
+            self.btn_pin_sidebar.setEnabled(is_real)
 
     def _on_link_activated(self, link: str):
-        if not link.startswith("word:") or not self.dictionary: return
+        if not link.startswith("word:") or not self.dictionary:
+            return
         word = link[5:]
         entries = self.dictionary.lookup_english(word)
-        if not entries: return
-        tip = f"<b>{word}</b><br>" + "<br>".join([f"• {e.simplified} [{e.pinyin}]: {', '.join(e.glosses[:2])}" for e in entries[:4]])
+        if not entries:
+            return
+        tip = f"<b>{word}</b><br>" + "<br>".join(
+            [f"• {e.simplified} [{e.pinyin}]: {', '.join(e.glosses[:2])}" for e in entries[:4]]
+        )
         QToolTip.showText(QCursor.pos(), tip, self)
 
     def _toggle_details(self, checked: bool):
@@ -494,23 +513,35 @@ class TranslatorPopup(QWidget):
         self.resize(self.width(), min(520, max(180, needed_h)))
 
     def _update_details(self):
-        if not self.dictionary or not self.captured_text: return
+        if not self.dictionary or not self.captured_text:
+            return
         try:
             from zh_en_translator.engines import pipeline
             results = pipeline.translate(self.captured_text, self.dictionary)
-            html = "".join([f"<div><b>{r.token}</b> {f'[{r.pinyin}]' if r.pinyin else ''}<br><span style='color:gray;'>{', '.join(r.glosses[:2])}</span></div>" if r.is_chinese else f"<span>{r.token}</span>" for r in results])
+            def _fmt(r):
+                if r.is_chinese:
+                    pin = f"[{r.pinyin}]" if r.pinyin else ""
+                    gl = ", ".join(r.glosses[:2])
+                    return (
+                        f"<div><b>{r.token}</b> {pin}<br>"
+                        f"<span style='color:gray;'>{gl}</span></div>"
+                    )
+                return f"<span>{r.token}</span>"
+            html = "".join([_fmt(r) for r in results])
             self._details_content.setText(html)
         except Exception as e:
             logger.debug("Word-by-word details failed: %s", e)
 
     def _on_pinyin_ready(self, pinyin: str):
-        if self._dismissed or not pinyin: return
+        if self._dismissed or not pinyin:
+            return
         self._pinyin_label.setText(pinyin)
         self._pinyin_label.setVisible(True)
 
     def _replace_text(self):
         trans = self.translation_label.text()
-        if not trans or trans == "Translating…": return
+        if not trans or trans == "Translating…":
+            return
         QApplication.clipboard().setText(trans)
         self._dismissed = True
         self.close()
@@ -519,9 +550,11 @@ class TranslatorPopup(QWidget):
     def _do_paste(self):
         from pynput.keyboard import Controller, Key
         kb = Controller()
-        with kb.pressed(Key.ctrl): kb.tap('v')
+        with kb.pressed(Key.ctrl):
+            kb.tap('v')
 
-    def _on_pin_toggled(self, checked): self._pinned = checked
+    def _on_pin_toggled(self, checked):
+        self._pinned = checked
 
     def _pin_to_sidebar(self):
         if self._on_pin and self.translation_label.text() != "Translating…":
@@ -534,22 +567,34 @@ class TranslatorPopup(QWidget):
         QTimer.singleShot(1500, lambda: self.btn_copy.setText("Copy"))
 
     def _lookup_external(self):
-        template = (self._config.external_lookup_url if self._config else None) or "https://www.mdbg.net/chinese/dictionary?wdqb={query}"
-        QDesktopServices.openUrl(QUrl(template.replace("{query}", urllib.parse.quote(self.captured_text))))
+        template = (self._config.external_lookup_url if self._config else None) or (
+            "https://www.mdbg.net/chinese/dictionary?wdqb={query}"
+        )
+        QDesktopServices.openUrl(
+            QUrl(template.replace("{query}", urllib.parse.quote(self.captured_text)))
+        )
 
-    def _open_language_settings(self): QDesktopServices.openUrl(QUrl("ms-settings:regionlanguage"))
+    def _open_language_settings(self):
+        QDesktopServices.openUrl(QUrl("ms-settings:regionlanguage"))
 
     def keyPressEvent(self, event):
-        if event.key() == Qt.Key.Key_Escape: self._dismiss()
-        else: super().keyPressEvent(event)
+        if event.key() == Qt.Key.Key_Escape:
+            self._dismiss()
+        else:
+            super().keyPressEvent(event)
 
     def changeEvent(self, event):
-        if event.type() == event.Type.WindowDeactivate and not self._pinned and not self.isActiveWindow():
+        if (
+            event.type() == event.Type.WindowDeactivate
+            and not self._pinned
+            and not self.isActiveWindow()
+        ):
             QTimer.singleShot(150, self._dismiss)
         super().changeEvent(event)
 
     def _dismiss(self):
-        if self._dismissed: return
+        if self._dismissed:
+            return
         self._dismissed = True
         try:
             QApplication.clipboard().setText(self.original_clipboard)

@@ -25,7 +25,8 @@ def _count_clauses(text: str) -> int:
         text: Chinese text to analyze.
 
     Returns:
-        Number of clause-ending punctuation marks (0 = no clauses, 1 = single clause, 2+ = multi-clause).
+        Number of clause-ending punctuation marks (0 = no clauses, 1 = single clause,
+        2+ = multi-clause).
     """
     if not text:
         return 0
@@ -195,7 +196,10 @@ class TranslationWorker(QThread):
 
         # 2. Try MS Cloud second
         if self.config and self.config.ms_translator_enabled:
-            from zh_en_translator.engines.ms_cloud import is_configured, translate_sentence as ms_translate
+            from zh_en_translator.engines.ms_cloud import (
+                is_configured,
+                translate_sentence as ms_translate,
+            )
             if is_configured(self.config.ms_translator_api_key):
                 result = ms_translate(
                     self.text,
@@ -206,7 +210,10 @@ class TranslationWorker(QThread):
                     logger.info("Translation path: MS Cloud")
                     self.result_ready.emit(result)
                     return
-                logger.warning("MS Cloud translation failed or returned source unchanged — falling back to Argos")
+                logger.warning(
+                    "MS Cloud translation failed or returned source unchanged"
+                    " -- falling back to Argos"
+                )
 
         # 3. Offline fallback: local Argos / ctranslate2 (with timeout)
         from zh_en_translator.engines.argos import ensure_pack, translate_sentence
@@ -247,7 +254,9 @@ class TranslationWorker(QThread):
                 "Argos returned source text unchanged — falling back to dict-only result"
             )
         else:
-            logger.warning("Argos translation returned empty/None result — falling back to dict-only")
+            logger.warning(
+                "Argos translation returned empty/None result -- falling back to dict-only"
+            )
 
         logger.info("Translation path: dict-only")
         self.result_ready.emit("(no translation found)")

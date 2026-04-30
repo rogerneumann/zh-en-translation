@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import dataclasses
 
-from PyQt6.QtCore import pyqtSignal, Qt
-from PyQt6.QtGui import QColor, QFont
+from PyQt6.QtCore import pyqtSignal
+from PyQt6.QtGui import QColor
 from PyQt6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -22,7 +22,6 @@ from PyQt6.QtWidgets import (
     QColorDialog,
     QComboBox,
     QGroupBox,
-    QSizePolicy,
     QCheckBox,
     QFrame,
     QMessageBox,
@@ -211,7 +210,9 @@ class PreferencesDialog(QDialog):
         seg_row.addWidget(self._segmenter_combo)
         seg_row.addStretch()
         engine_layout.addLayout(seg_row)
-        self._clause_fallback_check = QCheckBox("Enable clause-level fallback for complex sentences")
+        self._clause_fallback_check = QCheckBox(
+            "Enable clause-level fallback for complex sentences"
+        )
         engine_layout.addWidget(self._clause_fallback_check)
         layout.addWidget(engine_group)
 
@@ -312,7 +313,10 @@ class PreferencesDialog(QDialog):
         layout.addWidget(preview_group)
 
         for w in [self._theme_combo, self._font_combo, self._font_size_spin]:
-            w.currentIndexChanged.connect(self._update_preview) if hasattr(w, "currentIndexChanged") else w.valueChanged.connect(self._update_preview)
+            if hasattr(w, "currentIndexChanged"):
+                w.currentIndexChanged.connect(self._update_preview)
+            else:
+                w.valueChanged.connect(self._update_preview)
         self._font_combo.editTextChanged.connect(self._update_preview)
         self._bg_color_btn.color_changed.connect(self._update_preview)
 
@@ -334,7 +338,9 @@ class PreferencesDialog(QDialog):
         side_layout.addWidget(self._side_left)
         side_layout.addWidget(self._side_right)
         layout.addWidget(side_group)
-        pos_hint = QLabel("Interactive repositioning enabled: drag the strip to move, edge to resize.")
+        pos_hint = QLabel(
+            "Interactive repositioning enabled: drag the strip to move, edge to resize."
+        )
         pos_hint.setStyleSheet("color: gray; font-size: 9pt;")
         layout.addWidget(pos_hint)
 
@@ -382,13 +388,18 @@ class PreferencesDialog(QDialog):
         ocr_group = QGroupBox("OCR Engine")
         ocr_layout = QVBoxLayout(ocr_group)
         self._ocr_combo = QComboBox()
-        for label, val in [("Auto", "auto"), ("Windows", "windows"), ("Tesseract", "tesseract"), ("PaddleOCR", "paddle")]:
+        for label, val in [
+            ("Auto", "auto"), ("Windows", "windows"),
+            ("Tesseract", "tesseract"), ("PaddleOCR", "paddle"),
+        ]:
             self._ocr_combo.addItem(label, val)
         ocr_layout.addWidget(self._ocr_combo)
         layout.addWidget(ocr_group)
 
         # Windows OCR status
-        import sys, shutil, os
+        import sys
+        import shutil
+        import os
         from zh_en_translator.engines.ocr import windows_ocr as _wocr
 
         win_group = QGroupBox("Windows OCR (primary engine)")
@@ -411,7 +422,8 @@ class PreferencesDialog(QDialog):
 
             if sys.platform == "win32":
                 def _install_win_ocr():
-                    import ctypes, pathlib
+                    import ctypes
+                    import pathlib
                     candidates = [
                         pathlib.Path(sys.executable).parent / "setup_elevated.ps1",
                         pathlib.Path(__file__).parents[3] / "installer" / "setup_elevated.ps1",
@@ -486,7 +498,8 @@ class PreferencesDialog(QDialog):
 
             if sys.platform == "win32":
                 def _install_tesseract():
-                    import ctypes, pathlib
+                    import ctypes
+                    import pathlib
                     # setup_elevated.ps1 covers Tesseract + Windows OCR in one elevated pass.
                     # install_tesseract.ps1 (user-level) cannot work: UB-Mannheim NSIS always
                     # has RequestExecutionLevel admin, so it needs a real admin token.
@@ -567,8 +580,12 @@ class PreferencesDialog(QDialog):
 
         self._glossary_table = QTableWidget(0, 2)
         self._glossary_table.setHorizontalHeaderLabels(["Chinese", "English translation"])
-        self._glossary_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        self._glossary_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self._glossary_table.horizontalHeader().setSectionResizeMode(
+            0, QHeaderView.ResizeMode.Stretch
+        )
+        self._glossary_table.horizontalHeader().setSectionResizeMode(
+            1, QHeaderView.ResizeMode.Stretch
+        )
         self._glossary_table.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         layout.addWidget(self._glossary_table)
 
@@ -620,7 +637,9 @@ class PreferencesDialog(QDialog):
         from pathlib import Path as _Path
         imported = load_glossary(_Path(path))
         if not imported:
-            QMessageBox.information(self, "Import Glossary", "No valid entries found in the selected file.")
+            QMessageBox.information(
+                self, "Import Glossary", "No valid entries found in the selected file."
+            )
             return
         existing = self._glossary_get_terms()
         existing.update(imported)
@@ -666,7 +685,9 @@ class PreferencesDialog(QDialog):
         layout = QVBoxLayout(widget)
 
         warning_box = QFrame()
-        warning_box.setStyleSheet("background: #FFF4F0; border: 1px solid #CC4400; border-radius: 8px;")
+        warning_box.setStyleSheet(
+            "background: #FFF4F0; border: 1px solid #CC4400; border-radius: 8px;"
+        )
         w_layout = QVBoxLayout(warning_box)
         w_layout.addWidget(QLabel(_CLOUD_WARNING))
         layout.addWidget(warning_box)
@@ -706,8 +727,15 @@ class PreferencesDialog(QDialog):
         bg_col = self._bg_color_btn.get_color_str()
         palette = resolve_palette(theme, False)
         bg = bg_col if bg_col else palette.bg
-        self._preview_frame.setStyleSheet(f"background: {bg}; border: 1px solid {palette.border}; border-radius: 12px; color: {palette.text};")
-        ff = self._font_combo.currentData() if self._font_combo.currentIndex() >= 0 else self._font_combo.currentText().strip()
+        self._preview_frame.setStyleSheet(
+            f"background: {bg}; border: 1px solid {palette.border};"
+            f" border-radius: 12px; color: {palette.text};"
+        )
+        ff = (
+            self._font_combo.currentData()
+            if self._font_combo.currentIndex() >= 0
+            else self._font_combo.currentText().strip()
+        )
         fs = self._font_size_spin.value()
         font_css = f"font-family: '{ff}'; font-size: {fs}pt;" if ff else f"font-size: {fs}pt;"
         for lbl in (self._preview_pinyin, self._preview_source, self._preview_trans):
@@ -721,14 +749,24 @@ class PreferencesDialog(QDialog):
         self.settings_applied.emit(self.config)
         self._dirty = False
 
-    def _on_ok(self): self._skip_close_check = True; self._on_apply(); self.accept()
-    def _on_cancel(self): self._skip_close_check = True; self.reject()
+    def _on_ok(self):
+        self._skip_close_check = True
+        self._on_apply()
+        self.accept()
 
-    def _mark_dirty(self): self._dirty = True
+    def _on_cancel(self):
+        self._skip_close_check = True
+        self.reject()
+
+    def _mark_dirty(self):
+        self._dirty = True
+
     def _connect_dirty_signals(self):
         for w in self.findChildren((QLineEdit, QCheckBox, QComboBox, QSpinBox, QRadioButton)):
-            if hasattr(w, "textChanged"): w.textChanged.connect(self._mark_dirty)
-            if hasattr(w, "toggled"): w.toggled.connect(self._mark_dirty)
+            if hasattr(w, "textChanged"):
+                w.textChanged.connect(self._mark_dirty)
+            if hasattr(w, "toggled"):
+                w.toggled.connect(self._mark_dirty)
 
     def _load_config_into_ui(self):
         cfg = self.config
@@ -785,7 +823,11 @@ class PreferencesDialog(QDialog):
             mode="sidebar" if self._mode_sidebar.isChecked() else "popup",
             startup=self._startup_check.isChecked(),
             auto_check_updates=self._auto_update_check.isChecked(),
-            font_family=self._font_combo.currentData() if self._font_combo.currentIndex() >= 0 else self._font_combo.currentText().strip(),
+            font_family=(
+                self._font_combo.currentData()
+                if self._font_combo.currentIndex() >= 0
+                else self._font_combo.currentText().strip()
+            ),
             font_size=self._font_size_spin.value(),
             bg_color=self._bg_color_btn.get_color_str(),
             theme=self._theme_combo.currentData(),
@@ -821,17 +863,27 @@ class PreferencesDialog(QDialog):
             self._btn_check_now.setEnabled(True)
             self._btn_check_now.setText("Check for Updates Now")
         if info is None:
-            QMessageBox.information(self, "Update Check", "Could not reach the update server. Check your internet connection.")
+            QMessageBox.information(
+                self, "Update Check",
+                "Could not reach the update server. Check your internet connection.",
+            )
         elif is_newer(info["tag_name"], __version__):
             QMessageBox.information(
                 self, "Update Available",
                 f"A new version is available: {info['tag_name']}\n\nDownload: {info['html_url']}",
             )
         else:
-            QMessageBox.information(self, "Up to Date", f"You are running the latest version ({__version__}).")
+            QMessageBox.information(
+                self, "Up to Date",
+                f"You are running the latest version ({__version__}).",
+            )
 
     def closeEvent(self, event):
         if not self._skip_close_check and self._dirty:
-            if QMessageBox.question(self, "Unsaved Changes", "Save before closing?", QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard) == QMessageBox.StandardButton.Save:
+            answer = QMessageBox.question(
+                self, "Unsaved Changes", "Save before closing?",
+                QMessageBox.StandardButton.Save | QMessageBox.StandardButton.Discard,
+            )
+            if answer == QMessageBox.StandardButton.Save:
                 self._on_apply()
         event.accept()
