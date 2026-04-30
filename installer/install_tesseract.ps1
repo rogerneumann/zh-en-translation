@@ -4,7 +4,7 @@
     Install Tesseract OCR (user-level) + Chinese Simplified/Traditional language data.
     Does NOT require administrator rights -- installs to LocalAppData or via winget.
     For a system-wide install to Program Files, run setup_elevated.ps1 instead.
-    Exits 0 in all cases. Log: %TEMP%\zh-en-translator-tesseract-install.log
+    Exits 0 in all cases. Log: %TEMP%\zh-en-translator-elevated-setup.log
 #>
 
 $ErrorActionPreference = "Continue"
