@@ -193,7 +193,7 @@ try {
                         Log-Error "$fname not found after download."
                     }
                 } catch {
-                    Log-Error "Failed to download $fname: $_"
+                    Log-Error "Failed to download ${fname}: $_"
                 }
             }
         }

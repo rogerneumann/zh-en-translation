@@ -9,17 +9,27 @@
 $ErrorActionPreference = "Continue"
 
 $LogPath = Join-Path $env:TEMP "zh-en-translator-elevated-setup.log"
-$LogStream = [System.IO.StreamWriter]::new($LogPath, $false)
+$LogStream = $null
 
 function Write-Log {
     param([string]$Message, [string]$Color = "White")
     $ts = Get-Date -Format "yyyy-MM-dd HH:mm:ss"
     Write-Host $Message -ForegroundColor $Color
-    $LogStream.WriteLine("[$ts] $Message")
-    $LogStream.Flush()
+    if ($LogStream) {
+        $LogStream.WriteLine("[$ts] $Message")
+        $LogStream.Flush()
+    }
 }
 
+Write-Host "=== Elevated OCR setup starting (log: $LogPath) ===" -ForegroundColor Cyan
+
 try {
+
+    try {
+        $LogStream = [System.IO.StreamWriter]::new($LogPath, $false)
+    } catch {
+        Write-Host "WARNING: Could not open log file at $LogPath -- $_" -ForegroundColor Yellow
+    }
 
     Write-Log "=== Elevated OCR setup started ===" "Cyan"
 
@@ -135,7 +145,7 @@ try {
                     $size = (Get-Item $dest -ErrorAction SilentlyContinue).Length / 1MB
                     Write-Log "Downloaded $fname ($([Math]::Round($size, 2)) MB)" "Green"
                 } catch {
-                    Write-Log "Failed to download $fname: $_" "Yellow"
+                    Write-Log "Failed to download ${fname}: $_" "Yellow"
                 }
             } else {
                 Write-Log "$fname already present in Program Files tessdata." "Green"
@@ -147,8 +157,9 @@ try {
     Write-Log "=== Elevated OCR setup complete. Log saved to: $LogPath ===" "Green"
 
 } catch {
-    try { $LogStream.WriteLine("[FATAL] $_") } catch {}
+    Write-Host "[FATAL] $_" -ForegroundColor Red
+    if ($LogStream) { try { $LogStream.WriteLine("[FATAL] $_") } catch {} }
 }
 
-$LogStream.Close()
+if ($LogStream) { $LogStream.Close() }
 exit 0
