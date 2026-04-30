@@ -39,7 +39,7 @@ def is_newer(latest_tag: str, current_version: str) -> bool:
     """Basic version comparison (v0.1.0 vs 0.1.0)."""
     latest = latest_tag.lstrip("v")
     current = current_version.lstrip("v")
-    
+
     try:
         latest_parts = [int(p) for p in latest.split(".")]
         current_parts = [int(p) for p in current.split(".")]

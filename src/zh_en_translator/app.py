@@ -5,7 +5,7 @@ import sys
 import threading
 
 from PyQt6.QtCore import Qt, QObject, QRectF, pyqtSignal, QThread
-from PyQt6.QtGui import QBrush, QFont, QIcon, QColor, QPainter, QPainterPath, QPixmap
+from PyQt6.QtGui import QBrush, QIcon, QColor, QPainter, QPainterPath, QPixmap
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 
 from zh_en_translator.config import load_config, save_config, Config
@@ -88,7 +88,6 @@ def _render_icon_pixmap_fallback(size: int) -> "QPixmap":
     path.addRoundedRect(QRectF(0, 0, size, size), radius, radius)
     p.fillPath(path, QBrush(QColor("#2B6E6A")))
 
-    from PyQt6.QtCore import QLineF
     from PyQt6.QtGui import QPen
     pen = QPen(QColor("#C4EDE7"))
     pen.setWidthF(size * 0.083)
@@ -290,7 +289,7 @@ class TranslatorApp(QObject):
                 logger.info("Dictionary ready")
             except Exception as e:
                 logger.warning("Failed to initialize dictionary: %s", e)
-        
+
         threading.Thread(target=_task, daemon=True).start()
 
     def _setup_tray(self):
@@ -572,7 +571,9 @@ class TranslatorApp(QObject):
                     break
 
         if not found and self.tray_icon and self.tray_icon.isVisible():
-            log_path = os.path.join(os.environ.get("TEMP", ""), "zh-en-translator-tesseract-install.log")
+            log_path = os.path.join(
+                os.environ.get("TEMP", ""), "zh-en-translator-tesseract-install.log"
+            )
             message = (
                 "Tesseract OCR not found. Image capture may be limited.\n"
                 f"See: {log_path}"
@@ -605,7 +606,7 @@ class TranslatorApp(QObject):
 
         from zh_en_translator import __version__
         from zh_en_translator.engines.updates import is_newer
-        
+
         tag = release_info["tag_name"]
         if is_newer(tag, __version__):
             from PyQt6.QtWidgets import QMessageBox

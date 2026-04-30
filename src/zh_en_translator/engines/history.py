@@ -53,9 +53,13 @@ class HistoryManager:
             return self.load_history()
 
         history = self.load_history()
-        
+
         # Avoid duplicate consecutive entries
-        if history and history[0].get("source") == source and history[0].get("translation") == translation:
+        if (
+            history
+            and history[0].get("source") == source
+            and history[0].get("translation") == translation
+        ):
             return history
 
         entry: HistoryEntry = {
@@ -63,11 +67,11 @@ class HistoryManager:
             "translation": translation,
             "timestamp": datetime.now().isoformat()
         }
-        
+
         history.insert(0, entry)
         if len(history) > self.max_items:
             history = history[:self.max_items]
-        
+
         self.save_history(history)
         return history
 
@@ -84,7 +88,7 @@ class HistoryManager:
         history = self.load_history()
         if not history:
             return False
-            
+
         try:
             with open(export_path, "w", encoding="utf-8", newline="") as f:
                 writer = csv.DictWriter(f, fieldnames=["timestamp", "source", "translation"])

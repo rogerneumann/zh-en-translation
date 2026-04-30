@@ -134,8 +134,12 @@ def load_config(config_path: Path | None = None) -> Config:
             "translation", "clause_fallback_enabled", defaults.clause_fallback_enabled
         ),
         segmenter=_get("translation", "segmenter", defaults.segmenter),
-        ms_translator_enabled=_get("cloud", "ms_translator_enabled", defaults.ms_translator_enabled),
-        ms_translator_api_key=_get("cloud", "ms_translator_api_key", defaults.ms_translator_api_key),
+        ms_translator_enabled=_get(
+            "cloud", "ms_translator_enabled", defaults.ms_translator_enabled
+        ),
+        ms_translator_api_key=_get(
+            "cloud", "ms_translator_api_key", defaults.ms_translator_api_key
+        ),
         ms_translator_region=_get("cloud", "ms_translator_region", defaults.ms_translator_region),
         deepl_enabled=_get("cloud", "deepl_enabled", defaults.deepl_enabled),
         deepl_api_key=_get("cloud", "deepl_api_key", defaults.deepl_api_key),

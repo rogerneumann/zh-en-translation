@@ -12,14 +12,10 @@ from PyQt6.QtCore import (
     QPropertyAnimation,
     QEasingCurve,
     pyqtSignal,
-    pyqtProperty,
 )
 from PyQt6.QtGui import (
     QColor,
     QPainter,
-    QPainterPath,
-    QPen,
-    QFont,
     QCursor,
 )
 from PyQt6.QtWidgets import (
@@ -133,7 +129,7 @@ class TranslatorSidebar(QWidget):
         self._drag_grip.setFixedSize(20, 20)
         self._drag_grip.setCursor(Qt.CursorShape.SizeAllCursor)
         header.addWidget(self._drag_grip)
-        
+
         self._title_label = QLabel("TRANSLATOR")
         header.addWidget(self._title_label, 1)
 
@@ -167,7 +163,10 @@ class TranslatorSidebar(QWidget):
 
         self.translation_label = QLabel("")
         self.translation_label.setWordWrap(True)
-        self.translation_label.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse | Qt.TextInteractionFlag.LinksAccessibleByMouse)
+        self.translation_label.setTextInteractionFlags(
+            Qt.TextInteractionFlag.TextSelectableByMouse
+            | Qt.TextInteractionFlag.LinksAccessibleByMouse
+        )
         self.translation_label.linkActivated.connect(self._on_link_activated)
         scroll_layout.addWidget(self.translation_label)
 
@@ -211,7 +210,10 @@ class TranslatorSidebar(QWidget):
     def _apply_styling(self):
         from zh_en_translator.engines.themes import resolve_palette
         sys_bg = QApplication.palette().color(QApplication.palette().ColorRole.Window)
-        palette = resolve_palette(self._config.theme if self._config else "system", sys_bg.lightness() < 128)
+        palette = resolve_palette(
+            self._config.theme if self._config else "system",
+            sys_bg.lightness() < 128,
+        )
 
         self.setStyleSheet(f"""
             QWidget {{ font-family: {_FONT_STACK}; color: {palette.text}; }}
@@ -222,9 +224,13 @@ class TranslatorSidebar(QWidget):
             QPushButton {{ background: {palette.btn_bg}; border: none; border-radius: 11px; padding: 0; color: {palette.muted}; }}
             QPushButton:hover {{ background: {palette.btn_hover}; color: {palette.text}; }}
         """)
-        
-        self._title_label.setStyleSheet(f"color: {palette.muted}; font-size: 8pt; font-weight: bold; letter-spacing: 1px;")
-        self._hist_title.setStyleSheet(f"color: {palette.muted}; font-size: 9pt; font-weight: bold;")
+
+        self._title_label.setStyleSheet(
+            f"color: {palette.muted}; font-size: 8pt; font-weight: bold; letter-spacing: 1px;"
+        )
+        self._hist_title.setStyleSheet(
+            f"color: {palette.muted}; font-size: 9pt; font-weight: bold;"
+        )
         self._drag_hint.setStyleSheet(f"color: {palette.muted};")
 
     def _setup_accessibility(self):
@@ -234,7 +240,9 @@ class TranslatorSidebar(QWidget):
 
     def set_translation(self, source: str, translation: str):
         self.source_label.setText(source)
-        self.translation_label.setText(wrap_words(translation) if not translation.startswith("⚠") else translation)
+        self.translation_label.setText(
+            wrap_words(translation) if not translation.startswith("⚠") else translation
+        )
         self._indicator_colour = self.COLOUR_FRESH
         self._history_manager.add_entry(source, translation)
         self._load_history_ui()
@@ -247,18 +255,25 @@ class TranslatorSidebar(QWidget):
 
     def update_translation(self, translation: str):
         self._loading_timer.stop()
-        self.translation_label.setText(wrap_words(translation) if not translation.startswith("⚠") else translation)
-        if not self._expanded: self._indicator_colour = self.COLOUR_FRESH
+        self.translation_label.setText(
+            wrap_words(translation) if not translation.startswith("⚠") else translation
+        )
+        if not self._expanded:
+            self._indicator_colour = self.COLOUR_FRESH
         self._history_manager.add_entry(self.source_label.text(), translation)
         self._load_history_ui()
         self.update()
 
     def _on_link_activated(self, link: str):
-        if not link.startswith("word:") or not self.dictionary: return
+        if not link.startswith("word:") or not self.dictionary:
+            return
         word = link[5:]
         entries = self.dictionary.lookup_english(word)
-        if not entries: return
-        tip = f"<b>{word}</b><br>" + "<br>".join([f"• {e.simplified}: {', '.join(e.glosses[:2])}" for e in entries[:4]])
+        if not entries:
+            return
+        tip = f"<b>{word}</b><br>" + "<br>".join(
+            [f"• {e.simplified}: {', '.join(e.glosses[:2])}" for e in entries[:4]]
+        )
         QToolTip.showText(QCursor.pos(), tip, self)
 
     def _reposition(self):
@@ -271,25 +286,32 @@ class TranslatorSidebar(QWidget):
         self.setGeometry(int(x), 0, self._width, height)
 
     def expand(self):
-        if self._expanded: return
+        if self._expanded:
+            return
         self._expanded = True
         self._indicator_colour = self.COLOUR_NEUTRAL
         self._reposition()
         self.update()
 
     def collapse(self):
-        if self._pinned: return
+        if self._pinned:
+            return
         self._expanded = False
         self._reposition()
         self.update()
 
-    def _on_pin_toggled(self, checked): self._pinned = checked
+    def _on_pin_toggled(self, checked):
+        self._pinned = checked
 
     def paintEvent(self, event):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         # Strip indicator
-        strip_rect = QRectF(0, 0, 6, self.height()) if self._side == "right" else QRectF(self.width()-6, 0, 6, self.height())
+        strip_rect = (
+            QRectF(0, 0, 6, self.height())
+            if self._side == "right"
+            else QRectF(self.width() - 6, 0, 6, self.height())
+        )
         painter.fillRect(strip_rect, self._indicator_colour)
         painter.end()
 
@@ -352,4 +374,5 @@ class TranslatorSidebar(QWidget):
 
     def _on_export_history(self):
         path, _ = QFileDialog.getSaveFileName(self, "Export History", "", "CSV Files (*.csv)")
-        if path: self._history_manager.export_to_csv(path)
+        if path:
+            self._history_manager.export_to_csv(path)
