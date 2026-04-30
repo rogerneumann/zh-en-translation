@@ -155,10 +155,17 @@ try {
 
     Write-Log "" "White"
     Write-Log "=== Elevated OCR setup complete. Log saved to: $LogPath ===" "Green"
+    Write-Log "SETUP_STATUS: SUCCESS" "Green"
 
 } catch {
     Write-Host "[FATAL] $_" -ForegroundColor Red
-    if ($LogStream) { try { $LogStream.WriteLine("[FATAL] $_") } catch {} }
+    if ($LogStream) {
+        try {
+            $LogStream.WriteLine("[FATAL] $_")
+            $LogStream.WriteLine("SETUP_STATUS: FAILED")
+            $LogStream.Flush()
+        } catch {}
+    }
 }
 
 if ($LogStream) { $LogStream.Close() }
