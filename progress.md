@@ -92,7 +92,44 @@ Windows OCR is the primary engine but requires the Chinese language capability
 - Installer now calls `setup_elevated.ps1` via `ShellExec('runas')` once
   post-install instead of triggering multiple separate UAC prompts
 
-### Files changed
+---
+
+## Session: Elevation + Log Fix (2026-04-30)
+
+#### Bug 9 — Preferences install buttons never requested admin elevation
+Both "Install Tesseract" and "Install Chinese OCR" buttons in Preferences used
+`subprocess.Popen`, which launches PowerShell as the current (non-admin) user.
+The UB-Mannheim NSIS installer has `RequestExecutionLevel admin` hard-baked in,
+so it silently fails without an admin token. winget machine-scope packages also
+require elevation. Neither install path could ever succeed.
+
+Fixed to use `ctypes.windll.shell32.ShellExecuteW(None, "runas", ...)` which
+triggers a proper Windows UAC prompt before running `setup_elevated.ps1`.
+Both buttons now point to `setup_elevated.ps1` (handles Tesseract + Windows OCR
+in one elevated pass) instead of the user-level `install_tesseract.ps1`.
+
+`install_tesseract.ps1` was also added to the `[Files]` section in the `.iss`
+installer so it is present in installed builds.
+
+#### Bug 10 — Log files split across two filenames; "View Log" found nothing
+`install_tesseract.ps1` wrote to `zh-en-translator-tesseract-install.log` while
+`setup_elevated.ps1` wrote to `zh-en-translator-elevated-setup.log`. The
+"View Log" button only looked for the former, so after the button switch to
+`setup_elevated.ps1` (Bug 9 fix) the log was never found.
+
+Both scripts now write to the same file: `zh-en-translator-elevated-setup.log`.
+The "View Log" button looks for exactly that one path.
+
+### Files changed (2026-04-30)
+- `src/zh_en_translator/ui/preferences.py` — ShellExecuteW(runas) for both
+  install buttons; both point to setup_elevated.ps1; View Log simplified to
+  single log path
+- `installer/install_tesseract.ps1` — log filename unified to elevated-setup.log
+- `installer/zh-en-translator.iss` — added install_tesseract.ps1 to [Files]
+
+---
+
+### Files changed (2026-04-29)
 - `src/zh_en_translator/engines/ocr/engine.py` — waterfall order
 - `src/zh_en_translator/engines/ocr/tesseract_ocr.py` — runtime lang probe
 - `src/zh_en_translator/engines/ocr/windows_ocr.py` — `ocr_status()`, `is_available()` now checks Chinese language
