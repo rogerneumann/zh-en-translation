@@ -411,7 +411,7 @@ class PreferencesDialog(QDialog):
 
             if sys.platform == "win32":
                 def _install_win_ocr():
-                    import subprocess, pathlib
+                    import ctypes, pathlib
                     candidates = [
                         pathlib.Path(sys.executable).parent / "setup_elevated.ps1",
                         pathlib.Path(__file__).parents[3] / "installer" / "setup_elevated.ps1",
@@ -425,17 +425,22 @@ class PreferencesDialog(QDialog):
                             "Language & Region -> Add a language (Chinese Simplified).",
                         )
                         return
-                    subprocess.Popen(
-                        ["powershell.exe", "-ExecutionPolicy", "Bypass",
-                         "-WindowStyle", "Normal", "-File", str(script)],
-                        creationflags=subprocess.CREATE_NEW_CONSOLE,
+                    args = f'-ExecutionPolicy Bypass -WindowStyle Normal -File "{script}"'
+                    ret = ctypes.windll.shell32.ShellExecuteW(
+                        None, "runas", "powershell.exe", args, str(script.parent), 1
                     )
-                    QMessageBox.information(
-                        self, "Installing Windows OCR",
-                        "A terminal window has opened.\n"
-                        "You will see a UAC (administrator) prompt — please allow it.\n"
-                        "Reopen Preferences when it finishes to verify the status.",
-                    )
+                    if int(ret) > 32:
+                        QMessageBox.information(
+                            self, "Installing Windows OCR",
+                            "An administrator (UAC) prompt will appear — please allow it.\n"
+                            "Reopen Preferences when it finishes to verify the status.\n\n"
+                            "Log: %TEMP%\\zh-en-translator-elevated-setup.log",
+                        )
+                    elif int(ret) != 5:  # 5 = user cancelled UAC — no message needed
+                        QMessageBox.warning(
+                            self, "Launch Failed",
+                            f"Could not start the elevated installer (error {int(ret)})."
+                        )
 
                 btn_win_ocr = QPushButton("Install Chinese OCR (requires admin)")
                 btn_win_ocr.clicked.connect(_install_win_ocr)
@@ -481,42 +486,64 @@ class PreferencesDialog(QDialog):
 
             if sys.platform == "win32":
                 def _install_tesseract():
-                    import subprocess, pathlib
-                    script = pathlib.Path(__file__).parents[3] / "installer" / "install_tesseract.ps1"
-                    if not script.exists():
+                    import ctypes, pathlib
+                    # setup_elevated.ps1 covers Tesseract + Windows OCR in one elevated pass.
+                    # install_tesseract.ps1 (user-level) cannot work: UB-Mannheim NSIS always
+                    # has RequestExecutionLevel admin, so it needs a real admin token.
+                    candidates = [
+                        pathlib.Path(sys.executable).parent / "setup_elevated.ps1",
+                        pathlib.Path(__file__).parents[3] / "installer" / "setup_elevated.ps1",
+                    ]
+                    script = next((p for p in candidates if p.exists()), None)
+                    if not script:
                         QMessageBox.warning(
                             self,
                             "Script Not Found",
-                            f"install_tesseract.ps1 not found at:\n{script}\n\n"
+                            "setup_elevated.ps1 not found.\n\n"
                             "Download and install Tesseract manually from:\n"
                             "https://github.com/UB-Mannheim/tesseract/wiki",
                         )
                         return
-                    subprocess.Popen(
-                        ["powershell.exe", "-ExecutionPolicy", "Bypass", "-File", str(script)],
-                        creationflags=subprocess.CREATE_NEW_CONSOLE,
+                    args = f'-ExecutionPolicy Bypass -WindowStyle Normal -File "{script}"'
+                    ret = ctypes.windll.shell32.ShellExecuteW(
+                        None, "runas", "powershell.exe", args, str(script.parent), 1
                     )
-                    QMessageBox.information(
-                        self,
-                        "Installing Tesseract",
-                        "A terminal window has opened to install Tesseract.\n"
-                        "Reopen Preferences when it finishes to verify the status.",
-                    )
+                    if int(ret) > 32:
+                        QMessageBox.information(
+                            self,
+                            "Installing Tesseract",
+                            "An administrator (UAC) prompt will appear — please allow it.\n"
+                            "Reopen Preferences when it finishes to verify the status.\n\n"
+                            "Log: %TEMP%\\zh-en-translator-elevated-setup.log",
+                        )
+                    elif int(ret) != 5:  # 5 = user cancelled UAC — no message needed
+                        QMessageBox.warning(
+                            self, "Launch Failed",
+                            f"Could not start the elevated installer (error {int(ret)})."
+                        )
 
                 btn_install = QPushButton("Install Tesseract")
                 btn_install.clicked.connect(_install_tesseract)
                 btn_row.addWidget(btn_install)
 
             def _open_tess_log():
-                log_path = os.path.join(os.environ.get("TEMP", ""), "zh-en-translator-tesseract-install.log")
-                if os.path.isfile(log_path):
-                    import subprocess
-                    subprocess.Popen(["notepad.exe", log_path])
+                import subprocess
+                temp = os.environ.get("TEMP", os.path.expanduser("~"))
+                candidates = [
+                    os.path.join(temp, "zh-en-translator-elevated-setup.log"),
+                    os.path.join(temp, "zh-en-translator-tesseract-install.log"),
+                ]
+                found = [p for p in candidates if os.path.isfile(p)]
+                if found:
+                    found.sort(key=os.path.getmtime, reverse=True)
+                    subprocess.Popen(["notepad.exe", found[0]])
                 else:
                     QMessageBox.information(
                         self,
                         "Log Not Found",
-                        f"No install log found at:\n{log_path}\n\n"
+                        "No install log found. Expected at one of:\n"
+                        f"  {candidates[0]}\n"
+                        f"  {candidates[1]}\n\n"
                         "Click 'Install Tesseract' to run the installer.",
                     )
 
