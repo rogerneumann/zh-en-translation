@@ -59,6 +59,8 @@ Source: "{#MyDistDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs 
 Source: "download_packs.ps1"; DestDir: "{app}"; Flags: ignoreversion
 ; Elevated OCR setup (Windows OCR capability + Tesseract Program Files) -- triggered once post-install
 Source: "setup_elevated.ps1"; DestDir: "{app}"; Flags: ignoreversion
+; User-level Tesseract install fallback (used by Preferences if elevated script unavailable)
+Source: "install_tesseract.ps1"; DestDir: "{app}"; Flags: ignoreversion
 ; Bundled Tesseract OCR (portable — always included, no UAC required)
 Source: "tesseract-bundle\*"; DestDir: "{app}\tesseract"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: BundleExists('tesseract-bundle\tesseract.exe')
 ; Bundled CC-CEDICT (pre-populated so no network required on first run)
