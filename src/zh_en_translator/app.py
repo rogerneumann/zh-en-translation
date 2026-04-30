@@ -499,6 +499,7 @@ class TranslatorApp(QObject):
         if not self.sidebar_mode:
             self.sidebar_mode = True
             self.config.mode = "sidebar"
+            save_config(self.config)
             self._update_tray_sidebar_label()
         if not self.sidebar.isVisible():
             self.sidebar.show()
@@ -516,11 +517,13 @@ class TranslatorApp(QObject):
     def _on_sidebar_closed(self) -> None:
         self.sidebar_mode = False
         self.config.mode = "popup"
+        save_config(self.config)
         self._update_tray_sidebar_label()
 
     def _on_toggle_sidebar_mode(self, checked: bool) -> None:
         self.sidebar_mode = checked
         self.config.mode = "sidebar" if checked else "popup"
+        save_config(self.config)
         if checked and not self.sidebar.isVisible():
             self.sidebar.show()
         elif not checked:
@@ -530,6 +533,8 @@ class TranslatorApp(QObject):
     def _on_toggle_sidebar_side(self) -> None:
         self._sidebar_on_left = not self._sidebar_on_left
         side = "left" if self._sidebar_on_left else "right"
+        self.config.side = side
+        save_config(self.config)
         self.sidebar.set_side(side)
         self.action_sidebar_side.setText(
             "Move Sidebar to Right" if self._sidebar_on_left else "Move Sidebar to Left"

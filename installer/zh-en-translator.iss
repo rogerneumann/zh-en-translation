@@ -57,6 +57,10 @@ Name: "startup"; Description: "Launch {#MyAppName} when Windows starts"; GroupDe
 Source: "{#MyDistDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Post-install helper scripts
 Source: "download_packs.ps1"; DestDir: "{app}"; Flags: ignoreversion
+; Elevated OCR setup (Windows OCR capability + Tesseract Program Files) -- triggered once post-install
+Source: "setup_elevated.ps1"; DestDir: "{app}"; Flags: ignoreversion
+; User-level Tesseract install fallback (used by Preferences if elevated script unavailable)
+Source: "install_tesseract.ps1"; DestDir: "{app}"; Flags: ignoreversion
 ; Bundled Tesseract OCR (portable — always included, no UAC required)
 Source: "tesseract-bundle\*"; DestDir: "{app}\tesseract"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: BundleExists('tesseract-bundle\tesseract.exe')
 ; Bundled CC-CEDICT (pre-populated so no network required on first run)
@@ -227,8 +231,8 @@ end;
 
 // ---------------------------------------------------------------------------
 // Run downloads during install phase — visible terminal shows progress.
-// Both Argos and Tesseract run synchronously so Finish page only appears
-// after downloads complete (no surprise background popups).
+// Both Argos and OCR setup run synchronously so Finish page only appears
+// after they complete (no surprise background popups).
 // ---------------------------------------------------------------------------
 procedure CurStepChanged(CurStep: TSetupStep);
 var
@@ -236,8 +240,8 @@ var
 begin
   if CurStep = ssPostInstall then
   begin
-    // Argos translation model (Full install only)
-    // Skip download_packs.ps1 if the Argos bundle was pre-populated in the installer.
+    // Step 1: Argos translation model (Full install only)
+    // Skip if the Argos bundle was pre-populated in the installer.
     if IsFullInstall and not BundleDirExists('argos-bundle') then
     begin
       WizardForm.StatusLabel.Caption :=
@@ -245,8 +249,6 @@ begin
         'A terminal window shows download progress. Please wait.';
       WizardForm.FilenameLabel.Caption := '';
       WizardForm.Update();
-      // SW_SHOWNORMAL: visible terminal so user can watch progress
-      // ewWaitUntilTerminated: installer waits here until download is done
       Exec('powershell.exe',
         '-ExecutionPolicy Bypass' +
         ' -File "' + ExpandConstant('{app}\download_packs.ps1') + '"' +
@@ -260,7 +262,32 @@ begin
           'To retry later, run download_packs.ps1 from the install folder.',
           mbInformation, MB_OK);
     end;
-    // Tesseract OCR is now always bundled in the installer — no separate install step needed.
+
+    // Step 2: Single-elevation OCR setup
+    // Covers both Windows OCR Chinese capability and Tesseract Program Files install.
+    // Skip if Windows OCR Chinese is already available AND Tesseract is bundled.
+    if not (WinOcrAvailable and BundleExists('tesseract-bundle\tesseract.exe')) then
+    begin
+      if MsgBox(
+          'OCR features need a one-time administrator prompt to complete setup.' + #13#10#13#10 +
+          'This will:' + #13#10 +
+          '  - Install Windows OCR Chinese language support' + #13#10 +
+          '  - Install Tesseract as an OCR backup (if not already present)' + #13#10#13#10 +
+          'Click OK to allow (one UAC prompt), or Cancel to configure later via Preferences.',
+          mbConfirmation, MB_OKCANCEL) = IDOK then
+      begin
+        WizardForm.StatusLabel.Caption := 'Configuring OCR features (administrator required)...';
+        WizardForm.FilenameLabel.Caption := '';
+        WizardForm.Update();
+        // ShellExec with runas verb triggers a single UAC elevation.
+        // ewWaitUntilTerminated ensures the installer waits before showing Finish.
+        ShellExec('runas', 'powershell.exe',
+          '-ExecutionPolicy Bypass -WindowStyle Normal' +
+          ' -File "' + ExpandConstant('{app}\setup_elevated.ps1') + '"',
+          ExpandConstant('{app}'),
+          SW_SHOWNORMAL, ewWaitUntilTerminated, ResultCode);
+      end;
+    end;
   end;
 end;
 

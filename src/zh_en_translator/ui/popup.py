@@ -438,6 +438,8 @@ class TranslatorPopup(QWidget):
         if text.startswith("⚠"):
             self._loading_timer.stop()
             self.translation_label.setText(text)
+            if "language pack" in text.lower():
+                self.btn_lang_settings.setVisible(True)
             return
         self.captured_text = text
         self.text_display.setPlainText(text)
@@ -486,7 +488,10 @@ class TranslatorPopup(QWidget):
         self._details_toggle.setText("▲ Details" if checked else "▼ Details")
         self._details_area.setVisible(checked)
         self._details_area.setMaximumHeight(150 if checked else 0)
-        self._on_translation_ready(self.translation_label.text())
+        if checked:
+            self._update_details()
+        needed_h = self.layout().sizeHint().height() + 20
+        self.resize(self.width(), min(520, max(180, needed_h)))
 
     def _update_details(self):
         if not self.dictionary or not self.captured_text: return
@@ -495,7 +500,8 @@ class TranslatorPopup(QWidget):
             results = pipeline.translate(self.captured_text, self.dictionary)
             html = "".join([f"<div><b>{r.token}</b> {f'[{r.pinyin}]' if r.pinyin else ''}<br><span style='color:gray;'>{', '.join(r.glosses[:2])}</span></div>" if r.is_chinese else f"<span>{r.token}</span>" for r in results])
             self._details_content.setText(html)
-        except: pass
+        except Exception as e:
+            logger.debug("Word-by-word details failed: %s", e)
 
     def _on_pinyin_ready(self, pinyin: str):
         if self._dismissed or not pinyin: return
@@ -545,8 +551,10 @@ class TranslatorPopup(QWidget):
     def _dismiss(self):
         if self._dismissed: return
         self._dismissed = True
-        try: QApplication.clipboard().setText(self.original_clipboard)
-        except: pass
+        try:
+            QApplication.clipboard().setText(self.original_clipboard)
+        except Exception:
+            logger.debug("Clipboard restore on dismiss failed", exc_info=True)
         self.close()
 
     def mousePressEvent(self, event):
