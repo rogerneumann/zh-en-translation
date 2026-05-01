@@ -467,7 +467,6 @@ class PreferencesDialog(QDialog):
 
     def _build_lookup_ocr_tab(self) -> QWidget:
         import sys
-        import shutil
         import os
         from zh_en_translator.engines.ocr import windows_ocr as _wocr
 
@@ -546,19 +545,11 @@ class PreferencesDialog(QDialog):
         tess_group = QGroupBox("Tesseract Status (optional fallback — Windows OCR is primary)")
         tess_layout = QVBoxLayout(tess_group)
 
-        tess_path = shutil.which("tesseract")
-        if not tess_path and sys.platform == "win32":
-            for c in [
-                os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe"),
-                r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-                os.path.expandvars(r"%LOCALAPPDATA%\Tesseract-OCR\tesseract.exe"),
-                os.path.expandvars(r"%APPDATA%\Tesseract-OCR\tesseract.exe"),
-            ]:
-                if os.path.isfile(c):
-                    tess_path = c
-                    break
+        from zh_en_translator.engines.ocr import tesseract_ocr as _tess
+        tess_available = _tess.is_available()
+        tess_path = _tess.get_found_path()
 
-        if tess_path:
+        if tess_available:
             self._tess_static_lbl = QLabel(f"Tesseract: Found at {tess_path}")
             self._tess_static_lbl.setStyleSheet("color: #1a7a1a; font-weight: bold;")
         else:
@@ -575,9 +566,9 @@ class PreferencesDialog(QDialog):
 
         if sys.platform == "win32":
             self._btn_tess_install = QPushButton(
-                "Reinstall Tesseract" if tess_path else "Install Tesseract"
+                "Reinstall Tesseract" if tess_available else "Install Tesseract"
             )
-            if tess_path:
+            if tess_available:
                 self._btn_tess_install.setStyleSheet(_REINSTALL_STYLE)
             self._btn_tess_install.clicked.connect(
                 lambda: self._do_install(self._btn_tess_install, self._tess_status_lbl)
@@ -950,24 +941,14 @@ class PreferencesDialog(QDialog):
     def _refresh_install_buttons(self) -> None:
         """Re-probe install state after setup completes and update button labels/styles."""
         import sys
-        import shutil
-        import os
         from zh_en_translator.engines.ocr import windows_ocr as _wocr
+        from zh_en_translator.engines.ocr import tesseract_ocr as _tess
 
         if self._btn_tess_install is not None:
-            tess_path = shutil.which("tesseract")
-            if not tess_path:
-                for c in [
-                    os.path.expandvars(r"%LOCALAPPDATA%\Programs\Tesseract-OCR\tesseract.exe"),
-                    r"C:\Program Files\Tesseract-OCR\tesseract.exe",
-                    os.path.expandvars(r"%LOCALAPPDATA%\Tesseract-OCR\tesseract.exe"),
-                    os.path.expandvars(r"%APPDATA%\Tesseract-OCR\tesseract.exe"),
-                ]:
-                    if os.path.isfile(c):
-                        tess_path = c
-                        break
+            tess_available = _tess.is_available()
+            tess_path = _tess.get_found_path()
             self._btn_tess_install.setEnabled(True)
-            if tess_path:
+            if tess_available:
                 self._btn_tess_install.setText("Reinstall Tesseract")
                 self._btn_tess_install.setStyleSheet(_REINSTALL_STYLE)
                 self._tess_static_lbl.setText(f"Tesseract: Found at {tess_path}")
