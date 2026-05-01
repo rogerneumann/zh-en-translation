@@ -1,4 +1,4 @@
-; Inno Setup 6 script for zh-en-translator
+﻿; Inno Setup 6 script for zh-en-translator
 ;
 ; Build:  iscc installer\zh-en-translator.iss
 ; Prerequisite: run PyInstaller first (see installer\build.ps1)
