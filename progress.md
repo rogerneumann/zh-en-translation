@@ -1,5 +1,50 @@
 # zh-en-translator — Progress Log
 
+## Session: Installer Overhaul — Install State, OCR Options, Re-install Detection (2026-05-01)
+
+### Summary
+Three related improvements to the Inno Setup installer and app runtime:
+
+1. **Install state tracking** — `install_state.toml` written to `%APPDATA%\zh-en-translator\`
+   after every install/upgrade, mirroring registry entries at `HKCU\Software\zh-en-translator`.
+   Records install type (full/lite), version, date, install directory, and per-component
+   outcomes (argos, windows_ocr, tesseract). New `install_state.py` module lets the app
+   read and update these at runtime (e.g. marking argos=true after a late download).
+
+2. **Re-install detection** — on upgrade, the installer reads `InstallType` from the registry
+   and pre-selects the matching radio button. A note appears on the Install Type page:
+   "Previous Full installation detected -- options pre-selected to match." OCR checkboxes are
+   also pre-selected from `WinOcrInstalled`/`TesseractInstalled` registry values.
+
+3. **New OCR Options wizard page** — inserted after the Install Type page; two checkboxes:
+   - *Windows OCR* (recommended, default checked) — description adapts if Chinese pack is
+     already installed vs needs enabling; warns that Windows Update language-pack downloads
+     "can take 30 minutes or more on slow connections, or longer if other updates are queued."
+   - *Tesseract OCR* (bundled ~150 MB, default checked) — unchecking triggers a confirmation
+     dialog warning about other apps depending on Tesseract; on upgrade, the old
+     `{app}\tesseract` directory is removed during `ssInstall` if unchecked.
+   - `ShouldInstallTesseract()` function gates the `[Files]` bundle copy so no files land
+     if the user opts out.
+
+4. **Inline status labels** during post-install — "Step 1 of 2: Downloading translation
+   model...", "Step 2 of 2: Configuring Windows OCR..." etc. updated on `WizardForm.StatusLabel`
+   and `WizardForm.FilenameLabel` in place. No new terminal window spawned for the Windows
+   OCR step. The Argos download still opens a console window for progress visibility.
+
+5. **`download_packs.ps1`** — Python snippet now calls `_mark_argos_installed()` on success,
+   which patches `argos = true` into `install_state.toml` without needing to import the
+   full package (safe to call from system Python).
+
+### Files changed (2026-05-01)
+- `installer/zh-en-translator.iss` — OCR Options page, re-install detection, install state write, status labels
+- `installer/download_packs.ps1` — `_mark_argos_installed()` updates TOML on success
+- `src/zh_en_translator/install_state.py` — new module: `load_state()`, `update_components()`, atomic write
+
+### Tests
+644 passed, 18 skipped (unchanged — no regressions).
+
+---
+
 ## Session: Translation Display Fixes + Test Suite Cleanup (2026-05-01)
 
 ### Bug 12 — Pin → sidebar showed raw HTML instead of translated text
