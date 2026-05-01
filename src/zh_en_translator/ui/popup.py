@@ -38,6 +38,13 @@ def wrap_words(text: str) -> str:
     )
 
 
+def _render_translation_html(text: str) -> str:
+    """Convert plain translation text to HTML for QLabel display only.
+    Applies word links per-line then joins with <br> so the wrap_words
+    regex never sees HTML tags."""
+    return '<br>'.join(wrap_words(line) for line in text.split('\n'))
+
+
 class TranslatorPopup(QWidget):
     """
     Frameless popup: source text at top, English sentence translation below.
@@ -73,6 +80,7 @@ class TranslatorPopup(QWidget):
         self._pinyin_worker: PinyinWorker | None = None
         self._is_ocr_pending = is_ocr_pending
         self._config = config
+        self._translation_text: str = ""
         self._loading_dots = 0
         self._loading_timer = QTimer(self)
         self._loading_timer.setInterval(400)
@@ -277,7 +285,12 @@ class TranslatorPopup(QWidget):
             "Replace the original selected text with the English translation"
         )
         self.btn_pin.setAccessibleName("Pin")
+        self.btn_pin.setAccessibleDescription("Toggle keep-open mode for this popup")
         self.btn_close.setAccessibleName("Close")
+        self.btn_lang_settings.setAccessibleDescription("Open Windows language settings to install Chinese OCR pack")
+        self.text_display.setAccessibleDescription("Edit the Chinese source text to retranslate")
+        self.translation_label.setAccessibleDescription("English translation of the source text")
+        self._pinyin_label.setAccessibleDescription("Pinyin romanisation of the source text")
         self.btn_pin_sidebar.setAccessibleDescription(
             "Pin this translation to the persistent sidebar panel"
         )
@@ -474,7 +487,8 @@ class TranslatorPopup(QWidget):
             return
         self._loading_timer.stop()
         if not text.startswith("⚠"):
-            self.translation_label.setText(wrap_words(text))
+            self._translation_text = text
+            self.translation_label.setText(_render_translation_html(text))
             self._update_details()
         else:
             self.translation_label.setText(text)
@@ -539,7 +553,7 @@ class TranslatorPopup(QWidget):
         self._pinyin_label.setVisible(True)
 
     def _replace_text(self):
-        trans = self.translation_label.text()
+        trans = self._translation_text
         if not trans or trans == "Translating…":
             return
         QApplication.clipboard().setText(trans)
@@ -557,12 +571,12 @@ class TranslatorPopup(QWidget):
         self._pinned = checked
 
     def _pin_to_sidebar(self):
-        if self._on_pin and self.translation_label.text() != "Translating…":
-            self._on_pin(self.captured_text, self.translation_label.text())
+        if self._on_pin and self._translation_text != "Translating…":
+            self._on_pin(self.captured_text, self._translation_text)
             self._dismiss()
 
     def _copy_translation(self):
-        QApplication.clipboard().setText(self.translation_label.text())
+        QApplication.clipboard().setText(self._translation_text)
         self.btn_copy.setText("Copied!")
         QTimer.singleShot(1500, lambda: self.btn_copy.setText("Copy"))
 

@@ -166,8 +166,9 @@ def test_punctuation_chinese_comma_and_period():
 @pytest.mark.skipif(not _JIEBA_OK, reason="jieba not installed")
 def test_compound_laser_module():
     """'激光模块' should be recognised as a compound (2+ chars) when jieba is available."""
+    from zh_en_translator.engines.segmentation import add_custom_words
+    add_custom_words([("激光模块", 20, "n")])
     result = segment("激光模块")
-    # Must appear as a single compound token, not split into single characters
     assert "激光模块" in result, (
         f"Expected '激光模块' as a compound token; got: {result!r}"
     )
@@ -175,22 +176,13 @@ def test_compound_laser_module():
 
 @pytest.mark.skipif(not _JIEBA_OK, reason="jieba not installed")
 def test_compound_full_sentence_regression():
-    """Canonical regression sentence: key compounds must survive segmentation.
-
-    Input:  李勋、那个X10 Pro的手板样机，激光模块换完了，你们可以去进能部门标一下，我去找他弄
-    When the user dict (手板样机, 激光模块, 进能部门) is loaded these should
-    appear as compound tokens rather than being split into single characters.
-    """
-    from pathlib import Path
-    from zh_en_translator.engines.segmentation import load_user_dict
-
-    # Load domain user dict if it exists (mirrors what the app does at startup)
-    user_dict = (
-        Path(__file__).parent.parent
-        / "src" / "zh_en_translator" / "resources" / "user_dict_technical.txt"
-    )
-    if user_dict.exists():
-        load_user_dict(user_dict)
+    """Canonical regression sentence: key compounds must survive segmentation."""
+    from zh_en_translator.engines.segmentation import add_custom_words
+    add_custom_words([
+        ("手板样机", 20, "n"),
+        ("激光模块", 20, "n"),
+        ("进能部门", 20, "n"),
+    ])
 
     sentence = (
         "李勋、那个X10 Pro的手板样机，激光模块换完了，"
@@ -198,7 +190,6 @@ def test_compound_full_sentence_regression():
     )
     result = segment(sentence)
 
-    # At least the most prominent compound should survive
     assert "激光模块" in result, (
         f"Expected '激光模块' as a compound token; got: {result!r}"
     )

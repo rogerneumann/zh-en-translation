@@ -51,39 +51,8 @@ def _make_fake_numpy_module():
 # engine.py — waterfall tests
 # ---------------------------------------------------------------------------
 
-def test_ocr_engine_waterfall_paddle_first(monkeypatch):
-    """PaddleOCR is tried first; if it returns text, others are not called."""
-    paddle_mod = MagicMock()
-    paddle_mod.is_available.return_value = True
-    paddle_mod.ocr_image.return_value = "extracted by paddle"
-
-    windows_mod = MagicMock()
-    windows_mod.is_available.return_value = True
-    windows_mod.ocr_image.return_value = "should not be reached"
-
-    tesseract_mod = MagicMock()
-    tesseract_mod.is_available.return_value = True
-    tesseract_mod.ocr_image.return_value = "should not be reached"
-
-    monkeypatch.setattr("zh_en_translator.engines.ocr.engine.paddle_ocr", paddle_mod)
-    monkeypatch.setattr("zh_en_translator.engines.ocr.engine.windows_ocr", windows_mod)
-    monkeypatch.setattr("zh_en_translator.engines.ocr.engine.tesseract_ocr", tesseract_mod)
-
-    from zh_en_translator.engines.ocr.engine import ocr_image
-    result = ocr_image(b"fake_image_bytes", lang="zh")
-
-    assert result == "extracted by paddle"
-    paddle_mod.ocr_image.assert_called_once()
-    windows_mod.ocr_image.assert_not_called()
-    tesseract_mod.ocr_image.assert_not_called()
-
-
-def test_ocr_engine_waterfall_falls_back_to_windows(monkeypatch):
-    """When PaddleOCR returns None, Windows OCR is tried next."""
-    paddle_mod = MagicMock()
-    paddle_mod.is_available.return_value = True
-    paddle_mod.ocr_image.return_value = None  # paddle found but returned nothing
-
+def test_ocr_engine_waterfall_windows_first(monkeypatch):
+    """Windows OCR is tried first; if it returns text, others are not called."""
     windows_mod = MagicMock()
     windows_mod.is_available.return_value = True
     windows_mod.ocr_image.return_value = "extracted by windows"
@@ -91,6 +60,10 @@ def test_ocr_engine_waterfall_falls_back_to_windows(monkeypatch):
     tesseract_mod = MagicMock()
     tesseract_mod.is_available.return_value = True
     tesseract_mod.ocr_image.return_value = "should not be reached"
+
+    paddle_mod = MagicMock()
+    paddle_mod.is_available.return_value = True
+    paddle_mod.ocr_image.return_value = "should not be reached"
 
     monkeypatch.setattr("zh_en_translator.engines.ocr.engine.paddle_ocr", paddle_mod)
     monkeypatch.setattr("zh_en_translator.engines.ocr.engine.windows_ocr", windows_mod)
@@ -100,9 +73,36 @@ def test_ocr_engine_waterfall_falls_back_to_windows(monkeypatch):
     result = ocr_image(b"fake_image_bytes", lang="zh")
 
     assert result == "extracted by windows"
-    paddle_mod.ocr_image.assert_called_once()
     windows_mod.ocr_image.assert_called_once()
     tesseract_mod.ocr_image.assert_not_called()
+    paddle_mod.ocr_image.assert_not_called()
+
+
+def test_ocr_engine_waterfall_windows_falls_back_to_tesseract(monkeypatch):
+    """When Windows OCR returns None, Tesseract is tried next."""
+    windows_mod = MagicMock()
+    windows_mod.is_available.return_value = True
+    windows_mod.ocr_image.return_value = None  # windows found but returned nothing
+
+    tesseract_mod = MagicMock()
+    tesseract_mod.is_available.return_value = True
+    tesseract_mod.ocr_image.return_value = "extracted by tesseract"
+
+    paddle_mod = MagicMock()
+    paddle_mod.is_available.return_value = True
+    paddle_mod.ocr_image.return_value = "should not be reached"
+
+    monkeypatch.setattr("zh_en_translator.engines.ocr.engine.paddle_ocr", paddle_mod)
+    monkeypatch.setattr("zh_en_translator.engines.ocr.engine.windows_ocr", windows_mod)
+    monkeypatch.setattr("zh_en_translator.engines.ocr.engine.tesseract_ocr", tesseract_mod)
+
+    from zh_en_translator.engines.ocr.engine import ocr_image
+    result = ocr_image(b"fake_image_bytes", lang="zh")
+
+    assert result == "extracted by tesseract"
+    windows_mod.ocr_image.assert_called_once()
+    tesseract_mod.ocr_image.assert_called_once()
+    paddle_mod.ocr_image.assert_not_called()
 
 
 def test_ocr_engine_waterfall_falls_back_to_tesseract(monkeypatch):

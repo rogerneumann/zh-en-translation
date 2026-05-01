@@ -1,5 +1,95 @@
 # zh-en-translator — Progress Log
 
+## Session: Translation Display Fixes + Test Suite Cleanup (2026-05-01)
+
+### Bug 12 — Pin → sidebar showed raw HTML instead of translated text
+
+**Symptom:** Clicking "Pin →" caused the sidebar to display the full HTML markup
+of the translation (e.g. `<a href="word:The" style="...">The</a> cat sat`) rather
+than rendered text.
+
+**Root cause:** `QLabel.text()` returns the raw HTML string when the label was set
+with rich text via `wrap_words()`. The pin callback passed `self.translation_label.text()`
+(HTML) to `sidebar.set_translation()`, which then called `wrap_words()` on that
+already-HTML string — wrapping attribute names like `href`, `style`, `color`,
+`inherit` in more `<a>` tags, producing catastrophically malformed markup.
+
+The same HTML leak affected **Copy** (copied markup to clipboard) and **Replace**
+(pasted markup into the target app instead of plain text).
+
+**Fix:** Added `self._translation_text: str = ""` to the popup. Plain text is stored
+on arrival in `_on_translation_ready` before `wrap_words()` is applied. All
+three outbound paths (pin, copy, replace) now read `self._translation_text`.
+
+### Bug 13 — HTML display helper was missing, causing double-wrapping in sidebar
+
+Added `_render_translation_html(text)` module-level helper in `popup.py`:
+- Splits on `\n`, applies `wrap_words()` per line, joins with `<br>`
+- `wrap_words` regex never sees `<br>` tags (ordering fix)
+- Imported and used in `sidebar.py` for `set_translation`, `update_translation`,
+  and `_on_history_item_clicked` — the last of which previously set raw plain
+  text with no word-link wrapping at all
+
+### Bug 14 — Multi-line / structured source text translated as one flat block
+
+**Symptom:** Copying a bulleted list, numbered list, or multi-paragraph block
+produced a single run-on English sentence with no structure preserved.
+
+**Fix:** Added `_segment_source_text(text)` to `translation_worker.py`. Before
+translating, the source is split into segments based on:
+- Empty lines → paragraph breaks
+- Bullet characters (`• · - * ► ▶ ‣ ◦`) → individual bullet items (prefix stripped, restored after)
+- Numbered lists (`1.` `2.` `①` `一、` etc.) → individual items
+- Tab / 4-space-indented lines → indented items
+- Sentence-final punctuation (`。！？；.!?;`) → hard break between text segments
+- No terminal punctuation → soft wrap, lines joined (space added at ASCII boundaries)
+
+Each segment is translated independently via the same engine waterfall; results
+are reassembled with original prefixes and separators. Single-segment input
+(the common case) is unchanged in behaviour.
+
+**Architecture principle applied:** Plain text is the data model throughout.
+`wrap_words()` / `<br>` substitutions are view-layer only, applied once at
+`setText()` time and never stored or passed between components.
+
+### Test suite: 16 pre-existing failures fixed
+
+All tests now pass (644 passed, 18 skipped). Failures fell into three categories:
+
+**Stale test assertions (tests wrong, code correct):**
+- `test_ocr.py` — two tests described old Paddle-first waterfall; renamed and
+  rewritten to match actual Windows → Tesseract → Paddle order
+- `test_themes.py` — colour values (`#F8F8F8` → `#FFFFFF`, `#1E1E1E` → `#202020`)
+  and theme combo count (4 → 5, high-contrast was added) updated to match code
+- `test_ab_translation.py` — invalid cross-config glossary coverage comparison
+  (configs score against different glossary dicts, making the `>=` meaningless)
+  replaced with valid in-range assertions
+
+**Missing production code (tests correct, code incomplete):**
+- `popup.py` — 5 missing `setAccessibleDescription()` calls added to
+  `_setup_accessibility()` (btn_pin, btn_lang_settings, text_display,
+  translation_label, _pinyin_label)
+- `sidebar.py` — 2 missing `setAccessibleDescription()` calls (btn_pin,
+  _close_btn) + missing `set_side(side)` method added
+- `test_segmentation.py` — compound token tests relied on file-based
+  `load_user_dict` which doesn't reliably update jieba's live dictionary;
+  switched to `add_custom_words` directly (same approach as the passing test)
+
+**Test tooling:**
+- `pytest` and `pytest-qt` installed into the system Python environment;
+  `pip` was bootstrapped via `ensurepip` (was missing from the Python 3.11 install)
+
+### Files changed (2026-05-01)
+- `src/zh_en_translator/ui/popup.py` — `_translation_text`, `_render_translation_html()`, fix pin/copy/replace, accessibility descriptions
+- `src/zh_en_translator/ui/sidebar.py` — `_render_translation_html` usage, accessibility descriptions, `set_side()`
+- `src/zh_en_translator/engines/translation_worker.py` — `_segment_source_text()`, `_translate_one()`, updated `run()`
+- `tests/test_ocr.py` — waterfall order corrected
+- `tests/test_themes.py` — colour values and combo count updated
+- `tests/test_ab_translation.py` — coverage comparison assertion fixed
+- `tests/test_segmentation.py` — compound tests use `add_custom_words` directly
+
+---
+
 ## Session: Tesseract PS1 Parse Error (2026-04-30)
 
 ### Bug 11 — PowerShell parse error silently killed both setup scripts

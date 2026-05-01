@@ -35,7 +35,7 @@ from PyQt6.QtWidgets import (
 
 from zh_en_translator.engines.history import HistoryManager
 from zh_en_translator.config import get_config_path
-from zh_en_translator.ui.popup import wrap_words
+from zh_en_translator.ui.popup import wrap_words, _render_translation_html
 
 logger = logging.getLogger(__name__)
 
@@ -237,11 +237,13 @@ class TranslatorSidebar(QWidget):
         self.setAccessibleName("Translation sidebar")
         self.source_label.setAccessibleName("Source text")
         self.translation_label.setAccessibleName("Translation")
+        self.btn_pin.setAccessibleDescription("Keep sidebar expanded and prevent auto-collapse")
+        self._close_btn.setAccessibleDescription("Close the sidebar and return to popup mode")
 
     def set_translation(self, source: str, translation: str):
         self.source_label.setText(source)
         self.translation_label.setText(
-            wrap_words(translation) if not translation.startswith("⚠") else translation
+            _render_translation_html(translation) if not translation.startswith("⚠") else translation
         )
         self._indicator_colour = self.COLOUR_FRESH
         self._history_manager.add_entry(source, translation)
@@ -256,7 +258,7 @@ class TranslatorSidebar(QWidget):
     def update_translation(self, translation: str):
         self._loading_timer.stop()
         self.translation_label.setText(
-            wrap_words(translation) if not translation.startswith("⚠") else translation
+            _render_translation_html(translation) if not translation.startswith("⚠") else translation
         )
         if not self._expanded:
             self._indicator_colour = self.COLOUR_FRESH
@@ -349,6 +351,10 @@ class TranslatorSidebar(QWidget):
         self.hide()
         self.closed.emit()
 
+    def set_side(self, side: str) -> None:
+        self._side = side
+        self._reposition()
+
     def apply_config(self, cfg):
         self._config = cfg
         self._side = cfg.side
@@ -366,7 +372,7 @@ class TranslatorSidebar(QWidget):
     def _on_history_item_clicked(self, item):
         entry = item.data(Qt.ItemDataRole.UserRole)
         self.source_label.setText(entry['source'])
-        self.translation_label.setText(entry['translation'])
+        self.translation_label.setText(_render_translation_html(entry['translation']))
 
     def _on_clear_history(self):
         self._history_manager.clear_history()
