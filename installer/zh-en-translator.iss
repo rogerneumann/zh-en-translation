@@ -220,14 +220,12 @@ begin
   Content :=
     '# zh-en-translator installation state' + #13#10 +
     '# Written by installer -- reflects outcomes of the last install/upgrade.' + #13#10 +
-    '# The app may update [components] at runtime (e.g. after downloading Argos).' + #13#10 +
-    #13#10 +
+    '# The app may update [components] at runtime (e.g. after downloading Argos).' + #13#10 + #13#10 +
     '[install]' + #13#10 +
     'version = "' + '{#MyAppVersion}' + '"' + #13#10 +
     'type    = "' + InstType + '"' + #13#10 +
     'date    = "' + GetDateTimeString('yyyy-mm-dd hh:nn:ss', '-', ':') + '"' + #13#10 +
-    'dir     = "' + ExpandConstant('{app}') + '"' + #13#10 +
-    #13#10 +
+    'dir     = "' + ExpandConstant('{app}') + '"' + #13#10 + #13#10 +
     '[components]' + #13#10 +
     'argos        = ' + SArgos  + #13#10 +
     'windows_ocr  = ' + SWinOcr + #13#10 +
