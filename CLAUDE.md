@@ -88,6 +88,7 @@ Everything through **Priority 4** is complete and on `main`.
 | P3 | Fine-tuning scaffold: config, data pipeline, evaluation — all implemented and tested (71 tests). `FineTuneTrainer.train()` **not yet implemented** (requires GPU). |
 | P4 | Domain glossaries: Medical (504 terms), Legal (409), Electronics (452). Combined with Manufacturing: 1,514 terms across 4 domains. Domain priority order: user → manufacturing → medical → legal → electronics. |
 | P5 | Translation display fixes: plain-text data model (HTML view-layer only), `_render_translation_html()`, structured source segmentation (bullets/numbered lists/paragraphs/soft-wrap detection), test suite fully green (644 passed). |
+| P6 | Installer overhaul: install_state.toml + registry tracking, re-install detection with option pre-selection, new OCR Options wizard page (Windows OCR / Tesseract checkboxes with warnings), inline status labels, `install_state.py` runtime module. |
 
 ---
 
@@ -159,6 +160,7 @@ Infrastructure partially exists; no UI wired up:
 | Hotkeys | pynput / Win32 low-level hook |
 | Packaging | PyInstaller → Inno Setup (installer) + portable ZIP |
 | Config | TOML at `%APPDATA%\zh-en-translator\config.toml` |
+| Install state | TOML at `%APPDATA%\zh-en-translator\install_state.toml` + `HKCU\Software\zh-en-translator` |
 
 ### Key Files
 
@@ -166,6 +168,7 @@ Infrastructure partially exists; no UI wired up:
 src/zh_en_translator/
 ├── app.py                      ← entry point, tray, background update checker
 ├── config.py                   ← config loader; keys: segmenter, clause_fallback_enabled
+├── install_state.py            ← read/write %APPDATA%\zh-en-translator\install_state.toml
 ├── engines/
 │   ├── argos.py                ← sentence MT, split_into_clauses(), translate_with_clause_fallback()
 │   ├── translation_worker.py   ← pipeline orchestration, _should_use_clause_fallback()
