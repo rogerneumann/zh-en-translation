@@ -67,6 +67,8 @@ class TranslatorPopup(QWidget):
         on_pin=None,                             # Callable[[str, str], None] | None
         is_ocr_pending: bool = False,
         config=None,                             # Config | None
+        update_available: bool = False,
+        update_version: str = "",
     ):
         super().__init__()
         self.captured_text = text
@@ -81,6 +83,8 @@ class TranslatorPopup(QWidget):
         self._is_ocr_pending = is_ocr_pending
         self._config = config
         self._translation_text: str = ""
+        self._update_available = update_available
+        self._update_version = update_version
         self._loading_dots = 0
         self._loading_timer = QTimer(self)
         self._loading_timer.setInterval(400)
@@ -90,6 +94,8 @@ class TranslatorPopup(QWidget):
         self._apply_styling()
         self._apply_config(config)
         self._position_near_cursor()
+        if update_available:
+            self.set_update_available(update_available, update_version)
         if not is_ocr_pending:
             self._start_translation()
             self._start_pinyin(text)
@@ -104,6 +110,15 @@ class TranslatorPopup(QWidget):
             self.translation_label.setText(f"Waiting for OCR{dots}")
         else:
             self.translation_label.setText(f"Translating{dots}")
+
+    def set_update_available(self, available: bool, version: str = "") -> None:
+        """Show or hide the update-available dot indicator in the header."""
+        self._update_available = available
+        self._update_version = version
+        if hasattr(self, "_update_dot"):
+            self._update_dot.setVisible(available)
+            tip = f"Update available: {version}" if version else "Update available"
+            self._update_dot.setToolTip(tip if available else "")
 
     # ------------------------------------------------------------------
     # UI construction
@@ -137,7 +152,15 @@ class TranslatorPopup(QWidget):
 
         header.addStretch()
 
-        self.btn_pin = QPushButton("📌")
+        # Update-available dot (hidden until an update is found)
+        self._update_dot = QLabel("\u25cf")
+        self._update_dot.setFixedSize(14, 14)
+        self._update_dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._update_dot.setStyleSheet("color: #F5A623; font-size: 10px;")
+        self._update_dot.setVisible(False)
+        header.addWidget(self._update_dot)
+
+        self.btn_pin = QPushButton("\U0001f4cc")
         self.btn_pin.setEnabled(False)
         self.btn_pin.setCheckable(True)
         self.btn_pin.setChecked(False)

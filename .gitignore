@@ -45,3 +45,7 @@ config.local.toml
 installer/tesseract-bundle/
 installer/cedict-bundle/
 installer/argos-bundle/
+installer/Output/
+
+# Tooling
+.claude/

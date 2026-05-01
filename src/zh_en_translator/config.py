@@ -37,6 +37,7 @@ class Config:
     mode: str = "popup"           # "popup" | "sidebar"
     startup: bool = True          # launch at Windows login
     auto_check_updates: bool = True
+    last_update_check: str = ""   # ISO timestamp of last update check
 
     # [display]
     font_family: str = ""         # empty = system default
@@ -114,6 +115,7 @@ def load_config(config_path: Path | None = None) -> Config:
         mode=_get("general", "mode", defaults.mode),
         startup=_get("general", "startup", defaults.startup),
         auto_check_updates=_get("general", "auto_check_updates", defaults.auto_check_updates),
+        last_update_check=_get("general", "last_update_check", defaults.last_update_check),
         font_family=_get("display", "font_family", defaults.font_family),
         font_size=_get("display", "font_size", defaults.font_size),
         bg_color=_get("display", "bg_color", defaults.bg_color),
@@ -162,6 +164,7 @@ hotkey = {_toml_str(cfg.hotkey)}
 mode = {_toml_str(cfg.mode)}
 startup = {_toml_bool(cfg.startup)}
 auto_check_updates = {_toml_bool(cfg.auto_check_updates)}
+last_update_check = {_toml_str(cfg.last_update_check)}
 
 [display]
 font_family = {_toml_str(cfg.font_family)}
