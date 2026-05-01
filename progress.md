@@ -274,3 +274,39 @@ Priority waterfall (first successful result wins):
 
 Both Windows OCR and Tesseract paths are now fully wired with correct install
 logic. A fresh install should work without any manual intervention.
+
+---
+
+## Session: OCR bundling fix + unified availability check (2026-05-01)
+
+#### Bug 11 -- pytesseract and Pillow not bundled in frozen exe
+`build.ps1` ran `pip install -e .` (no extras), so `pytesseract` and `Pillow`
+were never installed in the build environment. PyInstaller never saw them.
+Both are imported inside `try/except ImportError` blocks in `tesseract_ocr.py`,
+so static analysis silently missed them. The frozen exe shipped without either
+package, causing `tesseract_ocr.is_available()` to return `False` at runtime
+even with Tesseract installed -- producing "No OCR engine available."
+
+Windows OCR was simultaneously unavailable because `winrt`/`winsdk` were also
+absent from `hidden_imports` and `collect_all` in the spec.
+
+#### Bug 12 -- preferences and runtime used different Tesseract path-finding logic
+Preferences checked Tesseract availability via `shutil.which` + four hardcoded
+Windows paths (file existence only). The runtime `tesseract_ocr.is_available()`
+used a different candidate list via `_get_tesseract_candidates()` AND actually
+invoked `pytesseract.get_tesseract_version()`. In frozen builds, `_get_tesseract_candidates()`
+also checks the bundled path (`sys.executable/../tesseract/tesseract.exe`) which
+preferences never checked. The two paths could silently disagree, making
+preferences show "green" while the runtime failed.
+
+### Fixes
+- `build.ps1`: `pip install -e .` -> `pip install -e ".[ocr-tesseract]"` so
+  `pytesseract` and `Pillow` are present in the build env for PyInstaller
+- `zh-en-translator.spec`: added `pytesseract`, `PIL`, `PIL.Image`, `PIL.ImageOps`,
+  and winrt namespaces to `hidden_imports`; added `collect_all` for `pytesseract`
+  and `PIL` (with graceful skip if absent)
+- `tesseract_ocr.py`: added `get_found_path() -> str | None` -- single canonical
+  path lookup reusing `_get_tesseract_candidates()`
+- `preferences.py`: replaced ad-hoc `shutil.which` + hardcoded path checks in
+  both `_build_lookup_ocr_tab` and `_refresh_install_buttons` with
+  `_tess.is_available()` / `_tess.get_found_path()` -- one code path, one truth
