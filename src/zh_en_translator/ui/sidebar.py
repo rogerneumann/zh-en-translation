@@ -111,6 +111,13 @@ class TranslatorSidebar(QWidget):
         else:
             self.translation_label.setText(f"Translating{dots}")
 
+    def set_update_available(self, available: bool, version: str = "") -> None:
+        """Show or hide the update-available dot indicator in the header."""
+        if hasattr(self, "_update_dot"):
+            self._update_dot.setVisible(available)
+            tip = f"Update available: {version}" if version else "Update available"
+            self._update_dot.setToolTip(tip if available else "")
+
     def _setup_ui(self):
         self.main_layout = QHBoxLayout(self)
         self.main_layout.setContentsMargins(0, 0, 0, 0)
@@ -133,7 +140,15 @@ class TranslatorSidebar(QWidget):
         self._title_label = QLabel("TRANSLATOR")
         header.addWidget(self._title_label, 1)
 
-        self.btn_pin = QPushButton("📌")
+        # Update-available dot (hidden until an update is found)
+        self._update_dot = QLabel("\u25cf")
+        self._update_dot.setFixedSize(14, 14)
+        self._update_dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._update_dot.setStyleSheet("color: #F5A623; font-size: 10px;")
+        self._update_dot.setVisible(False)
+        header.addWidget(self._update_dot)
+
+        self.btn_pin = QPushButton("\U0001f4cc")
         self.btn_pin.setCheckable(True)
         self.btn_pin.setFixedSize(22, 22)
         self.btn_pin.toggled.connect(self._on_pin_toggled)

@@ -209,9 +209,12 @@ class PreferencesDialog(QDialog):
 
     settings_applied = pyqtSignal(object)  # emits Config
 
-    def __init__(self, config: Config, parent=None):
+    def __init__(self, config: Config, parent=None,
+                 update_available: bool = False, update_version: str = ""):
         super().__init__(parent)
         self.config = dataclasses.replace(config)
+        self._update_available = update_available
+        self._update_version = update_version
 
         # Unsaved-changes tracking
         self._dirty = False
@@ -310,6 +313,23 @@ class PreferencesDialog(QDialog):
 
         update_group = QGroupBox("Updates && Startup")
         update_layout = QVBoxLayout(update_group)
+
+        # Version row
+        from zh_en_translator import __version__
+        ver_row = QHBoxLayout()
+        ver_row.addWidget(QLabel(f"Version: {__version__}"))
+        ver_row.addStretch()
+        update_layout.addLayout(ver_row)
+
+        # Update-available banner (hidden until an update is found)
+        self._update_banner = QLabel()
+        self._update_banner.setStyleSheet(
+            "color: #B45309; background: #FEF3C7; border: 1px solid #FCD34D; "
+            "border-radius: 6px; padding: 4px 8px;"
+        )
+        self._update_banner.setVisible(False)
+        update_layout.addWidget(self._update_banner)
+
         self._startup_check = QCheckBox("Launch at Windows login")
         update_layout.addWidget(self._startup_check)
         self._auto_update_check = QCheckBox("Check for updates automatically on startup")
@@ -816,6 +836,8 @@ class PreferencesDialog(QDialog):
         self._trad_to_simp_check.setChecked(cfg.traditional_to_simplified)
         self._auto_update_check.setChecked(cfg.auto_check_updates)
         self._startup_check.setChecked(cfg.startup)
+        if self._update_available and self._update_version:
+            self._show_update_banner(self._update_version)
         idx = self._segmenter_combo.findData(cfg.segmenter)
         self._segmenter_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self._clause_fallback_check.setChecked(cfg.clause_fallback_enabled)
@@ -889,6 +911,7 @@ class PreferencesDialog(QDialog):
             deepl_enabled=self._deepl_enabled_check.isChecked(),
             deepl_api_key=self._deepl_key_edit.text(),
             deepl_pro=self._deepl_pro_check.isChecked(),
+            last_update_check=self.config.last_update_check,
         )
 
     def _do_install(self, trigger_btn: QPushButton, status_lbl: QLabel) -> None:
@@ -976,11 +999,17 @@ class PreferencesDialog(QDialog):
                 self._btn_win_ocr_install.setText("Install Chinese OCR (requires admin)")
                 self._btn_win_ocr_install.setStyleSheet("")
 
+    def _show_update_banner(self, version: str) -> None:
+        self._update_banner.setText(
+            f"\u25cf  Update available: {version} -- click 'Check for Updates Now' to download."
+        )
+        self._update_banner.setVisible(True)
+
     def _check_updates_now(self):
         from zh_en_translator.engines.updates import get_latest_release, is_newer
         from zh_en_translator import __version__
         self._btn_check_now.setEnabled(False)
-        self._btn_check_now.setText("Checking…")
+        self._btn_check_now.setText("Checking\u2026")
         QApplication.processEvents()
         try:
             info = get_latest_release()
@@ -988,16 +1017,22 @@ class PreferencesDialog(QDialog):
             self._btn_check_now.setEnabled(True)
             self._btn_check_now.setText("Check for Updates Now")
         if info is None:
+            self._update_banner.setVisible(False)
             QMessageBox.information(
                 self, "Update Check",
                 "Could not reach the update server. Check your internet connection.",
             )
         elif is_newer(info["tag_name"], __version__):
-            QMessageBox.information(
+            self._show_update_banner(info["tag_name"])
+            import webbrowser
+            if QMessageBox.question(
                 self, "Update Available",
-                f"A new version is available: {info['tag_name']}\n\nDownload: {info['html_url']}",
-            )
+                f"A new version is available: {info['tag_name']}\n\nOpen download page?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            ) == QMessageBox.StandardButton.Yes:
+                webbrowser.open(info["html_url"])
         else:
+            self._update_banner.setVisible(False)
             QMessageBox.information(
                 self, "Up to Date",
                 f"You are running the latest version ({__version__}).",
