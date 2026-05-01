@@ -54,6 +54,14 @@ def _configure_pytesseract_cmd() -> bool:
     return False
 
 
+def get_found_path() -> str | None:
+    """Return the path of the first found tesseract.exe, or None if not found."""
+    for candidate in _get_tesseract_candidates():
+        if candidate.exists() and candidate.is_file():
+            return str(candidate)
+    return None
+
+
 def is_available() -> bool:
     """Return True if pytesseract and the tesseract binary are found."""
     try:

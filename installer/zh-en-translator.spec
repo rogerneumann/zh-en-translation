@@ -70,6 +70,16 @@ hidden_imports = [
     "argostranslate.translate",
     "argostranslate.package",
     "winreg",
+    # OCR engines — imported inside try/except so PyInstaller static analysis misses them
+    "pytesseract",
+    "PIL",
+    "PIL.Image",
+    "PIL.ImageOps",
+    # Windows OCR via winrt (pywinrt wheels) — try both namespace styles
+    "winrt.windows.media.ocr",
+    "winrt.windows.globalization",
+    "winrt.windows.graphics.imaging",
+    "winrt.windows.storage.streams",
 ]
 hidden_imports += collect_submodules("PyQt6")
 
@@ -89,6 +99,21 @@ hidden_imports += ct2_hidden
 argos_data, argos_bins, argos_hidden = collect_all("argostranslate")
 datas          += argos_data
 hidden_imports += argos_hidden
+
+# Tesseract Python bindings — imported inside try/except so static analysis misses them
+try:
+    pyt_data, pyt_bins, pyt_hidden = collect_all("pytesseract")
+    datas          += pyt_data
+    hidden_imports += pyt_hidden
+except Exception as e:
+    print(f"[spec] pytesseract not found, skipping: {e}")
+
+try:
+    pil_data, pil_bins, pil_hidden = collect_all("PIL")
+    datas          += pil_data
+    hidden_imports += pil_hidden
+except Exception as e:
+    print(f"[spec] PIL not found, skipping: {e}")
 
 # PyQt6 binaries from collect_all as belt-and-suspenders (may add extra DLLs)
 _, pyqt6_bins, pyqt6_hidden = collect_all("PyQt6")
