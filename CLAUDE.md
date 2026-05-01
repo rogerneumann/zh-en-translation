@@ -30,6 +30,22 @@ Never write `"$varname: text"` where the colon immediately follows a variable na
 
 ---
 
+## UI Display Rule: Plain Text is the Data Model
+
+**Never let HTML escape the view layer.**
+
+- `wrap_words(text)` and `<br>` substitutions are applied **once**, at `setText()` time only.
+- Use `_render_translation_html(text)` (defined in `ui/popup.py`, imported by `ui/sidebar.py`) whenever setting translated text on a `QLabel`.
+- Store and pass plain text everywhere else: `self._translation_text` in the popup, history JSON, clipboard, pin-to-sidebar, replace-paste.
+- `QLabel.text()` returns raw HTML — never read it back for use outside the label.
+
+**Source text segmentation** (`_segment_source_text` in `translation_worker.py`):
+- Detects bullets, numbered lists, tabs, paragraph breaks, and sentence-final punctuation.
+- Translates each segment independently; reassembles with original prefixes/separators.
+- Single-segment input (no structure) takes the unchanged single-block path.
+
+---
+
 ## Build System
 
 Run on a Windows dev machine with Python 3.11, PyInstaller, and Inno Setup 6 installed:
@@ -71,6 +87,7 @@ Everything through **Priority 4** is complete and on `main`.
 | P2 | SQLite multi-domain glossary backend (`glossary_db.py`), corpus framework (`corpus_manager.py`), A/B testing harness (`a_b_tester.py`), 100-sentence manufacturing corpus |
 | P3 | Fine-tuning scaffold: config, data pipeline, evaluation — all implemented and tested (71 tests). `FineTuneTrainer.train()` **not yet implemented** (requires GPU). |
 | P4 | Domain glossaries: Medical (504 terms), Legal (409), Electronics (452). Combined with Manufacturing: 1,514 terms across 4 domains. Domain priority order: user → manufacturing → medical → legal → electronics. |
+| P5 | Translation display fixes: plain-text data model (HTML view-layer only), `_render_translation_html()`, structured source segmentation (bullets/numbered lists/paragraphs/soft-wrap detection), test suite fully green (644 passed). |
 
 ---
 

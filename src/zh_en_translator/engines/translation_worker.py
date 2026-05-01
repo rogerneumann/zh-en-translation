@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 import logging
+import re
 import concurrent.futures
 
 from PyQt6.QtCore import QThread, pyqtSignal
@@ -84,6 +85,118 @@ def _is_valid_translation(result: str, source: str) -> bool:
     if result.strip() == source.strip():
         return False
     return True
+
+
+_SENTENCE_FINAL = frozenset("。！？；.!?;")
+_BULLET_CHARS = frozenset("•·*►▶‣◦")
+_NUMBERED_RE = re.compile(
+    r'^(\d+[.)）]|[①②③④⑤⑥⑦⑧⑨⑩]|[一二三四五六七八九十]+[、.]|\([一二三四五六七八九十\d]+\))\s*'
+)
+_TAB_RE = re.compile(r'^\t|^ {4}')
+
+
+def _classify_line(line: str) -> str:
+    stripped = line.lstrip()
+    if not stripped:
+        return "empty"
+    if stripped[0] in _BULLET_CHARS or stripped[0] == '-':
+        return "bullet"
+    if _NUMBERED_RE.match(stripped):
+        return "numbered"
+    if _TAB_RE.match(line):
+        return "indented"
+    if stripped[0] == '>':
+        return "quote"
+    return "text"
+
+
+def _ends_sentence(line: str) -> bool:
+    stripped = line.rstrip()
+    return bool(stripped) and stripped[-1] in _SENTENCE_FINAL
+
+
+def _soft_join(a: str, b: str) -> str:
+    """Join two soft-wrapped lines, adding a space only at ASCII boundaries."""
+    if a and ord(a[-1]) < 128:
+        return a + ' ' + b
+    return a + b
+
+
+def _segment_source_text(text: str) -> list:
+    """Split source text into translatable segments preserving structure.
+
+    Returns a list of dicts with keys:
+      text      - content to translate (prefix stripped)
+      type      - "text", "bullet", "numbered", "indented", "quote"
+      prefix    - original prefix to restore (e.g. "• ", "1. ")
+      separator - string to append after translated segment in output
+    """
+    lines = text.split('\n')
+    segments = []
+    current_lines = []
+    pending_separator = ''
+
+    def flush_text(sep=''):
+        nonlocal pending_separator
+        if current_lines:
+            if len(current_lines) == 1:
+                joined = current_lines[0]
+            else:
+                joined = current_lines[0]
+                for i in range(1, len(current_lines)):
+                    if current_lines[i - 1] and ord(current_lines[i - 1][-1]) < 128:
+                        joined += ' ' + current_lines[i]
+                    else:
+                        joined += current_lines[i]
+            segments.append({
+                'text': joined,
+                'type': 'text',
+                'prefix': '',
+                'separator': pending_separator or sep,
+            })
+            current_lines.clear()
+        pending_separator = ''
+
+    for line in lines:
+        line_type = _classify_line(line)
+
+        if line_type == 'empty':
+            flush_text('\n\n')
+            pending_separator = '\n\n'
+            continue
+
+        if line_type in ('bullet', 'numbered', 'indented', 'quote'):
+            flush_text('\n')
+            stripped = line.lstrip()
+            prefix = ''
+            content = stripped
+            if line_type == 'bullet':
+                prefix = stripped[0] + ' '
+                content = stripped[1:].lstrip()
+            elif line_type == 'numbered':
+                m = _NUMBERED_RE.match(stripped)
+                if m:
+                    prefix = m.group(0)
+                    content = stripped[m.end():]
+            segments.append({
+                'text': content,
+                'type': line_type,
+                'prefix': prefix,
+                'separator': '\n',
+            })
+            continue
+
+        # Regular text line
+        if current_lines and _ends_sentence(current_lines[-1]):
+            flush_text('\n')
+        current_lines.append(line)
+
+    flush_text('')
+    # Fix last segment: strip trailing separator
+    if segments:
+        segments[-1]['separator'] = segments[-1]['separator'].rstrip('\n')
+
+    return segments
 
 
 class TranslationWorker(QThread):
@@ -181,17 +294,14 @@ class TranslationWorker(QThread):
             logger.warning("Phase 2 clause-level fallback failed: %s", e)
             return translation
 
-    def run(self):
-        logger.info("Translation started (input length: %d chars)", len(self.text))
-
+    def _translate_one(self, text: str) -> str:
         # 1. Try DeepL first if enabled
         if self.config and self.config.deepl_enabled:
             from zh_en_translator.engines.deepl import translate_with_deepl
-            result = translate_with_deepl(self.text, self.config)
-            if result and not result.startswith("⚠") and _is_valid_translation(result, self.text):
+            result = translate_with_deepl(text, self.config)
+            if result and not result.startswith("⚠") and _is_valid_translation(result, text):
                 logger.info("Translation path: DeepL")
-                self.result_ready.emit(result)
-                return
+                return result
             logger.warning("DeepL translation failed or not configured correctly: %s", result)
 
         # 2. Try MS Cloud second
@@ -202,14 +312,13 @@ class TranslationWorker(QThread):
             )
             if is_configured(self.config.ms_translator_api_key):
                 result = ms_translate(
-                    self.text,
+                    text,
                     self.config.ms_translator_api_key,
                     self.config.ms_translator_region,
                 )
-                if result and _is_valid_translation(result, self.text):
+                if result and _is_valid_translation(result, text):
                     logger.info("Translation path: MS Cloud")
-                    self.result_ready.emit(result)
-                    return
+                    return result
                 logger.warning(
                     "MS Cloud translation failed or returned source unchanged"
                     " -- falling back to Argos"
@@ -221,13 +330,12 @@ class TranslationWorker(QThread):
         if not ensure_pack():
             logger.warning("ensure_pack() failed")
             logger.info("Translation path: dict-only (model unavailable)")
-            self.result_ready.emit("⚠ Translation model not available.")
-            return
+            return "⚠ Translation model not available."
 
         result = None
         try:
             with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
-                future = executor.submit(translate_sentence, self.text)
+                future = executor.submit(translate_sentence, text)
                 try:
                     result = future.result(timeout=_ARGOS_TIMEOUT_S)
                 except concurrent.futures.TimeoutError:
@@ -240,14 +348,13 @@ class TranslationWorker(QThread):
             logger.error("Argos translation failed: %s", e)
             result = None
 
-        if result and _is_valid_translation(result, self.text):
+        if result and _is_valid_translation(result, text):
             logger.info("Translation path: Argos")
             if self.config and self.config.clause_fallback_enabled:
-                if self._should_use_clause_fallback(self.text):
+                if self._should_use_clause_fallback(text):
                     logger.info("Complex input detected, attempting clause-level fallback")
-                    result = self._apply_clause_fallback(self.text, result)
-            self.result_ready.emit(result)
-            return
+                    result = self._apply_clause_fallback(text, result)
+            return result
 
         if result:
             logger.warning(
@@ -259,7 +366,24 @@ class TranslationWorker(QThread):
             )
 
         logger.info("Translation path: dict-only")
-        self.result_ready.emit("(no translation found)")
+        return "(no translation found)"
+
+    def run(self):
+        logger.info("Translation started (input length: %d chars)", len(self.text))
+        segments = _segment_source_text(self.text)
+
+        if len(segments) <= 1:
+            result = self._translate_one(self.text)
+            self.result_ready.emit(result)
+            return
+
+        parts = []
+        for seg in segments:
+            translated = self._translate_one(seg['text']) if seg['text'].strip() else ''
+            parts.append(seg['prefix'] + translated + seg['separator'])
+
+        result = ''.join(parts).rstrip('\n')
+        self.result_ready.emit(result)
 
 
 class PinyinWorker(QThread):
