@@ -208,6 +208,12 @@ zh-en-translation/
 
 ---
 
+## License
+
+Released under the [GNU General Public License v3 or later](LICENSE).
+
+---
+
 ## Milestones
 
 | # | Milestone | Status |

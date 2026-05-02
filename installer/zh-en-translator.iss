@@ -28,6 +28,8 @@ PrivilegesRequiredOverridesAllowed=dialog
 ; Output
 OutputDir=Output
 OutputBaseFilename=zh-en-translator-v{#MyAppVersion}-setup
+; License shown during installation
+LicenseFile=..\LICENSE
 ; Compression
 Compression=lzma2/ultra64
 SolidCompression=yes
