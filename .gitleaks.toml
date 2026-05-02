@@ -1,0 +1,10 @@
+# Gitleaks configuration
+# https://github.com/gitleaks/gitleaks#configuration
+
+[allowlist]
+  description = "Allowlist for known false positives"
+  paths = [
+    # Test fixtures use placeholder values like api_key="key" -- not real credentials
+    "tests/test_ms_cloud.py",
+    "tests/test_config.py",
+  ]
