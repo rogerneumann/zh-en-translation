@@ -112,33 +112,64 @@ def _render_icon_pixmap_fallback(size: int) -> "QPixmap":
 
 
 def _apply_startup_setting(enabled: bool, exe_path: str) -> None:
-    """Set or clear the Windows run-at-login registry entry for zh-en-translator.
+    """Set or clear the run-at-login entry for zh-en-translator.
 
-    Only operates on Windows and only when running as a frozen (PyInstaller) exe.
-    Safe to call from dev mode — it becomes a no-op.
+    Windows: writes/removes a HKCU Run registry value.
+    Linux/macOS: writes/removes an XDG autostart .desktop file.
+    Only operates when running as a frozen (PyInstaller) exe or when a system
+    install is found on PATH. Safe to call from dev mode — becomes a no-op.
     """
-    if sys.platform != "win32":
-        return
-    if not exe_path:
-        return  # dev mode — skip
-    try:
-        import winreg
-        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-        app_name = "zh-en-translator"
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE
-        ) as key:
-            if enabled:
-                winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, exe_path)
-                logger.info("Startup registry entry set: %s → %s", app_name, exe_path)
-            else:
-                try:
-                    winreg.DeleteValue(key, app_name)
-                    logger.info("Startup registry entry removed: %s", app_name)
-                except FileNotFoundError:
-                    pass  # already absent — that's fine
-    except Exception as e:
-        logger.warning("Could not update startup registry entry: %s", e)
+    if sys.platform == "win32":
+        if not exe_path:
+            return  # dev mode — skip
+        try:
+            import winreg
+            key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+            app_name = "zh-en-translator"
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE
+            ) as key:
+                if enabled:
+                    winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, exe_path)
+                    logger.info("Startup registry entry set: %s -> %s", app_name, exe_path)
+                else:
+                    try:
+                        winreg.DeleteValue(key, app_name)
+                        logger.info("Startup registry entry removed: %s", app_name)
+                    except FileNotFoundError:
+                        pass  # already absent — that's fine
+        except Exception as e:
+            logger.warning("Could not update startup registry entry: %s", e)
+    else:
+        import shutil
+        from pathlib import Path
+        autostart_dir = Path.home() / ".config" / "autostart"
+        desktop_file = autostart_dir / "zh-en-translator.desktop"
+        if enabled:
+            launch_exe = exe_path or shutil.which("zh-en-translator") or ""
+            if not launch_exe:
+                logger.debug("Startup: no executable found, skipping XDG autostart")
+                return
+            try:
+                autostart_dir.mkdir(parents=True, exist_ok=True)
+                desktop_file.write_text(
+                    "[Desktop Entry]\n"
+                    "Type=Application\n"
+                    "Name=zh-en-translator\n"
+                    f"Exec={launch_exe}\n"
+                    "Hidden=false\n"
+                    "X-GNOME-Autostart-enabled=true\n",
+                    encoding="utf-8",
+                )
+                logger.info("XDG autostart entry created: %s", desktop_file)
+            except Exception as e:
+                logger.warning("Could not create XDG autostart entry: %s", e)
+        else:
+            try:
+                desktop_file.unlink(missing_ok=True)
+                logger.info("XDG autostart entry removed: %s", desktop_file)
+            except Exception as e:
+                logger.warning("Could not remove XDG autostart entry: %s", e)
 
 
 def _get_frozen_exe_path() -> str:
@@ -457,11 +488,11 @@ class TranslatorApp(QObject):
         """Convert a QImage to PNG bytes and run OCR, routing to sidebar or popup."""
         from zh_en_translator.engines.ocr.engine import is_any_engine_available
         if not is_any_engine_available():
-            msg = (
-                "⚠ No OCR engine available.\n"
-                "Install winrt-* packages or Tesseract.\n"
-                "See README for instructions."
-            )
+            if sys.platform == "win32":
+                install_hint = "Install winrt-* packages or Tesseract.\nSee README for instructions."
+            else:
+                install_hint = "Install Tesseract: sudo apt install tesseract-ocr tesseract-ocr-chi-sim\nOr install paddleocr for best accuracy."
+            msg = f"⚠ No OCR engine available.\n{install_hint}"
             if self.sidebar_mode:
                 self.sidebar.set_translation("OCR", msg)
                 self.sidebar.expand()
@@ -639,8 +670,9 @@ class TranslatorApp(QObject):
                     break
 
         if not found and self.tray_icon and self.tray_icon.isVisible():
+            import tempfile
             log_path = os.path.join(
-                os.environ.get("TEMP", ""), "zh-en-translator-tesseract-install.log"
+                tempfile.gettempdir(), "zh-en-translator-tesseract-install.log"
             )
             message = (
                 "Tesseract OCR not found. Image capture may be limited.\n"
