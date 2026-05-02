@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 # Public releases repository
 # ---------------------------------------------------------------------------
 REPO_OWNER = "rogerneumann"
-REPO_NAME = "zh-en-translator-releases"
+REPO_NAME = "zh-en-translation"
 
 
 class ReleaseInfo(TypedDict):
