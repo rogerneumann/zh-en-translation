@@ -699,7 +699,6 @@ class TranslatorApp(QObject):
         # Save check timestamp regardless of outcome
         from datetime import datetime, timezone
         self.config.last_update_check = datetime.now(timezone.utc).isoformat()
-        from zh_en_translator.config import save_config
         save_config(self.config)
 
         if not release_info:
