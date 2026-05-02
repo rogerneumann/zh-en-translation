@@ -32,6 +32,8 @@ from PyQt6.QtWidgets import (
     QTableWidget,
     QTableWidgetItem,
     QHeaderView,
+    QTextBrowser,
+    QScrollArea,
 )
 
 from zh_en_translator.config import Config, save_config
@@ -252,6 +254,7 @@ class PreferencesDialog(QDialog):
         self._tabs.addTab(self._build_lookup_ocr_tab(), "Lookup && OCR")
         self._tabs.addTab(self._build_glossary_tab(),   "Glossary")
         self._tabs.addTab(self._build_cloud_tab(),      "Cloud")
+        self._tabs.addTab(self._build_about_tab(),      "About")
 
         buttons = QDialogButtonBox(
             QDialogButtonBox.StandardButton.Ok
@@ -1060,6 +1063,96 @@ class PreferencesDialog(QDialog):
                 self, "Up to Date",
                 f"You are running the latest version ({__version__}).",
             )
+
+    def _build_about_tab(self) -> QWidget:
+        from zh_en_translator import __version__
+        from zh_en_translator.engines.updates import REPO_OWNER, REPO_NAME
+
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setSpacing(12)
+
+        # App header
+        header_group = QGroupBox("zh-en-translator")
+        header_layout = QVBoxLayout(header_group)
+
+        ver_label = QLabel(f"Version: {__version__}")
+        ver_label.setStyleSheet("font-weight: bold; font-size: 11pt;")
+        header_layout.addWidget(ver_label)
+
+        desc = QLabel(
+            "Offline-first Chinese \u2192 English popup translator for Windows.\n"
+            "Hotkey-activated, with dictionary lookup, pinyin, OCR, and domain glossaries."
+        )
+        desc.setWordWrap(True)
+        header_layout.addWidget(desc)
+
+        source_label = QLabel(
+            f'Source code: <a href="https://github.com/{REPO_OWNER}/{REPO_NAME}">'
+            f"github.com/{REPO_OWNER}/{REPO_NAME}</a>"
+        )
+        source_label.setOpenExternalLinks(True)
+        header_layout.addWidget(source_label)
+
+        license_label = QLabel(
+            "Released under the "
+            '<a href="https://www.gnu.org/licenses/gpl-3.0.html">GNU General Public License v3 or later</a>.'
+        )
+        license_label.setOpenExternalLinks(True)
+        header_layout.addWidget(license_label)
+
+        layout.addWidget(header_group)
+
+        # Third-party components
+        components_group = QGroupBox("Third-Party Components")
+        components_layout = QVBoxLayout(components_group)
+
+        browser = QTextBrowser()
+        browser.setOpenExternalLinks(True)
+        browser.setMinimumHeight(280)
+        browser.setStyleSheet("QTextBrowser { border: none; background: transparent; }")
+
+        rows = [
+            ("PyQt6",                   "Riverbank Computing",  "GPL v3",        "https://riverbankcomputing.com/software/pyqt/"),
+            ("pynput",                  "Moses Palmér",         "LGPL v3",       "https://github.com/moses-palmer/pynput"),
+            ("Argos Translate",         "LibreTranslate team",  "MIT",           "https://github.com/argosopentech/argostranslate"),
+            ("jieba",                   "Sun Junyi",            "MIT",           "https://github.com/fxsjy/jieba"),
+            ("platformdirs",            "tox-dev contributors", "MIT",           "https://github.com/platformdirs/platformdirs"),
+            ("opencc-python-reimpl.",   "BYVoid / yichen0831",  "Apache 2.0",    "https://github.com/yichen0831/opencc-python-reimplemented"),
+            ("Tesseract OCR (bundled)", "Google",               "Apache 2.0",    "https://github.com/tesseract-ocr/tesseract"),
+            ("pytesseract",             "Matthias Lee",         "Apache 2.0",    "https://github.com/madmaze/pytesseract"),
+            ("Pillow",                  "PIL contributors",     "HPND (MIT-style)", "https://python-pillow.org/"),
+            ("CC-CEDICT dictionary",    "MDBG",                 "CC BY-SA 4.0",  "https://cc-cedict.org/"),
+            ("Argos zh\u2192en model",  "LibreTranslate team",  "CC BY 4.0",     "https://github.com/argosopentech/argostranslate"),
+        ]
+
+        html = (
+            "<style>"
+            "table { width: 100%; border-collapse: collapse; font-size: 9pt; }"
+            "th { text-align: left; padding: 4px 8px; "
+            "     background: rgba(0,0,0,0.06); font-weight: bold; }"
+            "td { padding: 3px 8px; border-bottom: 1px solid rgba(0,0,0,0.06); }"
+            "tr:last-child td { border-bottom: none; }"
+            "a { color: inherit; }"
+            "</style>"
+            "<table>"
+            "<tr><th>Component</th><th>Author / Maintainer</th><th>License</th></tr>"
+        )
+        for name, author, lic, url in rows:
+            html += (
+                f"<tr>"
+                f'<td><a href="{url}">{name}</a></td>'
+                f"<td>{author}</td>"
+                f"<td>{lic}</td>"
+                f"</tr>"
+            )
+        html += "</table>"
+        browser.setHtml(html)
+        components_layout.addWidget(browser)
+
+        layout.addWidget(components_group)
+        layout.addStretch()
+        return widget
 
     def closeEvent(self, event):
         if self._install_monitor is not None:
