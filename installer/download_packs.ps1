@@ -1,7 +1,7 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    Download and install the Argos Translate zh→en language pack.
+    Download and install the Argos Translate zh->en language pack.
 
 .DESCRIPTION
     Called automatically after install by the Inno Setup [Run] section.
@@ -10,7 +10,7 @@
     The script:
     1. Locates the bundled Python interpreter inside the install directory.
     2. Calls argostranslate.package to update the package index and install
-       the zh→en translation pack (~50-100 MB download).
+       the zh->en translation pack (~50-100 MB download).
     3. Reports success or failure.
 
 .PARAMETER InstallDir
@@ -81,7 +81,7 @@ if ($SystemPython) {
 } elseif (Test-Path $BundledExe) {
     # The bundled exe can run Python snippets via a special internal path.
     # We write a small wrapper .py to the temp directory and call the bundled exe
-    # indirectly — but since it's a windowed exe this won't work well for
+    # indirectly -- but since it's a windowed exe this won't work well for
     # stdout capture. Instead, look for _pyi_bootloader or similar.
     # Best fallback: print instructions and exit gracefully.
     Write-Host "WARNING: System Python with argostranslate not found." -ForegroundColor Yellow
@@ -100,14 +100,41 @@ if ($SystemPython) {
 }
 
 # ---------------------------------------------------------------------------
-# Download and install the zh→en Argos pack
+# Download and install the zh->en Argos pack
 # ---------------------------------------------------------------------------
 $DownloadScript = @'
+import os
 import sys
 import logging
+from pathlib import Path
 
 logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
 logger = logging.getLogger("download_packs")
+
+
+def _mark_argos_installed():
+    """Update argos=true in install_state.toml without importing the full package."""
+    try:
+        if sys.platform == "win32":
+            base = Path(os.environ.get("APPDATA", Path.home())) / "zh-en-translator"
+        else:
+            base = Path.home() / ".local" / "share" / "zh-en-translator"
+        state_path = base / "install_state.toml"
+        if not state_path.exists():
+            return
+        text = state_path.read_text(encoding="utf-8")
+        # Replace 'argos = false' with 'argos = true' (simple line-level update)
+        updated = "\n".join(
+            "argos        = true" if line.strip().startswith("argos") else line
+            for line in text.splitlines()
+        )
+        tmp = state_path.with_suffix(".toml.tmp")
+        tmp.write_text(updated, encoding="utf-8")
+        tmp.replace(state_path)
+        logger.info("install_state.toml: argos marked as installed.")
+    except Exception as exc:
+        logger.warning("Could not update install_state.toml: %s", exc)
+
 
 try:
     import argostranslate.package as pkg
@@ -135,6 +162,7 @@ try:
     logger.info("Downloading and installing... (this may take a few minutes)")
     zh_en.install()
     logger.info("SUCCESS: zh->en translation pack installed.")
+    _mark_argos_installed()
     sys.exit(0)
 
 except ImportError as e:

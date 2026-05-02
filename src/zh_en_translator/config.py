@@ -37,6 +37,7 @@ class Config:
     mode: str = "popup"           # "popup" | "sidebar"
     startup: bool = True          # launch at Windows login
     auto_check_updates: bool = True
+    last_update_check: str = ""   # ISO timestamp of last update check
 
     # [display]
     font_family: str = ""         # empty = system default
@@ -63,8 +64,7 @@ class Config:
 
     # [translation]
     traditional_to_simplified: bool = True
-    validation_enabled: bool = True
-    validation_completeness_threshold: float = 0.7
+    clause_fallback_enabled: bool = True
     segmenter: str = "jieba"      # "jieba" | "pkuseg" | "hanlp" (future)
 
     # [cloud]
@@ -115,6 +115,7 @@ def load_config(config_path: Path | None = None) -> Config:
         mode=_get("general", "mode", defaults.mode),
         startup=_get("general", "startup", defaults.startup),
         auto_check_updates=_get("general", "auto_check_updates", defaults.auto_check_updates),
+        last_update_check=_get("general", "last_update_check", defaults.last_update_check),
         font_family=_get("display", "font_family", defaults.font_family),
         font_size=_get("display", "font_size", defaults.font_size),
         bg_color=_get("display", "bg_color", defaults.bg_color),
@@ -131,15 +132,16 @@ def load_config(config_path: Path | None = None) -> Config:
         traditional_to_simplified=_get(
             "translation", "traditional_to_simplified", defaults.traditional_to_simplified
         ),
-        validation_enabled=_get(
-            "translation", "validation_enabled", defaults.validation_enabled
-        ),
-        validation_completeness_threshold=_get(
-            "translation", "validation_completeness_threshold", defaults.validation_completeness_threshold
+        clause_fallback_enabled=_get(
+            "translation", "clause_fallback_enabled", defaults.clause_fallback_enabled
         ),
         segmenter=_get("translation", "segmenter", defaults.segmenter),
-        ms_translator_enabled=_get("cloud", "ms_translator_enabled", defaults.ms_translator_enabled),
-        ms_translator_api_key=_get("cloud", "ms_translator_api_key", defaults.ms_translator_api_key),
+        ms_translator_enabled=_get(
+            "cloud", "ms_translator_enabled", defaults.ms_translator_enabled
+        ),
+        ms_translator_api_key=_get(
+            "cloud", "ms_translator_api_key", defaults.ms_translator_api_key
+        ),
         ms_translator_region=_get("cloud", "ms_translator_region", defaults.ms_translator_region),
         deepl_enabled=_get("cloud", "deepl_enabled", defaults.deepl_enabled),
         deepl_api_key=_get("cloud", "deepl_api_key", defaults.deepl_api_key),
@@ -162,6 +164,7 @@ hotkey = {_toml_str(cfg.hotkey)}
 mode = {_toml_str(cfg.mode)}
 startup = {_toml_bool(cfg.startup)}
 auto_check_updates = {_toml_bool(cfg.auto_check_updates)}
+last_update_check = {_toml_str(cfg.last_update_check)}
 
 [display]
 font_family = {_toml_str(cfg.font_family)}
@@ -188,8 +191,7 @@ pinyin_max_chars = {cfg.pinyin_max_chars}
 
 [translation]
 traditional_to_simplified = {_toml_bool(cfg.traditional_to_simplified)}
-validation_enabled = {_toml_bool(cfg.validation_enabled)}
-validation_completeness_threshold = {cfg.validation_completeness_threshold}
+clause_fallback_enabled = {_toml_bool(cfg.clause_fallback_enabled)}
 segmenter = {_toml_str(cfg.segmenter)}
 
 [cloud]

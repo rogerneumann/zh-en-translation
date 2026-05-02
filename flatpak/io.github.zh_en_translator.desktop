@@ -1,0 +1,11 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=zh-en Translator
+GenericName=Chinese-English Translator
+Comment=Offline popup translator for Chinese text
+Exec=zh-en-translator
+Icon=io.github.zh_en_translator
+Categories=Utility;Translation;
+Keywords=Chinese;Mandarin;translation;OCR;
+StartupNotify=false

@@ -5,7 +5,7 @@ import sys
 import threading
 
 from PyQt6.QtCore import Qt, QObject, QRectF, pyqtSignal, QThread
-from PyQt6.QtGui import QBrush, QFont, QIcon, QColor, QPainter, QPainterPath, QPixmap
+from PyQt6.QtGui import QBrush, QIcon, QColor, QPainter, QPainterPath, QPixmap
 from PyQt6.QtWidgets import QApplication, QSystemTrayIcon, QMenu
 
 from zh_en_translator.config import load_config, save_config, Config
@@ -88,7 +88,6 @@ def _render_icon_pixmap_fallback(size: int) -> "QPixmap":
     path.addRoundedRect(QRectF(0, 0, size, size), radius, radius)
     p.fillPath(path, QBrush(QColor("#2B6E6A")))
 
-    from PyQt6.QtCore import QLineF
     from PyQt6.QtGui import QPen
     pen = QPen(QColor("#C4EDE7"))
     pen.setWidthF(size * 0.083)
@@ -113,33 +112,64 @@ def _render_icon_pixmap_fallback(size: int) -> "QPixmap":
 
 
 def _apply_startup_setting(enabled: bool, exe_path: str) -> None:
-    """Set or clear the Windows run-at-login registry entry for zh-en-translator.
+    """Set or clear the run-at-login entry for zh-en-translator.
 
-    Only operates on Windows and only when running as a frozen (PyInstaller) exe.
-    Safe to call from dev mode — it becomes a no-op.
+    Windows: writes/removes a HKCU Run registry value.
+    Linux/macOS: writes/removes an XDG autostart .desktop file.
+    Only operates when running as a frozen (PyInstaller) exe or when a system
+    install is found on PATH. Safe to call from dev mode — becomes a no-op.
     """
-    if sys.platform != "win32":
-        return
-    if not exe_path:
-        return  # dev mode — skip
-    try:
-        import winreg
-        key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
-        app_name = "zh-en-translator"
-        with winreg.OpenKey(
-            winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE
-        ) as key:
-            if enabled:
-                winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, exe_path)
-                logger.info("Startup registry entry set: %s → %s", app_name, exe_path)
-            else:
-                try:
-                    winreg.DeleteValue(key, app_name)
-                    logger.info("Startup registry entry removed: %s", app_name)
-                except FileNotFoundError:
-                    pass  # already absent — that's fine
-    except Exception as e:
-        logger.warning("Could not update startup registry entry: %s", e)
+    if sys.platform == "win32":
+        if not exe_path:
+            return  # dev mode — skip
+        try:
+            import winreg
+            key_path = r"Software\Microsoft\Windows\CurrentVersion\Run"
+            app_name = "zh-en-translator"
+            with winreg.OpenKey(
+                winreg.HKEY_CURRENT_USER, key_path, 0, winreg.KEY_SET_VALUE
+            ) as key:
+                if enabled:
+                    winreg.SetValueEx(key, app_name, 0, winreg.REG_SZ, exe_path)
+                    logger.info("Startup registry entry set: %s -> %s", app_name, exe_path)
+                else:
+                    try:
+                        winreg.DeleteValue(key, app_name)
+                        logger.info("Startup registry entry removed: %s", app_name)
+                    except FileNotFoundError:
+                        pass  # already absent — that's fine
+        except Exception as e:
+            logger.warning("Could not update startup registry entry: %s", e)
+    else:
+        import shutil
+        from pathlib import Path
+        autostart_dir = Path.home() / ".config" / "autostart"
+        desktop_file = autostart_dir / "zh-en-translator.desktop"
+        if enabled:
+            launch_exe = exe_path or shutil.which("zh-en-translator") or ""
+            if not launch_exe:
+                logger.debug("Startup: no executable found, skipping XDG autostart")
+                return
+            try:
+                autostart_dir.mkdir(parents=True, exist_ok=True)
+                desktop_file.write_text(
+                    "[Desktop Entry]\n"
+                    "Type=Application\n"
+                    "Name=zh-en-translator\n"
+                    f"Exec={launch_exe}\n"
+                    "Hidden=false\n"
+                    "X-GNOME-Autostart-enabled=true\n",
+                    encoding="utf-8",
+                )
+                logger.info("XDG autostart entry created: %s", desktop_file)
+            except Exception as e:
+                logger.warning("Could not create XDG autostart entry: %s", e)
+        else:
+            try:
+                desktop_file.unlink(missing_ok=True)
+                logger.info("XDG autostart entry removed: %s", desktop_file)
+            except Exception as e:
+                logger.warning("Could not remove XDG autostart entry: %s", e)
 
 
 def _get_frozen_exe_path() -> str:
@@ -205,6 +235,26 @@ class _UpdateWorker(QThread):
         self.result_ready.emit(release)
 
 
+def _apply_update_badge(pixmap: "QPixmap", size: int) -> "QPixmap":
+    """Paint a small orange dot in the top-right corner of a pixmap."""
+    result = pixmap.copy()
+    p = QPainter(result)
+    p.setRenderHint(QPainter.RenderHint.Antialiasing)
+    dot_r = max(3, size // 5)
+    margin = max(1, size // 16)
+    cx = size - margin - dot_r
+    cy = margin + dot_r
+    p.setPen(Qt.PenStyle.NoPen)
+    # White halo for contrast against any background
+    p.setBrush(QBrush(QColor("#FFFFFF")))
+    p.drawEllipse(int(cx - dot_r - 1), int(cy - dot_r - 1), (dot_r + 1) * 2, (dot_r + 1) * 2)
+    # Orange badge dot
+    p.setBrush(QBrush(QColor("#F5A623")))
+    p.drawEllipse(int(cx - dot_r), int(cy - dot_r), dot_r * 2, dot_r * 2)
+    p.end()
+    return result
+
+
 class TranslatorApp(QObject):
     """System tray application with global hotkey listener."""
 
@@ -233,6 +283,8 @@ class TranslatorApp(QObject):
         self.paused = False
         self._ocr_worker = None
         self._update_worker = None
+        self._has_update = False
+        self._update_version = ""
 
         # Apply mode from config
         self.sidebar_mode: bool = self.config.mode == "sidebar"
@@ -259,8 +311,8 @@ class TranslatorApp(QObject):
             self._update_tray_sidebar_label()
             self.sidebar.show()
 
-        # Check for updates on startup if enabled
-        if self.config.auto_check_updates:
+        # Check for updates on startup if enabled and not checked within 48 hours
+        if self.config.auto_check_updates and self._should_auto_check():
             from PyQt6.QtCore import QTimer
             QTimer.singleShot(5000, lambda: self._check_for_updates(manual=False))
 
@@ -290,7 +342,7 @@ class TranslatorApp(QObject):
                 logger.info("Dictionary ready")
             except Exception as e:
                 logger.warning("Failed to initialize dictionary: %s", e)
-        
+
         threading.Thread(target=_task, daemon=True).start()
 
     def _setup_tray(self):
@@ -316,8 +368,8 @@ class TranslatorApp(QObject):
         self.action_sidebar_side.triggered.connect(self._on_toggle_sidebar_side)
 
         menu.addSeparator()
-        action_prefs = menu.addAction("Preferences…")
-        action_prefs.triggered.connect(self._open_preferences)
+        self._action_prefs = menu.addAction("Preferences\u2026")
+        self._action_prefs.triggered.connect(self._open_preferences)
 
         menu.addSeparator()
         self.action_pause = menu.addAction("Pause")
@@ -330,14 +382,20 @@ class TranslatorApp(QObject):
         self.tray_icon.setContextMenu(menu)
         self.tray_icon.show()
 
-    def _create_icon(self) -> QIcon:
+    def _create_icon(self, update_badge: bool = False) -> QIcon:
         icon = QIcon()
         try:
             for size in (16, 24, 32, 48, 64, 128, 256):
-                icon.addPixmap(_render_svg_icon(size))
+                px = _render_svg_icon(size)
+                if update_badge:
+                    px = _apply_update_badge(px, size)
+                icon.addPixmap(px)
         except Exception:
             for size in (16, 24, 32, 48, 64, 128, 256):
-                icon.addPixmap(_render_icon_pixmap_fallback(size))
+                px = _render_icon_pixmap_fallback(size)
+                if update_badge:
+                    px = _apply_update_badge(px, size)
+                icon.addPixmap(px)
         return icon
 
     def _on_hotkey_pressed(self):
@@ -414,7 +472,9 @@ class TranslatorApp(QObject):
             original_clipboard,
             dictionary=self.dictionary,
             on_pin=self._pin_to_sidebar,
-            config=self.config
+            config=self.config,
+            update_available=self._has_update,
+            update_version=self._update_version,
         )
         self.popup.show()
 
@@ -428,17 +488,18 @@ class TranslatorApp(QObject):
         """Convert a QImage to PNG bytes and run OCR, routing to sidebar or popup."""
         from zh_en_translator.engines.ocr.engine import is_any_engine_available
         if not is_any_engine_available():
-            msg = (
-                "⚠ No OCR engine available.\n"
-                "Install winrt-* packages or Tesseract.\n"
-                "See README for instructions."
-            )
+            if sys.platform == "win32":
+                install_hint = "Install winrt-* packages or Tesseract.\nSee README for instructions."
+            else:
+                install_hint = "Install Tesseract: sudo apt install tesseract-ocr tesseract-ocr-chi-sim\nOr install paddleocr for best accuracy."
+            msg = f"⚠ No OCR engine available.\n{install_hint}"
             if self.sidebar_mode:
                 self.sidebar.set_translation("OCR", msg)
                 self.sidebar.expand()
             else:
                 self.popup = TranslatorPopup(
-                    msg, "", on_pin=self._pin_to_sidebar, config=self.config
+                    msg, "", on_pin=self._pin_to_sidebar, config=self.config,
+                    update_available=self._has_update, update_version=self._update_version,
                 )
                 self.popup.show()
             return
@@ -463,11 +524,13 @@ class TranslatorApp(QObject):
             self._ocr_worker.result_ready.connect(self._on_sidebar_ocr_result)
         else:
             self.popup = TranslatorPopup(
-                "🔍 Running OCR…",
+                "🔍 Running OCR\u2026",
                 "",
                 on_pin=self._pin_to_sidebar,
                 is_ocr_pending=True,
                 config=self.config,
+                update_available=self._has_update,
+                update_version=self._update_version,
             )
             self.popup.show()
             self._ocr_worker.result_ready.connect(self._on_ocr_result)
@@ -499,6 +562,7 @@ class TranslatorApp(QObject):
         if not self.sidebar_mode:
             self.sidebar_mode = True
             self.config.mode = "sidebar"
+            save_config(self.config)
             self._update_tray_sidebar_label()
         if not self.sidebar.isVisible():
             self.sidebar.show()
@@ -516,11 +580,13 @@ class TranslatorApp(QObject):
     def _on_sidebar_closed(self) -> None:
         self.sidebar_mode = False
         self.config.mode = "popup"
+        save_config(self.config)
         self._update_tray_sidebar_label()
 
     def _on_toggle_sidebar_mode(self, checked: bool) -> None:
         self.sidebar_mode = checked
         self.config.mode = "sidebar" if checked else "popup"
+        save_config(self.config)
         if checked and not self.sidebar.isVisible():
             self.sidebar.show()
         elif not checked:
@@ -530,6 +596,8 @@ class TranslatorApp(QObject):
     def _on_toggle_sidebar_side(self) -> None:
         self._sidebar_on_left = not self._sidebar_on_left
         side = "left" if self._sidebar_on_left else "right"
+        self.config.side = side
+        save_config(self.config)
         self.sidebar.set_side(side)
         self.action_sidebar_side.setText(
             "Move Sidebar to Right" if self._sidebar_on_left else "Move Sidebar to Left"
@@ -541,6 +609,41 @@ class TranslatorApp(QObject):
             self.action_sidebar.setText(
                 "Sidebar Mode: On" if self.sidebar_mode else "Sidebar Mode: Off"
             )
+
+    def _should_auto_check(self) -> bool:
+        """Return True if no check has been done or the last check was >48 hours ago."""
+        last = self.config.last_update_check
+        if not last:
+            return True
+        try:
+            from datetime import datetime, timezone
+            last_dt = datetime.fromisoformat(last)
+            now = datetime.now(timezone.utc)
+            # Make last_dt timezone-aware if it was stored naive
+            if last_dt.tzinfo is None:
+                last_dt = last_dt.replace(tzinfo=timezone.utc)
+            return (now - last_dt).total_seconds() > 48 * 3600
+        except Exception:
+            return True
+
+    def _set_update_available(self, available: bool, version: str = "") -> None:
+        """Record update state and refresh all indicators."""
+        self._has_update = available
+        self._update_version = version
+        self._refresh_tray_update_badge()
+        # Notify persistent sidebar
+        self.sidebar.set_update_available(available, version)
+
+    def _refresh_tray_update_badge(self) -> None:
+        """Recompose tray icon with/without orange update badge dot."""
+        if not self.tray_icon:
+            return
+        icon = self._create_icon(update_badge=self._has_update)
+        self.tray_icon.setIcon(icon)
+        # Update Preferences menu item text
+        if hasattr(self, "_action_prefs"):
+            label = "Preferences\u2026  \u25cf" if self._has_update else "Preferences\u2026"
+            self._action_prefs.setText(label)
 
     def _check_tesseract_warning(self) -> None:
         """Show a one-time tray warning if Tesseract is not found (Windows only)."""
@@ -567,7 +670,10 @@ class TranslatorApp(QObject):
                     break
 
         if not found and self.tray_icon and self.tray_icon.isVisible():
-            log_path = os.path.join(os.environ.get("TEMP", ""), "zh-en-translator-tesseract-install.log")
+            import tempfile
+            log_path = os.path.join(
+                tempfile.gettempdir(), "zh-en-translator-tesseract-install.log"
+            )
             message = (
                 "Tesseract OCR not found. Image capture may be limited.\n"
                 f"See: {log_path}"
@@ -590,6 +696,12 @@ class TranslatorApp(QObject):
         self._update_worker.start()
 
     def _on_update_check_finished(self, release_info, manual: bool) -> None:
+        # Save check timestamp regardless of outcome
+        from datetime import datetime, timezone
+        self.config.last_update_check = datetime.now(timezone.utc).isoformat()
+        from zh_en_translator.config import save_config
+        save_config(self.config)
+
         if not release_info:
             if manual:
                 from PyQt6.QtWidgets import QMessageBox
@@ -600,23 +712,27 @@ class TranslatorApp(QObject):
 
         from zh_en_translator import __version__
         from zh_en_translator.engines.updates import is_newer
-        
+
         tag = release_info["tag_name"]
         if is_newer(tag, __version__):
-            from PyQt6.QtWidgets import QMessageBox
-            msg = f"A new version is available: {tag}\n\nWould you like to visit the download page?"
-            ans = QMessageBox.question(
-                None, "Update Available", msg,
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-            )
-            if ans == QMessageBox.StandardButton.Yes:
-                import webbrowser
-                webbrowser.open(release_info["html_url"])
-        elif manual:
-            from PyQt6.QtWidgets import QMessageBox
-            QMessageBox.information(
-                None, "Update Check", f"You are running the latest version ({__version__})."
-            )
+            self._set_update_available(True, tag)
+            if manual:
+                from PyQt6.QtWidgets import QMessageBox
+                msg = f"A new version is available: {tag}\n\nWould you like to visit the download page?"
+                ans = QMessageBox.question(
+                    None, "Update Available", msg,
+                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                )
+                if ans == QMessageBox.StandardButton.Yes:
+                    import webbrowser
+                    webbrowser.open(release_info["html_url"])
+        else:
+            self._set_update_available(False)
+            if manual:
+                from PyQt6.QtWidgets import QMessageBox
+                QMessageBox.information(
+                    None, "Update Check", f"You are running the latest version ({__version__})."
+                )
 
     def _open_preferences(self):
         from zh_en_translator.ui.preferences import PreferencesDialog
@@ -628,6 +744,7 @@ class TranslatorApp(QObject):
             mode="sidebar" if self.sidebar_mode else "popup",
             startup=self.config.startup,
             auto_check_updates=self.config.auto_check_updates,
+            last_update_check=self.config.last_update_check,
             font_family=self.config.font_family,
             font_size=self.config.font_size,
             bg_color=self.config.bg_color,
@@ -649,10 +766,13 @@ class TranslatorApp(QObject):
             deepl_api_key=self.config.deepl_api_key,
             deepl_pro=self.config.deepl_pro,
         )
-        dialog = PreferencesDialog(current)
+        dialog = PreferencesDialog(
+            current,
+            update_available=self._has_update,
+            update_version=self._update_version,
+        )
         dialog.settings_applied.connect(self._on_settings_applied)
-        if hasattr(dialog, "_btn_check_now"):
-            dialog._btn_check_now.clicked.connect(lambda: self._check_for_updates(manual=True))
+        dialog._btn_check_now.clicked.connect(lambda: self._check_for_updates(manual=True))
         dialog.exec()
 
     def _on_settings_applied(self, cfg: Config) -> None:
