@@ -1,5 +1,44 @@
 # zh-en-translator — Progress Log
 
+## Session: Build System, License, and Code Signing Plan (2026-05-02)
+
+### Summary
+
+- **Versioned build artifacts** — installer and portable ZIP now include the version in
+  their filenames (`zh-en-translator-v{version}-setup.exe`, `zh-en-translator-v{version}-portable.zip`).
+  Both `build.ps1` and `zh-en-translator.iss` updated.
+- **`$SkipRelease` switch** — `build.ps1` Step 6 now uploads the release to
+  `rogerneumann/zh-en-translator-releases` via `gh` CLI. Skipped gracefully if `gh` not
+  installed or not authenticated. Pass `-SkipRelease` to opt out.
+- **`$VersionString` scoping fix** — `build.ps1` now correctly propagates the version
+  string through both the bump and skip-bump paths.
+- **Code signing roadmap (`signing_plan.md`)** — P7: full technical plan for integrating
+  `signtool.exe` into the build pipeline to stop Windows SmartScreen warnings.
+  Covers `build.ps1` parameters, `Sign-Files` helper, and Inno Setup `SignTool` config.
+- **GPL-3.0 license linkage** — `pyproject.toml` now uses `license = { file = "LICENSE" }`;
+  `README.md` has a `## License` section; `zh-en-translator.iss` shows the GPL text in the
+  installer wizard (`LicenseFile=..\LICENSE`); About tab updated to "GNU General Public
+  License v3 or later".
+- **`updates.py`** — removed stale TODO comments; `REPO_OWNER`/`REPO_NAME` now point to
+  the live `rogerneumann/zh-en-translator-releases` repo.
+- **`pyproject.toml`** — author updated to Roger Neumann.
+
+### Files changed (2026-05-02)
+- `installer/build.ps1` — versioned output names, `$SkipRelease`, Step 6 GitHub release upload
+- `installer/zh-en-translator.iss` — versioned output filename, `LicenseFile`
+- `signing_plan.md` — new: code signing integration roadmap
+- `pyproject.toml` — `license = { file = "LICENSE" }`, author Roger Neumann
+- `README.md` — `## License` section
+- `src/zh_en_translator/ui/preferences.py` — About tab license text
+- `src/zh_en_translator/engines/updates.py` — removed stale TODO
+- `CLAUDE.md` — P7 entry, updated build output names
+
+### Branch merges (2026-05-02)
+- `fix-translation-completeness-8L9yn` — reconciled P1-P4 history; brought in `FINAL_SESSION_HANDOFF.md`
+- `v3-m3-bundling` — restored `plan-v3.md`
+
+---
+
 ## Session: Installer Overhaul — Install State, OCR Options, Re-install Detection (2026-05-01)
 
 ### Summary
