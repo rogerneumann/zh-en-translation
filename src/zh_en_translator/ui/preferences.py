@@ -95,9 +95,9 @@ class _InstallMonitor:
     """
 
     def __init__(self, status_label: 'QLabel', on_done):
-        import os
+        import tempfile
         self._log_path = os.path.join(
-            os.environ.get('TEMP', os.path.expanduser('~')), _INSTALL_LOG_NAME
+            tempfile.gettempdir(), _INSTALL_LOG_NAME
         )
         self._label = status_label
         self._on_done = on_done
@@ -330,7 +330,9 @@ class PreferencesDialog(QDialog):
         self._update_banner.setVisible(False)
         update_layout.addWidget(self._update_banner)
 
-        self._startup_check = QCheckBox("Launch at Windows login")
+        import sys as _sys
+        _startup_label = "Launch at Windows login" if _sys.platform == "win32" else "Launch at login"
+        self._startup_check = QCheckBox(_startup_label)
         update_layout.addWidget(self._startup_check)
         self._auto_update_check = QCheckBox("Check for updates automatically on startup")
         update_layout.addWidget(self._auto_update_check)
@@ -506,44 +508,48 @@ class PreferencesDialog(QDialog):
         ocr_group = QGroupBox("OCR Engine")
         ocr_layout = QVBoxLayout(ocr_group)
         self._ocr_combo = QComboBox()
-        for lbl_text, val in [
-            ("Auto", "auto"), ("Windows", "windows"),
-            ("Tesseract", "tesseract"), ("PaddleOCR", "paddle"),
-        ]:
+        ocr_engine_choices = [("Auto", "auto"), ("Tesseract", "tesseract"), ("PaddleOCR", "paddle")]
+        if sys.platform == "win32":
+            ocr_engine_choices.insert(1, ("Windows", "windows"))
+        for lbl_text, val in ocr_engine_choices:
             self._ocr_combo.addItem(lbl_text, val)
         ocr_layout.addWidget(self._ocr_combo)
         layout.addWidget(ocr_group)
 
-        # ---- Windows OCR group ----
-        win_group = QGroupBox("Windows OCR (primary engine)")
-        win_layout = QVBoxLayout(win_group)
-
-        wstatus = _wocr.ocr_status()
+        # ---- Windows OCR group (Windows only) ----
         self._btn_win_ocr_install = None
+        self._win_ocr_status_lbl = QLabel()
+        self._win_ocr_status_lbl.setWordWrap(True)
+        self._win_ocr_status_lbl.setVisible(False)
 
-        if not wstatus["api"]:
-            self._win_ocr_static_lbl = QLabel(
-                "Windows OCR API unavailable — winrt/winsdk package not installed."
-            )
-            self._win_ocr_static_lbl.setWordWrap(True)
-            self._win_ocr_static_lbl.setStyleSheet("color: #888;")
-            win_layout.addWidget(self._win_ocr_static_lbl)
-        else:
-            if not wstatus["chinese"]:
+        if sys.platform == "win32":
+            win_group = QGroupBox("Windows OCR (primary engine)")
+            win_layout = QVBoxLayout(win_group)
+
+            wstatus = _wocr.ocr_status()
+
+            if not wstatus["api"]:
                 self._win_ocr_static_lbl = QLabel(
-                    "Windows OCR ready, but no Chinese language pack is installed.\n"
-                    "OCR will fall back to Tesseract until the Chinese pack is added."
+                    "Windows OCR API unavailable — winrt/winsdk package not installed."
                 )
-                self._win_ocr_static_lbl.setStyleSheet("color: #b85c00; font-weight: bold;")
+                self._win_ocr_static_lbl.setWordWrap(True)
+                self._win_ocr_static_lbl.setStyleSheet("color: #888;")
+                win_layout.addWidget(self._win_ocr_static_lbl)
             else:
-                self._win_ocr_static_lbl = QLabel(
-                    "Windows OCR: ready — Chinese language pack installed."
-                )
-                self._win_ocr_static_lbl.setStyleSheet("color: #1a7a1a; font-weight: bold;")
-            self._win_ocr_static_lbl.setWordWrap(True)
-            win_layout.addWidget(self._win_ocr_static_lbl)
+                if not wstatus["chinese"]:
+                    self._win_ocr_static_lbl = QLabel(
+                        "Windows OCR ready, but no Chinese language pack is installed.\n"
+                        "OCR will fall back to Tesseract until the Chinese pack is added."
+                    )
+                    self._win_ocr_static_lbl.setStyleSheet("color: #b85c00; font-weight: bold;")
+                else:
+                    self._win_ocr_static_lbl = QLabel(
+                        "Windows OCR: ready — Chinese language pack installed."
+                    )
+                    self._win_ocr_static_lbl.setStyleSheet("color: #1a7a1a; font-weight: bold;")
+                self._win_ocr_static_lbl.setWordWrap(True)
+                win_layout.addWidget(self._win_ocr_static_lbl)
 
-            if sys.platform == "win32":
                 self._btn_win_ocr_install = QPushButton(
                     "Reinstall Chinese OCR" if wstatus["chinese"]
                     else "Install Chinese OCR (requires admin)"
@@ -555,14 +561,16 @@ class PreferencesDialog(QDialog):
                 )
                 win_layout.addWidget(self._btn_win_ocr_install)
 
-        self._win_ocr_status_lbl = QLabel()
-        self._win_ocr_status_lbl.setWordWrap(True)
-        self._win_ocr_status_lbl.setVisible(False)
-        win_layout.addWidget(self._win_ocr_status_lbl)
-        layout.addWidget(win_group)
+            win_layout.addWidget(self._win_ocr_status_lbl)
+            layout.addWidget(win_group)
 
         # ---- Tesseract group ----
-        tess_group = QGroupBox("Tesseract Status (optional fallback — Windows OCR is primary)")
+        if sys.platform == "win32":
+            tess_title = "Tesseract Status (optional fallback — Windows OCR is primary)"
+        else:
+            tess_title = "Tesseract OCR"
+
+        tess_group = QGroupBox(tess_title)
         tess_layout = QVBoxLayout(tess_group)
 
         from zh_en_translator.engines.ocr import tesseract_ocr as _tess
@@ -572,13 +580,23 @@ class PreferencesDialog(QDialog):
         if tess_available:
             self._tess_static_lbl = QLabel(f"Tesseract: Found at {tess_path}")
             self._tess_static_lbl.setStyleSheet("color: #1a7a1a; font-weight: bold;")
-        else:
+        elif sys.platform == "win32":
             self._tess_static_lbl = QLabel(
                 "Tesseract not found. OCR still works via Windows OCR (the primary engine).\n"
                 "Install Tesseract only if Windows OCR is unavailable on your system."
             )
             self._tess_static_lbl.setWordWrap(True)
             self._tess_static_lbl.setStyleSheet("color: #555;")
+        else:
+            self._tess_static_lbl = QLabel(
+                "Tesseract not found. Install it to enable OCR:\n"
+                "  Debian/Ubuntu: sudo apt install tesseract-ocr tesseract-ocr-chi-sim\n"
+                "  Fedora: sudo dnf install tesseract tesseract-langpack-chi-sim\n"
+                "  Arch: sudo pacman -S tesseract tesseract-data-chi_sim\n"
+                "  Flatpak: Tesseract is bundled — restart the app if missing."
+            )
+            self._tess_static_lbl.setWordWrap(True)
+            self._tess_static_lbl.setStyleSheet("color: #b85c00;")
         tess_layout.addWidget(self._tess_static_lbl)
 
         btn_row = QHBoxLayout()
@@ -597,12 +615,16 @@ class PreferencesDialog(QDialog):
 
         def _open_tess_log():
             import subprocess
+            import tempfile
             log_path = os.path.join(
-                os.environ.get("TEMP", os.path.expanduser("~")),
+                tempfile.gettempdir(),
                 "zh-en-translator-elevated-setup.log",
             )
             if os.path.isfile(log_path):
-                subprocess.Popen(["notepad.exe", log_path])
+                if sys.platform == "win32":
+                    subprocess.Popen(["notepad.exe", log_path])
+                else:
+                    subprocess.Popen(["xdg-open", log_path])
             else:
                 QMessageBox.information(
                     self, "Log Not Found",
@@ -610,9 +632,10 @@ class PreferencesDialog(QDialog):
                     "Click 'Install Tesseract' to run the installer.",
                 )
 
-        btn_open_log = QPushButton("View Log")
-        btn_open_log.clicked.connect(_open_tess_log)
-        btn_row.addWidget(btn_open_log)
+        if sys.platform == "win32":
+            btn_open_log = QPushButton("View Log")
+            btn_open_log.clicked.connect(_open_tess_log)
+            btn_row.addWidget(btn_open_log)
         btn_row.addStretch()
         tess_layout.addLayout(btn_row)
 

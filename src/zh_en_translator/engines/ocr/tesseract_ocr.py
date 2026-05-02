@@ -9,19 +9,40 @@ logger = logging.getLogger(__name__)
 
 
 def _get_tesseract_candidates() -> list[Path]:
-    """Return candidate Tesseract paths, checking bundled path first in frozen builds."""
+    """Return candidate Tesseract paths, checking bundled/system paths for the current platform."""
+    import shutil
+
     candidates = []
-    # Check bundled Tesseract first (for frozen/installed app)
-    if getattr(sys, "frozen", False):
-        bundled = Path(sys.executable).parent / "tesseract" / "tesseract.exe"
-        candidates.append(bundled)
-    # Standard Windows install locations
-    candidates += [
-        Path.home() / "AppData" / "Local" / "Programs" / "Tesseract-OCR" / "tesseract.exe",
-        Path.home() / "AppData" / "Local" / "Tesseract-OCR" / "tesseract.exe",
-        Path("C:\\Program Files\\Tesseract-OCR\\tesseract.exe"),
-        Path("C:\\Program Files (x86)\\Tesseract-OCR\\tesseract.exe"),
-    ]
+
+    if sys.platform == "win32":
+        # Frozen (PyInstaller) bundled binary on Windows
+        if getattr(sys, "frozen", False):
+            candidates.append(Path(sys.executable).parent / "tesseract" / "tesseract.exe")
+        candidates += [
+            Path.home() / "AppData" / "Local" / "Programs" / "Tesseract-OCR" / "tesseract.exe",
+            Path.home() / "AppData" / "Local" / "Tesseract-OCR" / "tesseract.exe",
+            Path("C:\\Program Files\\Tesseract-OCR\\tesseract.exe"),
+            Path("C:\\Program Files (x86)\\Tesseract-OCR\\tesseract.exe"),
+        ]
+    else:
+        # Flatpak bundled binary
+        flatpak_bin = Path("/app/bin/tesseract")
+        if flatpak_bin.exists():
+            candidates.append(flatpak_bin)
+        # Frozen (PyInstaller) bundled binary on Linux/macOS
+        if getattr(sys, "frozen", False):
+            candidates.append(Path(sys.executable).parent / "tesseract" / "tesseract")
+        # System PATH — most reliable on Linux/macOS
+        system_tess = shutil.which("tesseract")
+        if system_tess:
+            candidates.append(Path(system_tess))
+        # Common install prefixes as final fallback
+        candidates += [
+            Path("/usr/bin/tesseract"),
+            Path("/usr/local/bin/tesseract"),
+            Path("/opt/homebrew/bin/tesseract"),  # macOS Homebrew
+        ]
+
     return candidates
 
 

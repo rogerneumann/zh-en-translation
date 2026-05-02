@@ -52,7 +52,7 @@ def _make_fake_numpy_module():
 # ---------------------------------------------------------------------------
 
 def test_ocr_engine_waterfall_windows_first(monkeypatch):
-    """Windows OCR is tried first; if it returns text, others are not called."""
+    """Windows OCR is tried first on win32; if it returns text, others are not called."""
     windows_mod = MagicMock()
     windows_mod.is_available.return_value = True
     windows_mod.ocr_image.return_value = "extracted by windows"
@@ -68,6 +68,7 @@ def test_ocr_engine_waterfall_windows_first(monkeypatch):
     monkeypatch.setattr("zh_en_translator.engines.ocr.engine.paddle_ocr", paddle_mod)
     monkeypatch.setattr("zh_en_translator.engines.ocr.engine.windows_ocr", windows_mod)
     monkeypatch.setattr("zh_en_translator.engines.ocr.engine.tesseract_ocr", tesseract_mod)
+    monkeypatch.setattr("zh_en_translator.engines.ocr.engine.sys.platform", "win32")
 
     from zh_en_translator.engines.ocr.engine import ocr_image
     result = ocr_image(b"fake_image_bytes", lang="zh")
@@ -79,7 +80,7 @@ def test_ocr_engine_waterfall_windows_first(monkeypatch):
 
 
 def test_ocr_engine_waterfall_windows_falls_back_to_tesseract(monkeypatch):
-    """When Windows OCR returns None, Tesseract is tried next."""
+    """When Windows OCR returns None on win32, Tesseract is tried next."""
     windows_mod = MagicMock()
     windows_mod.is_available.return_value = True
     windows_mod.ocr_image.return_value = None  # windows found but returned nothing
@@ -95,6 +96,7 @@ def test_ocr_engine_waterfall_windows_falls_back_to_tesseract(monkeypatch):
     monkeypatch.setattr("zh_en_translator.engines.ocr.engine.paddle_ocr", paddle_mod)
     monkeypatch.setattr("zh_en_translator.engines.ocr.engine.windows_ocr", windows_mod)
     monkeypatch.setattr("zh_en_translator.engines.ocr.engine.tesseract_ocr", tesseract_mod)
+    monkeypatch.setattr("zh_en_translator.engines.ocr.engine.sys.platform", "win32")
 
     from zh_en_translator.engines.ocr.engine import ocr_image
     result = ocr_image(b"fake_image_bytes", lang="zh")
@@ -106,7 +108,7 @@ def test_ocr_engine_waterfall_windows_falls_back_to_tesseract(monkeypatch):
 
 
 def test_ocr_engine_waterfall_falls_back_to_tesseract(monkeypatch):
-    """When PaddleOCR and Windows OCR both fail, Tesseract is tried last."""
+    """When Windows OCR returns None on win32, Tesseract is tried next."""
     paddle_mod = MagicMock()
     paddle_mod.is_available.return_value = False
 
@@ -121,6 +123,7 @@ def test_ocr_engine_waterfall_falls_back_to_tesseract(monkeypatch):
     monkeypatch.setattr("zh_en_translator.engines.ocr.engine.paddle_ocr", paddle_mod)
     monkeypatch.setattr("zh_en_translator.engines.ocr.engine.windows_ocr", windows_mod)
     monkeypatch.setattr("zh_en_translator.engines.ocr.engine.tesseract_ocr", tesseract_mod)
+    monkeypatch.setattr("zh_en_translator.engines.ocr.engine.sys.platform", "win32")
 
     from zh_en_translator.engines.ocr.engine import ocr_image
     result = ocr_image(b"fake_image_bytes", lang="zh")
@@ -128,6 +131,32 @@ def test_ocr_engine_waterfall_falls_back_to_tesseract(monkeypatch):
     assert result == "extracted by tesseract"
     paddle_mod.ocr_image.assert_not_called()
     windows_mod.ocr_image.assert_called_once()
+    tesseract_mod.ocr_image.assert_called_once()
+
+
+def test_ocr_engine_waterfall_linux_skips_windows_ocr(monkeypatch):
+    """On Linux, Windows OCR is never called even if is_available() returns True."""
+    windows_mod = MagicMock()
+    windows_mod.is_available.return_value = True
+    windows_mod.ocr_image.return_value = "should not be reached"
+
+    tesseract_mod = MagicMock()
+    tesseract_mod.is_available.return_value = True
+    tesseract_mod.ocr_image.return_value = "extracted by tesseract"
+
+    paddle_mod = MagicMock()
+    paddle_mod.is_available.return_value = False
+
+    monkeypatch.setattr("zh_en_translator.engines.ocr.engine.paddle_ocr", paddle_mod)
+    monkeypatch.setattr("zh_en_translator.engines.ocr.engine.windows_ocr", windows_mod)
+    monkeypatch.setattr("zh_en_translator.engines.ocr.engine.tesseract_ocr", tesseract_mod)
+    monkeypatch.setattr("zh_en_translator.engines.ocr.engine.sys.platform", "linux")
+
+    from zh_en_translator.engines.ocr.engine import ocr_image
+    result = ocr_image(b"fake_image_bytes", lang="zh")
+
+    assert result == "extracted by tesseract"
+    windows_mod.ocr_image.assert_not_called()
     tesseract_mod.ocr_image.assert_called_once()
 
 

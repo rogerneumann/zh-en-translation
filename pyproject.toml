@@ -31,6 +31,11 @@ ocr-windows-legacy = ["winsdk"]
 ocr-tesseract = ["pytesseract", "Pillow"]
 ocr-paddle = ["paddleocr", "Pillow"]
 traditional = ["opencc-python-reimplemented>=1.1.0"]
+linux = [
+    "pytesseract",
+    "Pillow",
+    "opencc-python-reimplemented>=1.1.0",
+]
 pkuseg = ["spacy-pkuseg>=1.0.0"]
 finetuning = [
     "opennmt-py>=3.0",

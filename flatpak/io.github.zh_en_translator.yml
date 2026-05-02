@@ -1,0 +1,105 @@
+app-id: io.github.zh_en_translator
+runtime: org.freedesktop.Platform
+runtime-version: "24.08"
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.python311
+command: zh-en-translator
+
+finish-args:
+  # Display
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --share=ipc
+  - --device=dri
+  # Global hotkeys via evdev (pynput on Wayland); see LINUX_FLATPAK_PLAN.md §3.6
+  - --device=all
+  # Clipboard and portal access
+  - --talk-name=org.freedesktop.portal.Desktop
+  # Network: optional DeepL / Azure / update-check
+  - --share=network
+  # Config and data directories
+  - --filesystem=xdg-config/zh-en-translator:create
+  - --filesystem=xdg-data/zh-en-translator:create
+  # XDG autostart ("launch at login" feature)
+  - --filesystem=xdg-config/autostart:create
+
+build-options:
+  append-path: /usr/lib/sdk/python311/bin
+  env:
+    TESSDATA_PREFIX: /app/share/tessdata
+
+modules:
+  # ── Leptonica (Tesseract dependency) ──────────────────────────────────────
+  - name: leptonica
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DBUILD_SHARED_LIBS=ON
+      - -DCMAKE_BUILD_TYPE=Release
+    sources:
+      - type: archive
+        url: https://github.com/DanBloomberg/leptonica/releases/download/1.84.1/leptonica-1.84.1.tar.gz
+        sha256: 2b3e1254b1cca381e77c819b59ca99774ff43530209b9aeb511e1d46588a64f6
+
+  # ── Tesseract OCR ─────────────────────────────────────────────────────────
+  - name: tesseract
+    buildsystem: cmake-ninja
+    config-opts:
+      - -DBUILD_TRAINING_TOOLS=OFF
+      - -DCMAKE_BUILD_TYPE=Release
+    sources:
+      - type: archive
+        url: https://github.com/tesseract-ocr/tesseract/archive/refs/tags/5.3.4.tar.gz
+        sha256: 136tracked by flatpak-builder at build time — replace with actual sha256
+
+  # ── Tesseract Chinese traineddata ─────────────────────────────────────────
+  - name: tesseract-chi-sim
+    buildsystem: simple
+    build-commands:
+      - install -Dm644 chi_sim.traineddata /app/share/tessdata/chi_sim.traineddata
+    sources:
+      - type: file
+        url: https://github.com/tesseract-ocr/tessdata_best/raw/main/chi_sim.traineddata
+        sha256: tracked by flatpak-builder at build time — replace with actual sha256
+
+  - name: tesseract-chi-tra
+    buildsystem: simple
+    build-commands:
+      - install -Dm644 chi_tra.traineddata /app/share/tessdata/chi_tra.traineddata
+    sources:
+      - type: file
+        url: https://github.com/tesseract-ocr/tessdata_best/raw/main/chi_tra.traineddata
+        sha256: tracked by flatpak-builder at build time — replace with actual sha256
+
+  # ── Python packages ────────────────────────────────────────────────────────
+  # Run flatpak/scripts/generate-sources.sh to regenerate generated-sources.json
+  - name: python-deps
+    buildsystem: simple
+    build-commands:
+      - pip3 install --prefix=/app --no-index --find-links=. --no-build-isolation
+          PyQt6 PyQt6-Qt6 PyQt6-sip
+          pynput
+          platformdirs
+          argostranslate
+          jieba
+          opencc-python-reimplemented
+          pytesseract
+          Pillow
+          toml
+    sources:
+      - generated-sources.json
+
+  # ── zh-en-translator application ──────────────────────────────────────────
+  - name: zh-en-translator
+    buildsystem: simple
+    build-commands:
+      - pip3 install --prefix=/app --no-build-isolation --no-deps .
+      - install -Dm644 flatpak/io.github.zh_en_translator.desktop
+            /app/share/applications/io.github.zh_en_translator.desktop
+      - install -Dm644 translation_icn.svg
+            /app/share/icons/hicolor/scalable/apps/io.github.zh_en_translator.svg
+      - install -Dm644 flatpak/io.github.zh_en_translator.metainfo.xml
+            /app/share/metainfo/io.github.zh_en_translator.metainfo.xml
+    sources:
+      - type: dir
+        path: ..

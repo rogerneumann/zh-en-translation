@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.zh_en_translator</id>
+  <name>zh-en Translator</name>
+  <summary>Offline popup translator for Chinese text</summary>
+  <description>
+    <p>
+      Offline-first Chinese to English translator. Press the configurable hotkey to
+      translate selected text or clipboard images instantly, with no internet required.
+    </p>
+    <ul>
+      <li>CC-CEDICT dictionary with inline word-level lookup and pinyin</li>
+      <li>Argos MT offline sentence translation (no cloud, no API key)</li>
+      <li>Tesseract OCR for translating text in screenshots and images</li>
+      <li>Domain glossaries: manufacturing, medical, legal, electronics (1,500+ terms)</li>
+      <li>Translation history with CSV export</li>
+      <li>Sidebar mode for continuous reading workflows</li>
+      <li>Optional DeepL / Azure cloud override</li>
+    </ul>
+  </description>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <url type="homepage">https://github.com/rogerneumann/zh-en-translation</url>
+  <url type="bugtracker">https://github.com/rogerneumann/zh-en-translation/issues</url>
+  <releases>
+    <release version="2.0.0" date="2026-05-01">
+      <description>
+        <p>First Linux release. Adds XDG autostart, Linux Tesseract path detection,
+        platform-aware OCR waterfall, and Flatpak packaging.</p>
+      </description>
+    </release>
+  </releases>
+  <provides>
+    <binary>zh-en-translator</binary>
+  </provides>
+  <launchable type="desktop-id">io.github.zh_en_translator.desktop</launchable>
+  <content_rating type="oars-1.1"/>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+  </supports>
+</component>
