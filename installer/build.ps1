@@ -781,8 +781,16 @@ if (-not $SkipRelease) {
     $GhExe = $null
     try {
         $GhExe = (Get-Command gh -ErrorAction Stop).Source
-        Write-Ok "GitHub CLI found: ${GhExe}"
     } catch {
+        # Get-Command missed it -- check the default GitHub CLI install path
+        $GhFallback = "C:\Program Files\GitHub CLI\gh.exe"
+        if (Test-Path $GhFallback) {
+            $GhExe = $GhFallback
+        }
+    }
+    if ($GhExe) {
+        Write-Ok "GitHub CLI found: ${GhExe}"
+    } else {
         Write-Host "    WARNING: GitHub CLI (gh) not found -- skipping release upload." -ForegroundColor Yellow
         Write-Host "    Install from https://cli.github.com/ and authenticate with 'gh auth login'." -ForegroundColor Yellow
         Write-Host "    Then re-run with -SkipVersionBump -SkipPyInstaller to upload only." -ForegroundColor Yellow
@@ -790,7 +798,7 @@ if (-not $SkipRelease) {
 
     if ($GhExe) {
         # Verify authentication before attempting upload
-        & gh auth status 2>&1 | Out-Null
+        & "$GhExe" auth status 2>&1 | Out-Null
         if ($LASTEXITCODE -ne 0) {
             Write-Host "    WARNING: gh is not authenticated. Run 'gh auth login' first." -ForegroundColor Yellow
             $GhExe = $null
@@ -822,7 +830,7 @@ if (-not $SkipRelease) {
                 "--notes", "Installer and portable ZIP for ${ReleaseTitle}."
             ) + $Assets.ToArray()
 
-            & gh @GhArgs
+            & "$GhExe" @GhArgs
             if ($LASTEXITCODE -ne 0) {
                 Write-Host "    WARNING: GitHub release upload failed (exit $LASTEXITCODE)" -ForegroundColor Yellow
                 Write-Host "    Check 'gh auth status' and 'gh release list --repo ${ReleasesRepo}' for details." -ForegroundColor Yellow
