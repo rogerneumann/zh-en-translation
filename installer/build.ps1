@@ -649,6 +649,64 @@ if (-not $Iscc) {
 }
 
 # ---------------------------------------------------------------------------
+# Step 3.5 -- Clean up old Output releases
+# ---------------------------------------------------------------------------
+Write-Step "Step 3.5: Checking Output directory for old releases"
+
+$OutputDir = Join-Path $PSScriptRoot "Output"
+if (Test-Path $OutputDir) {
+    # Collect versioned setup and portable files
+    $SetupFiles    = @(Get-ChildItem $OutputDir -Filter "zh-en-translator-v*-setup.exe"    -ErrorAction SilentlyContinue)
+    $PortableFiles = @(Get-ChildItem $OutputDir -Filter "zh-en-translator-v*-portable.zip" -ErrorAction SilentlyContinue)
+
+    # Extract unique version strings from filenames (e.g. "2026.05.02")
+    $Versions = @($SetupFiles + $PortableFiles | ForEach-Object {
+        if ($_.Name -match "zh-en-translator-v(.+?)-(setup|portable)") { $matches[1] }
+    } | Sort-Object -Unique)
+
+    if ($Versions.Count -ge 2) {
+        Write-Host ""
+        Write-Host "    Found ${$Versions.Count} release versions in Output:" -ForegroundColor Yellow
+        $i = 1
+        foreach ($v in ($Versions | Sort-Object -Descending)) {
+            $files  = @(Get-ChildItem $OutputDir -Filter "zh-en-translator-v${v}-*" -ErrorAction SilentlyContinue)
+            $sizes  = ($files | ForEach-Object { "$($_.Name) ($([math]::Round($_.Length/1MB,1)) MB)" }) -join ", "
+            Write-Host "      ${i}. v${v} -- ${sizes}" -ForegroundColor Gray
+            $i++
+        }
+        Write-Host ""
+        $Answer = Read-Host "    Keep how many recent releases? (number, or 0 = keep all) [default: 1]"
+        if ($Answer -eq "" ) { $Answer = "1" }
+        $Keep = [int]$Answer
+
+        if ($Keep -gt 0) {
+            # Sort descending (newest first), skip the ones to keep, delete the rest
+            $Sorted  = @($Versions | Sort-Object -Descending)
+            $ToDelete = @($Sorted | Select-Object -Skip $Keep)
+
+            if ($ToDelete.Count -eq 0) {
+                Write-Ok "Nothing to delete."
+            } else {
+                foreach ($v in $ToDelete) {
+                    $files = @(Get-ChildItem $OutputDir -Filter "zh-en-translator-v${v}-*" -ErrorAction SilentlyContinue)
+                    foreach ($f in $files) {
+                        Remove-Item $f.FullName -Force
+                        Write-Host "    Deleted: $($f.Name)" -ForegroundColor Gray
+                    }
+                }
+                Write-Ok "Kept $Keep most recent release(s), deleted $($ToDelete.Count) older version(s)."
+            }
+        } else {
+            Write-Ok "Keeping all releases."
+        }
+    } else {
+        Write-Ok "Output directory has $($Versions.Count) release version(s) -- no cleanup needed."
+    }
+} else {
+    Write-Ok "Output directory does not exist yet -- skipping cleanup."
+}
+
+# ---------------------------------------------------------------------------
 # Step 4 -- Run Inno Setup compiler
 # ---------------------------------------------------------------------------
 Write-Step "Step 4: Compiling installer with Inno Setup"
