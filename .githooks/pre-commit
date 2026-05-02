@@ -1,0 +1,20 @@
+#!/bin/sh
+# Pre-commit hook: scan staged changes for secrets using gitleaks.
+# Install gitleaks: winget install gitleaks  (Windows)
+#                   brew install gitleaks    (macOS)
+#                   https://github.com/gitleaks/gitleaks
+
+if ! command -v gitleaks > /dev/null 2>&1; then
+    echo "WARNING: gitleaks not found -- skipping secret scan."
+    echo "         Install with: winget install gitleaks"
+    exit 0
+fi
+
+gitleaks protect --staged --redact --exit-code 1
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "COMMIT BLOCKED: gitleaks found potential secrets in staged files."
+    echo "Review the output above, remove the secrets, then commit again."
+    echo "To bypass (not recommended): git commit --no-verify"
+    exit 1
+fi

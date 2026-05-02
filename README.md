@@ -181,6 +181,18 @@ pytest -v
 ruff check src/ tests/
 ```
 
+### Dev setup (first clone)
+
+Activate the pre-commit secret scanner (requires [gitleaks](https://github.com/gitleaks/gitleaks)):
+
+```bash
+git config core.hooksPath .githooks
+winget install gitleaks   # Windows
+# brew install gitleaks   # macOS
+```
+
+The hook runs `gitleaks protect --staged` on every commit and blocks anything that looks like a secret. It warns and skips gracefully if gitleaks is not installed.
+
 ### Architecture
 
 ```
