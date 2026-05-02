@@ -27,7 +27,7 @@ PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 ; Output
 OutputDir=Output
-OutputBaseFilename=zh-en-translator-setup
+OutputBaseFilename=zh-en-translator-v{#MyAppVersion}-setup
 ; Compression
 Compression=lzma2/ultra64
 SolidCompression=yes

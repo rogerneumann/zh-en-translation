@@ -55,8 +55,8 @@ Run on a Windows dev machine with Python 3.11, PyInstaller, and Inno Setup 6 ins
 ```
 
 Outputs:
-- `installer/Output/zh-en-translator-setup.exe` — full installer (~350–400 MB, Tesseract + CC-CEDICT + Argos bundled)
-- `installer/Output/zh-en-translator-portable.zip` — portable ZIP (~80–120 MB)
+- `installer/Output/zh-en-translator-v{version}-setup.exe` — full installer (~350–400 MB, Tesseract + CC-CEDICT + Argos bundled)
+- `installer/Output/zh-en-translator-v{version}-portable.zip` — portable ZIP (~80–120 MB)
 
 Build steps in order:
 1. Verify Python 3.11 + PyInstaller
@@ -66,8 +66,9 @@ Build steps in order:
 5. Bundle CC-CEDICT (~6 MB) into `installer/cedict-bundle/`
 6. Bundle Argos zh→en model (~100 MB) into `installer/argos-bundle/`
 7. Locate `iscc.exe` (Inno Setup compiler)
-8. Compile installer → `installer/Output/zh-en-translator-setup.exe`
-9. Create portable ZIP → `installer/Output/zh-en-translator-portable.zip`
+8. Compile installer → `installer/Output/zh-en-translator-v{version}-setup.exe`
+9. Create portable ZIP → `installer/Output/zh-en-translator-v{version}-portable.zip`
+10. **Code signing** (Planned) — sign executable, DLLs, and installer using `signtool.exe`.
 
 Bundle dirs are gitignored — generated at build time, not committed.
 
@@ -89,6 +90,7 @@ Everything through **Priority 4** is complete and on `main`.
 | P4 | Domain glossaries: Medical (504 terms), Legal (409), Electronics (452). Combined with Manufacturing: 1,514 terms across 4 domains. Domain priority order: user → manufacturing → medical → legal → electronics. |
 | P5 | Translation display fixes: plain-text data model (HTML view-layer only), `_render_translation_html()`, structured source segmentation (bullets/numbered lists/paragraphs/soft-wrap detection), test suite fully green (644 passed). |
 | P6 | Installer overhaul: install_state.toml + registry tracking, re-install detection with option pre-selection, new OCR Options wizard page (Windows OCR / Tesseract checkboxes with warnings), inline status labels, `install_state.py` runtime module. |
+| P7 | **Code Signing Integration Plan drafted** — See `signing_plan.md` for technical roadmap to stop SmartScreen warnings. |
 
 ---
 
@@ -119,7 +121,7 @@ model_path = finetuned_path if finetuned_path.exists() else base_path
 ```
 
 Full implementation guide: `GPU_TRAINING_IMPLEMENTATION.md`  
-Architecture design: `FINETUNING_PLAN.md`  
+Architecture design: `FINETUNING_PLAN.md`, `signing_plan.md`  
 Prerequisites + quick-start: `FINETUNING_SETUP.md`
 
 ---
@@ -136,7 +138,7 @@ Infrastructure partially exists; no UI wired up:
 ### Long-Term (Deliberate Decision Required)
 
 - **Back-translation augmentation** — use fine-tuned model to generate 3–5× synthetic corpus pairs, then re-train for another +2–4 BLEU
-- **Code signing** — requires purchasing a cert
+- **Code signing** — implementation of `signing_plan.md` (requires purchasing a cert)
 - **Region-capture OCR** — drag-to-select on-screen translation (PowerToys-style)
 - **Auto-update mechanism** — signed manifest check from configurable URL (off by default in v1)
 - **Rust rewrite** — only if Python proves insufficient for idle CPU target (<0.5%)
@@ -211,6 +213,8 @@ installer/
 ├── build.ps1                   ← UTF-8 BOM + ASCII-only (see encoding note above)
 ├── zh-en-translator.iss
 └── install_tesseract.ps1       ← UAC fallback, logging to %TEMP%
+
+signing_plan.md                 ← Code signing implementation roadmap
 ```
 
 ### Translation Pipeline (runtime order)

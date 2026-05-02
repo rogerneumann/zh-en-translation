@@ -12,10 +12,6 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Public releases repository
 # ---------------------------------------------------------------------------
-# TODO: Create a public GitHub repo at github.com/OWNER/zh-en-translator-releases
-# and set REPO_OWNER / REPO_NAME below.  Tag each release vYYYY.MM.DD (or
-# vYYYY.MM.DD.N for multiple releases on the same day) and upload the
-# installer .exe as a release asset.  The private source repo stays private.
 REPO_OWNER = "rogerneumann"
 REPO_NAME = "zh-en-translator-releases"
 
