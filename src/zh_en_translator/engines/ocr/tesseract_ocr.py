@@ -9,19 +9,40 @@ logger = logging.getLogger(__name__)
 
 
 def _get_tesseract_candidates() -> list[Path]:
-    """Return candidate Tesseract paths, checking bundled path first in frozen builds."""
+    """Return candidate Tesseract paths, checking bundled/system paths for the current platform."""
+    import shutil
+
     candidates = []
-    # Check bundled Tesseract first (for frozen/installed app)
-    if getattr(sys, "frozen", False):
-        bundled = Path(sys.executable).parent / "tesseract" / "tesseract.exe"
-        candidates.append(bundled)
-    # Standard Windows install locations
-    candidates += [
-        Path.home() / "AppData" / "Local" / "Programs" / "Tesseract-OCR" / "tesseract.exe",
-        Path.home() / "AppData" / "Local" / "Tesseract-OCR" / "tesseract.exe",
-        Path("C:\\Program Files\\Tesseract-OCR\\tesseract.exe"),
-        Path("C:\\Program Files (x86)\\Tesseract-OCR\\tesseract.exe"),
-    ]
+
+    if sys.platform == "win32":
+        # Frozen (PyInstaller) bundled binary on Windows
+        if getattr(sys, "frozen", False):
+            candidates.append(Path(sys.executable).parent / "tesseract" / "tesseract.exe")
+        candidates += [
+            Path.home() / "AppData" / "Local" / "Programs" / "Tesseract-OCR" / "tesseract.exe",
+            Path.home() / "AppData" / "Local" / "Tesseract-OCR" / "tesseract.exe",
+            Path("C:\\Program Files\\Tesseract-OCR\\tesseract.exe"),
+            Path("C:\\Program Files (x86)\\Tesseract-OCR\\tesseract.exe"),
+        ]
+    else:
+        # Flatpak bundled binary
+        flatpak_bin = Path("/app/bin/tesseract")
+        if flatpak_bin.exists():
+            candidates.append(flatpak_bin)
+        # Frozen (PyInstaller) bundled binary on Linux/macOS
+        if getattr(sys, "frozen", False):
+            candidates.append(Path(sys.executable).parent / "tesseract" / "tesseract")
+        # System PATH — most reliable on Linux/macOS
+        system_tess = shutil.which("tesseract")
+        if system_tess:
+            candidates.append(Path(system_tess))
+        # Common install prefixes as final fallback
+        candidates += [
+            Path("/usr/bin/tesseract"),
+            Path("/usr/local/bin/tesseract"),
+            Path("/opt/homebrew/bin/tesseract"),  # macOS Homebrew
+        ]
+
     return candidates
 
 
@@ -54,6 +75,14 @@ def _configure_pytesseract_cmd() -> bool:
     return False
 
 
+def get_found_path() -> str | None:
+    """Return the path of the first found tesseract.exe, or None if not found."""
+    for candidate in _get_tesseract_candidates():
+        if candidate.exists() and candidate.is_file():
+            return str(candidate)
+    return None
+
+
 def is_available() -> bool:
     """Return True if pytesseract and the tesseract binary are found."""
     try:
@@ -69,11 +98,36 @@ def is_available() -> bool:
         return False
 
 
+def _available_zh_lang() -> str:
+    """Return the best available Tesseract language string for Chinese.
+
+    Tries chi_sim+chi_tra first (both scripts), falls back to whichever single
+    traineddata file is present. Returns empty string if neither is found.
+    """
+    import pytesseract
+
+    try:
+        available = pytesseract.get_languages()
+    except Exception:
+        available = []
+
+    has_sim = "chi_sim" in available
+    has_tra = "chi_tra" in available
+
+    if has_sim and has_tra:
+        return "chi_sim+chi_tra"
+    if has_sim:
+        return "chi_sim"
+    if has_tra:
+        return "chi_tra"
+    return ""
+
+
 def ocr_image(image_bytes: bytes, lang: str = "zh") -> str | None:
     """
     Run pytesseract on image bytes.
 
-    lang "zh" → tesseract lang string "chi_sim+chi_tra"
+    lang "zh" → best available Chinese tessdata (chi_sim+chi_tra, chi_sim, or chi_tra)
     lang "en" → "eng"
     Returns extracted text or None on failure.
     """
@@ -82,7 +136,14 @@ def ocr_image(image_bytes: bytes, lang: str = "zh") -> str | None:
         from PIL import Image
         import io
 
-        tess_lang = "chi_sim+chi_tra" if lang == "zh" else "eng"
+        if lang == "zh":
+            tess_lang = _available_zh_lang()
+            if not tess_lang:
+                logger.debug("No Chinese tessdata found; skipping Tesseract OCR")
+                return None
+        else:
+            tess_lang = "eng"
+
         img = Image.open(io.BytesIO(image_bytes))
         text = pytesseract.image_to_string(img, lang=tess_lang)
         return text.strip() or None

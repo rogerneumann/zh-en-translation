@@ -17,14 +17,14 @@ def qapp():
 def test_resolve_palette_light():
     from zh_en_translator.engines.themes import resolve_palette
     p = resolve_palette("light", system_is_dark=False)
-    assert p.bg == "#F8F8F8"
-    assert p.text == "#111111"
+    assert p.bg == "#FFFFFF"
+    assert p.text == "#1A1A1A"
 
 
 def test_resolve_palette_dark():
     from zh_en_translator.engines.themes import resolve_palette
     p = resolve_palette("dark", system_is_dark=False)
-    assert p.bg == "#1E1E1E"
+    assert p.bg == "#202020"
 
 
 def test_resolve_palette_sepia():
@@ -70,8 +70,8 @@ def test_preferences_theme_combo_exists(qapp):
     from zh_en_translator.ui.preferences import PreferencesDialog
     dlg = PreferencesDialog(Config())
     assert hasattr(dlg, "_theme_combo")
-    # Should have 4 items: system, light, dark, sepia
-    assert dlg._theme_combo.count() == 4
+    # Should have 5 items: system, light, dark, sepia, high_contrast
+    assert dlg._theme_combo.count() == 5
 
 
 def test_preferences_theme_combo_reflects_config(qapp):

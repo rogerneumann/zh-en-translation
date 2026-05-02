@@ -1,416 +1,357 @@
-# Progress Tracker
+# zh-en-translator — Progress Log
 
-Running log of what has been built, what deviated from the plan, and what still
-needs verification. Update this file at the end of every milestone.
+## Session: Installer Overhaul — Install State, OCR Options, Re-install Detection (2026-05-01)
 
-Source of truth for plan/scope: `PLAN.md`, `plan-v2.md`, `plan-v3.md`, and **`v4_completeness.md`** (NEW).
+### Summary
+Three related improvements to the Inno Setup installer and app runtime:
+
+1. **Install state tracking** — `install_state.toml` written to `%APPDATA%\zh-en-translator\`
+   after every install/upgrade, mirroring registry entries at `HKCU\Software\zh-en-translator`.
+   Records install type (full/lite), version, date, install directory, and per-component
+   outcomes (argos, windows_ocr, tesseract). New `install_state.py` module lets the app
+   read and update these at runtime (e.g. marking argos=true after a late download).
+
+2. **Re-install detection** — on upgrade, the installer reads `InstallType` from the registry
+   and pre-selects the matching radio button. A note appears on the Install Type page:
+   "Previous Full installation detected -- options pre-selected to match." OCR checkboxes are
+   also pre-selected from `WinOcrInstalled`/`TesseractInstalled` registry values.
+
+3. **New OCR Options wizard page** — inserted after the Install Type page; two checkboxes:
+   - *Windows OCR* (recommended, default checked) — description adapts if Chinese pack is
+     already installed vs needs enabling; warns that Windows Update language-pack downloads
+     "can take 30 minutes or more on slow connections, or longer if other updates are queued."
+   - *Tesseract OCR* (bundled ~150 MB, default checked) — unchecking triggers a confirmation
+     dialog warning about other apps depending on Tesseract; on upgrade, the old
+     `{app}\tesseract` directory is removed during `ssInstall` if unchecked.
+   - `ShouldInstallTesseract()` function gates the `[Files]` bundle copy so no files land
+     if the user opts out.
+
+4. **Inline status labels** during post-install — "Step 1 of 2: Downloading translation
+   model...", "Step 2 of 2: Configuring Windows OCR..." etc. updated on `WizardForm.StatusLabel`
+   and `WizardForm.FilenameLabel` in place. No new terminal window spawned for the Windows
+   OCR step. The Argos download still opens a console window for progress visibility.
+
+5. **`download_packs.ps1`** — Python snippet now calls `_mark_argos_installed()` on success,
+   which patches `argos = true` into `install_state.toml` without needing to import the
+   full package (safe to call from system Python).
+
+### Files changed (2026-05-01)
+- `installer/zh-en-translator.iss` — OCR Options page, re-install detection, install state write, status labels
+- `installer/download_packs.ps1` — `_mark_argos_installed()` updates TOML on success
+- `src/zh_en_translator/install_state.py` — new module: `load_state()`, `update_components()`, atomic write
+
+### Tests
+644 passed, 18 skipped (unchanged — no regressions).
 
 ---
 
-## Current Initiative: Translation Completeness (v4) — 2026-04-22 ✅ COMPLETE
+## Session: Translation Display Fixes + Test Suite Cleanup (2026-05-01)
 
-**Issue Identified:** Sentence-level translation (Argos/ctranslate2) drops clauses and details on complex Chinese sentences.
+### Bug 12 — Pin → sidebar showed raw HTML instead of translated text
 
-**Example:**
+**Symptom:** Clicking "Pin →" caused the sidebar to display the full HTML markup
+of the translation (e.g. `<a href="word:The" style="...">The</a> cat sat`) rather
+than rendered text.
+
+**Root cause:** `QLabel.text()` returns the raw HTML string when the label was set
+with rich text via `wrap_words()`. The pin callback passed `self.translation_label.text()`
+(HTML) to `sidebar.set_translation()`, which then called `wrap_words()` on that
+already-HTML string — wrapping attribute names like `href`, `style`, `color`,
+`inherit` in more `<a>` tags, producing catastrophically malformed markup.
+
+The same HTML leak affected **Copy** (copied markup to clipboard) and **Replace**
+(pasted markup into the target app instead of plain text).
+
+**Fix:** Added `self._translation_text: str = ""` to the popup. Plain text is stored
+on arrival in `_on_translation_ready` before `wrap_words()` is applied. All
+three outbound paths (pin, copy, replace) now read `self._translation_text`.
+
+### Bug 13 — HTML display helper was missing, causing double-wrapping in sidebar
+
+Added `_render_translation_html(text)` module-level helper in `popup.py`:
+- Splits on `\n`, applies `wrap_words()` per line, joins with `<br>`
+- `wrap_words` regex never sees `<br>` tags (ordering fix)
+- Imported and used in `sidebar.py` for `set_translation`, `update_translation`,
+  and `_on_history_item_clicked` — the last of which previously set raw plain
+  text with no word-link wrapping at all
+
+### Bug 14 — Multi-line / structured source text translated as one flat block
+
+**Symptom:** Copying a bulleted list, numbered list, or multi-paragraph block
+produced a single run-on English sentence with no structure preserved.
+
+**Fix:** Added `_segment_source_text(text)` to `translation_worker.py`. Before
+translating, the source is split into segments based on:
+- Empty lines → paragraph breaks
+- Bullet characters (`• · - * ► ▶ ‣ ◦`) → individual bullet items (prefix stripped, restored after)
+- Numbered lists (`1.` `2.` `①` `一、` etc.) → individual items
+- Tab / 4-space-indented lines → indented items
+- Sentence-final punctuation (`。！？；.!?;`) → hard break between text segments
+- No terminal punctuation → soft wrap, lines joined (space added at ASCII boundaries)
+
+Each segment is translated independently via the same engine waterfall; results
+are reassembled with original prefixes and separators. Single-segment input
+(the common case) is unchanged in behaviour.
+
+**Architecture principle applied:** Plain text is the data model throughout.
+`wrap_words()` / `<br>` substitutions are view-layer only, applied once at
+`setText()` time and never stored or passed between components.
+
+### Test suite: 16 pre-existing failures fixed
+
+All tests now pass (644 passed, 18 skipped). Failures fell into three categories:
+
+**Stale test assertions (tests wrong, code correct):**
+- `test_ocr.py` — two tests described old Paddle-first waterfall; renamed and
+  rewritten to match actual Windows → Tesseract → Paddle order
+- `test_themes.py` — colour values (`#F8F8F8` → `#FFFFFF`, `#1E1E1E` → `#202020`)
+  and theme combo count (4 → 5, high-contrast was added) updated to match code
+- `test_ab_translation.py` — invalid cross-config glossary coverage comparison
+  (configs score against different glossary dicts, making the `>=` meaningless)
+  replaced with valid in-range assertions
+
+**Missing production code (tests correct, code incomplete):**
+- `popup.py` — 5 missing `setAccessibleDescription()` calls added to
+  `_setup_accessibility()` (btn_pin, btn_lang_settings, text_display,
+  translation_label, _pinyin_label)
+- `sidebar.py` — 2 missing `setAccessibleDescription()` calls (btn_pin,
+  _close_btn) + missing `set_side(side)` method added
+- `test_segmentation.py` — compound token tests relied on file-based
+  `load_user_dict` which doesn't reliably update jieba's live dictionary;
+  switched to `add_custom_words` directly (same approach as the passing test)
+
+**Test tooling:**
+- `pytest` and `pytest-qt` installed into the system Python environment;
+  `pip` was bootstrapped via `ensurepip` (was missing from the Python 3.11 install)
+
+### Files changed (2026-05-01)
+- `src/zh_en_translator/ui/popup.py` — `_translation_text`, `_render_translation_html()`, fix pin/copy/replace, accessibility descriptions
+- `src/zh_en_translator/ui/sidebar.py` — `_render_translation_html` usage, accessibility descriptions, `set_side()`
+- `src/zh_en_translator/engines/translation_worker.py` — `_segment_source_text()`, `_translate_one()`, updated `run()`
+- `tests/test_ocr.py` — waterfall order corrected
+- `tests/test_themes.py` — colour values and combo count updated
+- `tests/test_ab_translation.py` — coverage comparison assertion fixed
+- `tests/test_segmentation.py` — compound tests use `add_custom_words` directly
+
+---
+
+## Session: Tesseract PS1 Parse Error (2026-04-30)
+
+### Bug 11 — PowerShell parse error silently killed both setup scripts
+
+**Symptom:** Clicking "Install Tesseract" in Preferences caused a PowerShell
+window to flash and close instantly with no log file created, no UAC prompt,
+and no error message. Confirmed on Windows 11 with a Program Files install.
+
+**Root cause:** `$fname:` in a double-quoted string was parsed as a
+scope-qualified variable reference (like `$env:TEMP` or `$global:`). Since a
+space followed the colon rather than a valid variable name character, PowerShell
+raised a **parse error at script load time** — before a single statement
+executed. Both scripts were affected:
+
+- `installer/setup_elevated.ps1` line ~139: `"Failed to download $fname: $_"`
+- `installer/install_tesseract.ps1` line ~196: `"Failed to download $fname: $_"`
+
+**Fix:** Delimit the variable with braces so PowerShell knows exactly where the
+name ends: `"Failed to download ${fname}: $_"`
+
+**Additional hardening in `setup_elevated.ps1`:**
+- `StreamWriter` construction moved inside the `try` block with a `Write-Host`
+  fallback — a log-open failure no longer silently kills the script
+- A `Write-Host` banner fires before the `StreamWriter` is opened, so there is
+  always at least one console line visible on early failure
+
+**Debugging method:** The PowerShell parser validates the full script before
+running any code, so the fix was confirmed by running the script manually from
+an elevated PowerShell prompt and reading the parse error output. The error
+pinpointed the exact line and character position.
+
+**Rule added to CLAUDE.md:** Avoid `$varname: ` (variable followed immediately
+by colon-space) in double-quoted PS strings. Use `${varname}:` instead.
+
+---
+
+## Session: Tesseract / OCR Fix (2026-04-29)
+
+### Root causes found and fixed across three sessions
+
+#### Bug 1 — Tesseract installer flags were wrong (never installed silently)
+The Tesseract OCR Windows installer (UB-Mannheim distribution) is built with
+**NSIS**, not Inno Setup. All three scripts (`install_tesseract.ps1`,
+`setup_elevated.ps1`, `build.ps1`) were passing Inno Setup flags:
+
 ```
-Original:  "NADCC氯片... 狗骨头浸泡测试已完成 实验室今天提供给@杨中宝"
-Before:    "NADCC chlorine tablets... test completed."
-Missing:   "The laboratory provided the results to @YangZhongbao today."
-Baseline:  ~60% completeness
-
-After v4:  "NADCC chlorine tablets... test completed. The laboratory provided results to @YangZhongbao today."
-Result:    ~95% completeness ✅
+/VERYSILENT /NORESTART /DIR="<path>"
 ```
 
-**Root Cause:** Neural MT models compress content on complex run-on sentences lacking explicit structural markers. This is a well-documented limitation confirmed by academic research and GitHub issues across multiple MT projects.
+NSIS ignores these flags entirely and shows its interactive UI. Correct NSIS
+silent install syntax:
 
-**Solution:** Three-phase hybrid approach (see `v4_completeness.md` for full design & implementation details):
-- **Phase 1:** Post-processing validation & recovery (1.2x speed, +30-50% completeness)
-- **Phase 2:** Clause-level translation fallback (3-5x on complex, +20-30% total gain)
-- **Phase 3:** Adaptive orchestration (1.5x average, final optimization)
+```
+/S /D=<path>          # /D= must be the LAST argument, no quotes needed
+```
 
-**Effort:** ~8 hours total | **Outcome:** 95% completeness (up from 60%), 1.5x average speed
+All three scripts updated.
 
-**Implementation Status:** 
-- ✅ Problem analysis complete (root cause identified in academic literature)
-- ✅ Solution designed and validated against research findings
-- ✅ Phase 1 implementation complete (validation.py, integration, 48+ tests)
-- ✅ Phase 2 implementation complete (clause splitting, recombination, 47+ tests)
-- ✅ Phase 3 implementation complete (adaptive heuristics, 44+ tests)
-- ✅ All three phases fully integrated, tested, and pushed (110+ tests total)
-- ✅ Research validation: Approach aligns with academic best practices (21 sources)
+#### Bug 2 — Pinned fallback URL returned HTTP 404
+`install_tesseract.ps1` and `setup_elevated.ps1` pinned:
 
-**Branch:** `claude/fix-translation-completeness-8hpL2` — Ready for merge
+```
+https://github.com/UB-Mannheim/tesseract/releases/download/v5.5.0.20241111/...
+```
 
----
+UB-Mannheim never released 5.5.0 — that version lives under
+`tesseract-ocr/tesseract`, not UB-Mannheim. Their latest release is 5.4.0.
+Fixed to pinned 5.4.0:
 
-## Priority 3 Fine-Tuning Infrastructure — Planning Complete (2026-04-24) ✅
+```
+https://github.com/UB-Mannheim/tesseract/releases/download/v5.4.0.20240606/tesseract-ocr-w64-setup-5.4.0.20240606.exe
+```
 
-**Objective:** Scaffold domain-specific fine-tuning of the Argos zh->en model on manufacturing text.
-No GPU training in this session -- data pipeline + architecture design only.
+#### Bug 3 — tessdata download URL returned HTTP 404
+All scripts were downloading language model files from:
 
-**Status:** Planning and scaffolding complete.  GPU training session implements `trainer.py::FineTuneTrainer.train()`.
+```
+https://github.com/tesseract-ocr/tessdata_fast/releases/download/4.1.0/chi_sim.traineddata
+```
 
-### What Was Built
-- `FINETUNING_PLAN.md` -- Complete architecture design (mixed fine-tuning, OpenNMT-py, evaluation protocol)
-- `FINETUNING_SETUP.md` -- Prerequisites and quick-start guide for GPU session
-- `src/zh_en_translator/finetuning/__init__.py` -- Module entry points
-- `src/zh_en_translator/finetuning/config.py` -- `FineTuningConfig` dataclass (implemented, validated, serialisable)
-- `src/zh_en_translator/finetuning/data_preparation.py` -- Full data pipeline (implemented):
-  - `load_corpus()` -- JSONL -> list[CorpusEntry] via CorpusManager
-  - `split_train_val()` -- 90/10 train/val split, seed-reproducible, no overlap
-  - `prepare_training_data()` -- CorpusEntry -> TrainingPair with verified/unverified weights
-  - `build_vocabulary()` -- word-frequency vocab for pipeline testing (real training uses SentencePiece)
-  - `mix_corpora()` -- 30% in-domain / 70% general data mixing
-- `src/zh_en_translator/finetuning/trainer.py` -- `FineTuneTrainer` scaffold:
-  - `__init__`, `history`, `_should_stop_early` implemented
-  - `train()`, `evaluate()`, `save_model()` raise `NotImplementedError` with full implementation checklist
-- `src/zh_en_translator/finetuning/evaluation.py` -- Evaluation utilities (implemented):
-  - `evaluate_finetuned_model()` -- BLEU + CER + glossary coverage for a model's output
-  - `compute_bleu_improvement()` -- absolute BLEU delta between baseline and fine-tuned
-  - `compare_models()` -- side-by-side comparison of two models
-- `tests/test_finetuning_prep.py` -- 71 tests, all passing (no GPU needed)
-- `pyproject.toml` -- Added `finetuning = [opennmt-py, ctranslate2, sentencepiece, torch]` optional extra
+The `tessdata_fast` release tag 4.1.0 contains only auto-generated source
+archives (zip/tar.gz) — no `.traineddata` binary assets. Every download was
+silently failing with 404.
 
-### Test Results
-71 tests passing across:
-- Config creation, validation (boundary conditions, multi-error), and to_dict/from_dict roundtrip
-- Corpus loading from real bundled samples and temp JSONL files
-- Train/val splitting (ratios, seeds, overlap, edge cases)
-- Training data preparation (weights, whitespace, domain preservation)
-- Vocabulary building
-- Corpus mixing
-- Trainer scaffold (init, stub NotImplementedError, early stopping logic)
-- Evaluation: EvalResult, BLEU improvement, compare_models, glossary coverage
+The correct URL is `raw.githubusercontent.com`, which resolves Git LFS
+automatically and serves the real model binary (~2-3 MB per file):
 
-### Architecture Design
-- **Approach:** Mixed fine-tuning (30% in-domain + 70% general)
-- **Framework:** OpenNMT-py 3.0 with CTranslate2 conversion
-- **Expected gain:** +4-8 BLEU points on manufacturing/technical text
-- **Risk mitigations:** Catastrophic forgetting (general data mix), overfitting (dropout, label smoothing, early stopping)
+```
+https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/chi_sim.traineddata
+https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/main/chi_tra.traineddata
+```
 
-### Next Session (GPU Training)
-Implement `src/zh_en_translator/finetuning/trainer.py::FineTuneTrainer.train()`:
-1. Convert Argos CTranslate2 base model to OpenNMT-py
-2. Tokenise corpus with SentencePiece
-3. Run OpenNMT-py training loop with early stopping
-4. Convert best checkpoint back to CTranslate2
-5. Run `evaluate_finetuned_model()` on held-out manufacturing test set
+#### Bug 4 — `chi_sim+chi_tra` required both files; only chi_sim was downloaded
+`tesseract_ocr.py` hardcoded `"chi_sim+chi_tra"` as the Tesseract language
+string. Tesseract fails if either file is missing. Now queries
+`pytesseract.get_languages()` at runtime and uses the best available
+combination (`chi_sim+chi_tra` > `chi_sim` > `chi_tra`). Both files are
+now downloaded by all installer scripts.
 
-**Branch:** `claude/fix-translation-completeness-8L9yn`
-**Expected total gain (P1+P2+P3):** +10-20% accuracy on manufacturing text
+#### Bug 5 — OCR waterfall order was wrong
+`engine.py` tried PaddleOCR first (heavy GPU library), then Windows OCR, then
+Tesseract. Fixed to: Windows OCR (native) → Tesseract → PaddleOCR.
 
----
+#### Bug 6 — `--scope user` on winget is unreliable
+Both `UB-Mannheim.TesseractOCR` and `tesseract-ocr.tesseract` are NSIS
+machine-scope packages. Neither declares user scope in their winget manifest.
+The `--scope user` flag was removed from the winget call.
 
-## Current: Priority 1 Domain-Specific Improvements — Phase 1 (2026-04-24) ✅ IN PROGRESS
+#### Bug 7 — PS1 encoding: em-dashes and missing BOM
+`install_tesseract.ps1` had 8 em-dashes (`—`, UTF-8: `E2 80 94`) and no
+UTF-8 BOM. PowerShell 5.1 without BOM reads as CP1252; the em-dash becomes a
+right double-quote (`"`), corrupting parse state. `download_packs.ps1` had the
+same issue with em-dashes and right-arrows (`→`). All four PS1 files now have
+UTF-8 BOM and ASCII-only content.
 
-**Initiative:** Boost technical/manufacturing translation accuracy through domain-specific tools and terminology.
-
-**Status:** Phase 1 complete (Manufacturing Glossary + Segmenter Infrastructure)
-
-### Phase 1A: Segmenter Infrastructure ✅
-- Added config option: `segmenter = "jieba" | "pkuseg" | "hanlp"` (default: jieba)
-- Infrastructure ready for PKUSEG/HanLP implementation
-- Updated config.py: load_config/save_config support for segmenter choice
-- Note: PKUSEG/HanLP installation deferred (setuptools issue in environment)
-
-**Expected Future Gain:** +2-3% accuracy from better segmentation
-
-### Phase 1B: Manufacturing Glossary ✅ COMPLETE
-**Created:** `src/zh_en_translator/resources/glossary_manufacturing.toml`
-- **149 technical terms** across 13 categories
-- Categories: Materials, Surface Treatment, Heat Treatment, Components, Dimensions, Machining, Quality, Assembly, Properties, Regulatory, Documentation, Packaging, Business
-- Format: TOML key-value (all keys quoted for UTF-8 support)
-- Integrated into pipeline: glossary lookup **before** dictionary lookup (higher precedence)
-
-**Implementation Details:**
-- `glossary.py`: New `load_domain_glossary()` and `load_all_glossaries()` functions
-- `glossary_manufacturing.toml`: 149 terms with full English translations
-- `translation_worker.py`: Updated PinyinWorker to load all glossaries
-- Pipeline integration: Glossary takes precedence over dictionary
-
-**Testing:** 17/17 tests passing
-- User glossary load/save: 3 tests
-- Domain glossary loading: 3 tests  
-- Glossary merging: 4 tests
-- Content validation: 5 tests
-- Pipeline integration: 2 tests (skipped without platformdirs dependency)
-
-**Expected Gain:** +5-7% accuracy on glossary-covered terms (20% of technical text)
-
-### Next Steps (Phase 2)
-- Collect domain-specific training corpus (10k-50k parallel sentences)
-- Implement PKUSEG/HanLP segmenter switch (when environment stabilized)
-- A/B test on sample manufacturing text
-- Fine-tuning (Priority 3) with domain corpus
-
-**Branch:** `claude/fix-translation-completeness-8L9yn` (54 commits ahead of main)
+#### Bug 8 — No Windows OCR language pack detection or install path
+Preferences showed Tesseract status but never showed Windows OCR status.
+Windows OCR is the primary engine but requires the Chinese language capability
+(`Language.OCR~~~~~zh-Hans-CN~0.0.1.0`) to be installed via
+`Add-WindowsCapability`. Added:
+- Windows OCR status group in Preferences (API available / Chinese language
+  installed)
+- "Install Chinese OCR (requires admin)" button triggering `setup_elevated.ps1`
+- `setup_elevated.ps1`: new consolidated elevated script covering Windows OCR
+  capability + Tesseract Program Files install in a single UAC prompt
+- Installer now calls `setup_elevated.ps1` via `ShellExec('runas')` once
+  post-install instead of triggering multiple separate UAC prompts
 
 ---
 
-## Latest: Domain-Specific Improvements Research (2026-04-22)
+## Session: Elevation + Log Fix (2026-04-30)
 
-**Research Completed:** Technical and manufacturing translation improvements identified
+#### Bug 9 — Preferences install buttons never requested admin elevation
+Both "Install Tesseract" and "Install Chinese OCR" buttons in Preferences used
+`subprocess.Popen`, which launches PowerShell as the current (non-admin) user.
+The UB-Mannheim NSIS installer has `RequestExecutionLevel admin` hard-baked in,
+so it silently fails without an admin token. winget machine-scope packages also
+require elevation. Neither install path could ever succeed.
 
-**Key Findings:**
-- Jieba segmentation (81.6% F1) is bottleneck; PKUSEG/HanLP (87.8%) proven upgrade
-- CC-CEDICT missing 15-30% of manufacturing technical terms
-- Clause-level translation (v4) + domain glossaries = proven best practice
-- Professional services (Tencent Hunyuan-MT) use mixed fine-tuning + glossaries
+Fixed to use `ctypes.windll.shell32.ShellExecuteW(None, "runas", ...)` which
+triggers a proper Windows UAC prompt before running `setup_elevated.ps1`.
+Both buttons now point to `setup_elevated.ps1` (handles Tesseract + Windows OCR
+in one elevated pass) instead of the user-level `install_tesseract.ps1`.
 
-**Roadmap:**
-- **Priority 1 (1-2 weeks):** Switch segmenter + 500-term glossary (+2-7% gain)
-- **Priority 2 (1-3 months):** Corpus collection + glossary pipeline (+3-5% gain)
-- **Priority 3 (3-6 months):** Domain fine-tuning + back-translation (+4-8% gain)
-- **Priority 4 (6-12 months):** Multi-domain support + UI (+3-5% gain)
-- **Total potential:** 12-25% accuracy improvement across all phases
+`install_tesseract.ps1` was also added to the `[Files]` section in the `.iss`
+installer so it is present in installed builds.
 
-**Status:** Research complete (82+ sources), recommendations ready for implementation
+#### Bug 10 — Log files split across two filenames; "View Log" found nothing
+`install_tesseract.ps1` wrote to `zh-en-translator-tesseract-install.log` while
+`setup_elevated.ps1` wrote to `zh-en-translator-elevated-setup.log`. The
+"View Log" button only looked for the former, so after the button switch to
+`setup_elevated.ps1` (Bug 9 fix) the log was never found.
 
-See `DOMAIN_IMPROVEMENTS.md` for full technical details and implementation roadmap.
+Both scripts now write to the same file: `zh-en-translator-elevated-setup.log`.
+The "View Log" button looks for exactly that one path.
 
----
-
-## Latest: Build System Fixes (2026-04-21)
-
-**Issue:** `installer/build.ps1` had PowerShell parse errors on Windows.
-
-**Root Cause:** Windows PowerShell 5.1 reads `.ps1` files without UTF-8 BOM using CP1252 encoding, causing UTF-8 em-dashes (`—`) to be misinterpreted as string terminators.
-
-**Resolution:**
-- ✅ Replaced all em-dashes with ASCII double-hyphens (`--`)
-- ✅ Added UTF-8 BOM to build.ps1
-- ✅ Corrected `.gitattributes` rule order (general rules first, specific rules override)
-- ✅ Replaced here-string with array-join for README generation (line-ending independent)
-- ✅ Created **CLAUDE.md** with permanent knowledge base for PowerShell encoding issues
-
-**Status:** build.ps1 now parses and runs successfully on Windows PowerShell 5.1.
+### Files changed (2026-04-30)
+- `src/zh_en_translator/ui/preferences.py` — ShellExecuteW(runas) for both
+  install buttons; both point to setup_elevated.ps1; View Log simplified to
+  single log path
+- `installer/install_tesseract.ps1` — log filename unified to elevated-setup.log
+- `installer/zh-en-translator.iss` — added install_tesseract.ps1 to [Files]
 
 ---
 
-## Status at a glance (v1 Plan)
+### Files changed (2026-04-29)
+- `src/zh_en_translator/engines/ocr/engine.py` — waterfall order
+- `src/zh_en_translator/engines/ocr/tesseract_ocr.py` — runtime lang probe
+- `src/zh_en_translator/engines/ocr/windows_ocr.py` — `ocr_status()`, `is_available()` now checks Chinese language
+- `src/zh_en_translator/ui/preferences.py` — Windows OCR + Tesseract status UI with install buttons
+- `installer/install_tesseract.ps1` — NSIS flags, correct URL, both traineddata files, BOM, ASCII-only
+- `installer/setup_elevated.ps1` — new; consolidated UAC elevation for Windows OCR + Tesseract
+- `installer/build.ps1` — NSIS flags for bundle install, correct tessdata URLs
+- `installer/download_packs.ps1` — BOM, ASCII-only (em-dashes and arrows replaced)
+- `installer/zh-en-translator.iss` — single ShellExec runas for OCR setup post-install
 
-| Milestone | Status | Notes |
-|---|---|---|
-| M1 — Hello Popup | ✅ Done | |
-| M2 — Dictionary Lookup | ✅ Done | jieba + full CC-CEDICT download |
-| M3 — Replace + Copy + External Lookup | ✅ Done | |
-| M4 — Sentence Translation | ✅ Done | Argos Translate / ctranslate2 |
-| M5 — Sidebar Mode | ✅ Done | Peek-tab design with animations |
-| M6 — OCR | ✅ Done | Waterfall: PaddleOCR → Windows → Tesseract |
-| M7 — Preferences | ✅ Done | TOML config + UI |
-| M8 — Packaging | ✅ Done | Inno Setup installer |
-| M9 — Accessibility + Traditional | ✅ Done | OpenCC + Qt A11y |
-| M10 — Optional MS Cloud | ✅ Done | Azure Translator opt-in |
+### Current OCR status
+Priority waterfall (first successful result wins):
+1. **Windows OCR** — native Windows API, no extra install if Chinese language pack present
+2. **Tesseract** — bundled in installer or user-installed; now installs correctly with NSIS flags
+3. **PaddleOCR** — GPU-accelerated, optional heavy dependency
 
-## Status at a glance (v2 Enhancements)
-
-| Milestone | Status | Notes |
-|---|---|---|
-| M1 — Core Infrastructure | ✅ Done | QClipboard, Rotating logs, Loading indicators |
-| M2 — Sidebar History | ✅ Done | JSON-based history, scrollable list, export/clear |
-| M3 — Intelligence & A11y | ✅ Done | Inline lookup, Collapsible breakdown, High Contrast theme |
-| M4 — External Integrations | ✅ Done | DeepL support, Update Checker, Inline source editing |
-| UI Refresh | ✅ Done | Fluent-lite: Segoe UI Variable/Aptos fonts, pill buttons, soft fills |
+Both Windows OCR and Tesseract paths are now fully wired with correct install
+logic. A fresh install should work without any manual intervention.
 
 ---
 
-## UI Refresh (Fluent-lite)
+## Session: OCR bundling fix + unified availability check (2026-05-01)
 
-**Scope**: Modernize the "standard Qt" look with Windows 11-native aesthetics.
+#### Bug 11 -- pytesseract and Pillow not bundled in frozen exe
+`build.ps1` ran `pip install -e .` (no extras), so `pytesseract` and `Pillow`
+were never installed in the build environment. PyInstaller never saw them.
+Both are imported inside `try/except ImportError` blocks in `tesseract_ocr.py`,
+so static analysis silently missed them. The frozen exe shipped without either
+package, causing `tesseract_ocr.is_available()` to return `False` at runtime
+even with Tesseract installed -- producing "No OCR engine available."
 
-**Delivered**:
-- **Modern Typography**: Integrated `Segoe UI Variable Display` and `Aptos` font stack.
-- **Pill-Shaped Buttons**: Updated all buttons to 14px-16px border-radius with soft `btn_bg` fills.
-- **Spacing & Layout**: Increased margins and padding for a cleaner, more spacious "Fluent" feel.
-- **Palette Refinement**: Shifted to pure `#FFFFFF` light and `#202020` dark backgrounds.
-- **Theme Engine**: Added `btn_bg` to `ThemePalette` in `themes.py` for consistent soft-fill styling.
+Windows OCR was simultaneously unavailable because `winrt`/`winsdk` were also
+absent from `hidden_imports` and `collect_all` in the spec.
 
----
+#### Bug 12 -- preferences and runtime used different Tesseract path-finding logic
+Preferences checked Tesseract availability via `shutil.which` + four hardcoded
+Windows paths (file existence only). The runtime `tesseract_ocr.is_available()`
+used a different candidate list via `_get_tesseract_candidates()` AND actually
+invoked `pytesseract.get_tesseract_version()`. In frozen builds, `_get_tesseract_candidates()`
+also checks the bundled path (`sys.executable/../tesseract/tesseract.exe`) which
+preferences never checked. The two paths could silently disagree, making
+preferences show "green" while the runtime failed.
 
-## v2 Milestone 4 — External Integrations & Lifecycle
-
-**Scope**: DeepL engine, Update checker, Inline source editing.
-
-**Delivered**:
-- `src/zh_en_translator/engines/deepl.py` — DeepL API integration via `urllib.request`.
-- `src/zh_en_translator/engines/updates.py` — GitHub Releases check logic.
-- `src/zh_en_translator/engines/translation_worker.py` — Priority: DeepL > MS Cloud > Argos.
-- `src/zh_en_translator/ui/preferences.py` — Added DeepL config, Update check toggle/button.
-- `src/zh_en_translator/app.py` — Background update worker, manual/auto check logic.
-- `src/zh_en_translator/ui/popup.py` — Source text is now editable with a Retranslate (↺) button and `Ctrl+Enter` shortcut.
-
----
-
-## v2 Milestone 3 — Intelligence & Accessibility
-
-**Scope**: Inline lookup, collapsible details, High Contrast.
-
-**Delivered**:
-- **Inline Lookup**: English words in translation are now clickable <a> tags that show a CC-CEDICT tooltip.
-- **Collapsible Details**: Added "▼ Details" button to popup showing word-by-word pipeline breakdown.
-- **High Contrast**: Added "High Contrast" palette to `themes.py`.
-
----
-
-## v2 Milestone 2 — Sidebar History & Management
-
-**Scope**: History storage, Sidebar list, Export/Clear.
-
-**Delivered**:
-- `src/zh_en_translator/engines/history.py` — JSON storage for last 20 translations.
-- `src/zh_en_translator/ui/sidebar.py` — Added scrollable history list; clicking items restores them.
-- **Actions**: "Export to CSV" and "Clear History" buttons added to sidebar.
-
----
-
-## v1 Milestones (Summary)
-*See historical sections in previous versions of this file for full details.*
-- **M1-M4**: Core popup, local dictionary, and offline sentence translation.
-- **M5-M6**: Sidebar "peek" mode and multi-engine OCR waterfall.
-- **M7-M8**: Configuration system and Windows installer (setup.exe).
-- **M9-M10**: OpenCC Traditional conversion, themes, and Azure Cloud support.
-
----
-
-## Status at a glance (v3 Enhancements)
-
-| Milestone | Status | Notes |
-|---|---|---|
-| M1 — Translation Quality | ✅ Done | jieba user dict, CC-CEDICT 120k, technical dictionary (40+ terms) |
-| M2 — Tesseract Reliability | ✅ Done | UAC elevation fallback, warning UI, install log surfaced |
-| M3 — Offline Bundling | ✅ Done | Tesseract + CC-CEDICT + Argos pre-bundled at build time |
-| M4 — User Glossary | ✅ Done (partial) | CSV editor in Preferences, pipeline override; UI toggle/Cantonese/Pinyin deferred |
-| M5 — Portable Distribution | ✅ Done | Standalone ZIP + network-free installer via bundling |
-| Tech Debt | ✅ Done | pyperclip removed, segmentation regression tests, worker timeout+validation |
-
----
-
-## v3 Milestone 1 — Translation Quality
-
-**Scope**: Fix poor translation of compound phrases and domain-specific jargon.
-
-**Delivered**:
-- `src/zh_en_translator/resources/user_dict_technical.toml` — 40+ manufacturing/electronics terms.
-- `src/zh_en_translator/resources/user_dict_technical.txt` — jieba-format user dictionary.
-- `src/zh_en_translator/engines/segmentation.py` — `load_user_dict()` wired in; greedy-match cap raised 8→12 chars.
-- `src/zh_en_translator/engines/dictionary.py` — `ensure_cedict()` wired into startup; full 120k CC-CEDICT auto-downloaded.
-- `src/zh_en_translator/engines/pipeline.py` — greedy-match cap + glossary override hook.
-- `tests/test_user_dict.py` — 12 passing tests (1 skipped for jieba in CI).
-
----
-
-## v3 Milestone 2 — Tesseract Reliability
-
-**Scope**: Make Tesseract OCR installation robust and diagnosable.
-
-**Delivered**:
-- `installer/install_tesseract.ps1` — Full logging to `%TEMP%\zh-en-translator-tesseract-install.log`; Attempt A (winget) → B (LocalAppData) → C (UAC elevated `C:\Program Files\`); post-install validation.
-- `src/zh_en_translator/engines/ocr/tesseract_ocr.py` — Auto-probe known paths; set `pytesseract.tesseract_cmd` explicitly; set `TESSDATA_PREFIX`.
-- `src/zh_en_translator/app.py` — `_check_tesseract_warning()`: tray balloon on startup if Tesseract missing.
-- `src/zh_en_translator/ui/preferences.py` — Tesseract status + "Open Log" button in Lookup & OCR tab.
-
----
-
-## v3 Milestone 3 — Offline Bundling
-
-**Scope**: All critical models/data bundled in installer; zero network required after install.
-
-**Delivered**:
-- `installer/build.ps1` — Steps 2.5–2.7: download Tesseract portable, CC-CEDICT, and Argos zh→en model at build time into `installer/*-bundle/` dirs (gitignored).
-- `installer/zh-en-translator.iss` — Bundle files included via `Check:` guards; Tesseract download task removed (always bundled); Argos download skipped if bundle present.
-- `src/zh_en_translator/engines/ocr/tesseract_ocr.py` — Checks `{app}\tesseract\tesseract.exe` first in frozen builds.
-- CC-CEDICT pre-populated to `%APPDATA%\zh-en-translator\` at install time.
-- Argos pack pre-populated to `%APPDATA%\argos-translate\packages\` at install time.
-
----
-
-## v3 Milestone 4 — User Glossary
-
-**Scope**: Custom Chinese→English term pairs that override the translation pipeline.
-
-**Delivered**:
-- `src/zh_en_translator/engines/glossary.py` — `load_glossary()` / `save_glossary()` for `%APPDATA%\zh-en-translator\glossary.csv`.
-- `src/zh_en_translator/engines/pipeline.py` — Glossary checked before dictionary lookup for exact token matches.
-- `src/zh_en_translator/engines/translation_worker.py` — Loads glossary and passes to pipeline.
-- `src/zh_en_translator/ui/preferences.py` — "Glossary" tab: table editor with Add/Remove/Import CSV/Export CSV.
-
-**Deferred** (low priority):
-- Traditional↔Simplified UI toggle (config flag exists, no UI switch)
-- Cantonese support
-- Pinyin romanization variants
-
----
-
-## v3 Milestone 5 — Portable Distribution
-
-**Scope**: Ship Tesseract bundled and provide a standalone portable ZIP.
-
-**Delivered**:
-- M5.1: Tesseract portable bundled in installer (see M3).
-- M5.2: `installer/build.ps1` Step 5.1 — produces `installer/Output/zh-en-translator-portable.zip` after Inno Setup; includes app bundle + bundled Tesseract + README-PORTABLE.txt.
-- M5.3: Network-free installer achieved via M3 bundling (all models pre-packaged).
-
-**Build outputs** (run `.\installer\build.ps1` on Windows dev machine):
-- `installer/Output/zh-en-translator-setup.exe` — Full installer (~350–400 MB)
-- `installer/Output/zh-en-translator-portable.zip` — Portable ZIP (~80–120 MB)
-
----
-
-## v3 Tech Debt
-
-**Delivered**:
-- `pyproject.toml` — Removed `pyperclip` dependency (fully replaced by QClipboard).
-- `tests/test_segmentation.py` — 12 new regression tests for compound phrase segmentation; jieba-gated tests use `skipif`.
-- `src/zh_en_translator/engines/translation_worker.py` — Argos call wrapped in 8s `ThreadPoolExecutor` timeout; `_is_valid_translation()` rejects empty/echo-back results; translation path logged for all engines.
-
----
-
-## Status at a glance (v4 Completeness)
-
-| Milestone | Status | Notes |
-|---|---|---|
-| M1 — Post-Processing Validation | ✅ Done | Extract, detect, recover missing content (+30-50% gain) |
-| M2 — Clause-Level Fallback | ✅ Done | Split, translate, recombine clauses (+20-30% additional) |
-| M3 — Adaptive Orchestration | ✅ Done | Heuristic-based fallback decisions (1.5x speed) |
-
----
-
-## v4 Milestone 1 — Post-Processing Validation & Recovery (COMPLETE ✅)
-
-**Objective:** After Argos translates, detect missing content and recover it using word-by-word dictionary.
-
-**Deliverables** (completed):
-1. ✅ Plan complete (via agent design)
-2. ✅ `src/zh_en_translator/engines/validation.py` (NEW) — Core validation logic
-3. ✅ `src/zh_en_translator/engines/translation_worker.py` (MODIFY) — Integrate validation
-4. ✅ `src/zh_en_translator/config.py` (MODIFY) — Feature flags
-5. ✅ `tests/test_validation.py` (NEW) — 48 comprehensive tests
-
-**Achieved outcome:** 1.2x speed, +30-50% completeness gain
-
----
-
-## v4 Milestone 2 — Clause-Level Translation (COMPLETE ✅)
-
-**Objective:** Split complex Chinese into clauses, translate each, recombine intelligently.
-
-**Deliverables** (completed):
-1. ✅ `src/zh_en_translator/engines/argos.py` (ENHANCE) — split_into_clauses(), translate_with_clause_fallback(), _recombine_translations()
-2. ✅ `src/zh_en_translator/engines/translation_worker.py` (MODIFY) — _apply_clause_fallback(), Phase 1+2 integration
-3. ✅ `tests/test_clause_translation.py` (NEW) — 47 comprehensive tests
-
-**Achieved outcome:** +20-30% additional gain (total 50-70%), 3-5x on complex sentences
-
----
-
-## v4 Milestone 3 — Adaptive Orchestration (COMPLETE ✅)
-
-**Objective:** Use heuristics to decide validation-only (fast) vs. clause-level (thorough).
-
-**Deliverables** (completed):
-1. ✅ `src/zh_en_translator/engines/translation_worker.py` (REFACTOR) — _should_use_clause_fallback(), _count_clauses(), _count_content_tokens()
-2. ✅ Integration of Phase 3 heuristics in run() pipeline
-3. ✅ `tests/test_adaptive_orchestration.py` (NEW) — 20+ comprehensive tests
-
-**Achieved outcome:** 1.5x average speed, 95% completeness (final)
+### Fixes
+- `build.ps1`: `pip install -e .` -> `pip install -e ".[ocr-tesseract]"` so
+  `pytesseract` and `Pillow` are present in the build env for PyInstaller
+- `zh-en-translator.spec`: added `pytesseract`, `PIL`, `PIL.Image`, `PIL.ImageOps`,
+  and winrt namespaces to `hidden_imports`; added `collect_all` for `pytesseract`
+  and `PIL` (with graceful skip if absent)
+- `tesseract_ocr.py`: added `get_found_path() -> str | None` -- single canonical
+  path lookup reusing `_get_tesseract_candidates()`
+- `preferences.py`: replaced ad-hoc `shutil.which` + hardcoded path checks in
+  both `_build_lookup_ocr_tab` and `_refresh_install_buttons` with
+  `_tess.is_available()` / `_tess.get_found_path()` -- one code path, one truth

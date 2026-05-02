@@ -20,7 +20,7 @@ def translate_with_deepl(text: str, config: Config) -> str:
 
     api_key = config.deepl_api_key
     is_pro = config.deepl_pro
-    
+
     # Pro use 'api.deepl.com', Free use 'api-free.deepl.com'
     domain = "api.deepl.com" if is_pro else "api-free.deepl.com"
     url = f"https://{domain}/v2/translate"
@@ -31,9 +31,9 @@ def translate_with_deepl(text: str, config: Config) -> str:
         "source_lang": "ZH",
         "target_lang": "EN-US"
     }
-    
+
     data = urllib.parse.urlencode(params).encode("utf-8")
-    
+
     try:
         req = urllib.request.Request(url, data=data)
         with urllib.request.urlopen(req, timeout=10) as response:
