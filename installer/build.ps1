@@ -772,10 +772,10 @@ if (Test-Path $PortableZip) {
 }
 
 # ---------------------------------------------------------------------------
-# Step 6 -- Upload release to GitHub (zh-en-translator-releases)
+# Step 6 -- Upload release to GitHub (zh-en-translation)
 # ---------------------------------------------------------------------------
 if (-not $SkipRelease) {
-    Write-Step "Step 6: Uploading release to GitHub (rogerneumann/zh-en-translator-releases)"
+    Write-Step "Step 6: Uploading release to GitHub (rogerneumann/zh-en-translation)"
 
     # Check gh CLI is available and authenticated
     $GhExe = $null
@@ -806,7 +806,7 @@ if (-not $SkipRelease) {
     }
 
     if ($GhExe) {
-        $ReleasesRepo = "rogerneumann/zh-en-translator-releases"
+        $ReleasesRepo = "rogerneumann/zh-en-translation"
         $ReleaseTag   = "v${VersionString}"
         $ReleaseTitle = "v${VersionString}"
 
