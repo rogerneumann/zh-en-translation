@@ -6,8 +6,8 @@ import dataclasses
 
 import time as _time
 
-from PyQt6.QtCore import pyqtSignal, QTimer
-from PyQt6.QtGui import QColor
+from PyQt6.QtCore import pyqtSignal, QTimer, QUrl
+from PyQt6.QtGui import QColor, QDesktopServices
 from PyQt6.QtWidgets import (
     QDialog,
     QDialogButtonBox,
@@ -254,6 +254,7 @@ class PreferencesDialog(QDialog):
         self._tabs.addTab(self._build_lookup_ocr_tab(), "Lookup && OCR")
         self._tabs.addTab(self._build_glossary_tab(),   "Glossary")
         self._tabs.addTab(self._build_cloud_tab(),      "Cloud")
+        self._tabs.addTab(self._build_help_tab(),       "Help")
         self._tabs.addTab(self._build_about_tab(),      "About")
 
         buttons = QDialogButtonBox(
@@ -1063,6 +1064,182 @@ class PreferencesDialog(QDialog):
                 self, "Up to Date",
                 f"You are running the latest version ({__version__}).",
             )
+
+    # ------------------------------------------------------------------
+    # Help tab
+    # ------------------------------------------------------------------
+
+    def _build_help_tab(self) -> QWidget:
+        import sys as _sys
+
+        widget = QWidget()
+        layout = QVBoxLayout(widget)
+        layout.setContentsMargins(0, 0, 0, 0)
+
+        browser = QTextBrowser()
+        browser.setOpenLinks(False)
+        browser.anchorClicked.connect(self._on_help_link)
+        browser.setStyleSheet("QTextBrowser { border: none; background: transparent; }")
+
+        # Format the configured hotkey into a readable form, e.g. <ctrl>+<shift>+t -> Ctrl+Shift+T
+        def _fmt_hotkey(hk: str) -> str:
+            parts = hk.split("+")
+            out = []
+            for p in parts:
+                p = p.strip().strip("<>")
+                out.append(p.capitalize() if len(p) > 1 else p.upper())
+            return "+".join(out)
+
+        hotkey = _fmt_hotkey(self.config.hotkey or "<ctrl>+<shift>+t")
+
+        if _sys.platform == "win32":
+            _screenshot_hint = "e.g. a screenshot with <code>Win+Shift+S</code>"
+            _ocr_engines = (
+                "<li>On Windows, <b>Windows OCR</b> is the primary engine "
+                "(requires the Chinese language pack).</li>"
+                "<li>Falls back automatically to <b>Tesseract</b> if Windows OCR is unavailable.</li>"
+            )
+        else:
+            _screenshot_hint = "e.g. a screenshot"
+            _ocr_engines = (
+                "<li><b>Tesseract</b> is the primary OCR engine on Linux/macOS.</li>"
+                "<li>Install: <code>sudo apt install tesseract-ocr tesseract-ocr-chi-sim</code> "
+                "(Debian/Ubuntu), or see Preferences &rsaquo; Lookup &amp; OCR for other distros.</li>"
+                "<li>PaddleOCR can be installed for higher accuracy.</li>"
+            )
+
+        ocr_section = (
+            f"<h2>OCR &mdash; Translating Text in Images</h2>"
+            f"<p>Copy an image containing Chinese text ({_screenshot_hint}), "
+            f"then press <code>{hotkey}</code>. The app detects the image on the clipboard "
+            f"and runs OCR automatically.</p>"
+            f"<ul>{_ocr_engines}</ul>"
+            f"<p><a href=\"pref://lookup\">Configure OCR engine &rarr; "
+            f"Preferences &rsaquo; Lookup &amp; OCR</a></p>"
+        )
+
+        html = f"""
+<style>
+  body {{ margin: 8px 12px; }}
+  h2 {{ font-size: 11pt; margin-top: 18px; margin-bottom: 4px;
+        border-bottom: 1px solid rgba(0,0,0,0.10); padding-bottom: 3px; }}
+  h2.first {{ margin-top: 4px; }}
+  p, li {{ margin: 3px 0; line-height: 1.55; }}
+  ul, ol {{ padding-left: 22px; margin: 4px 0; }}
+  table {{ width: 100%; border-collapse: collapse; margin: 6px 0; font-size: 9.5pt; }}
+  th {{ text-align: left; padding: 4px 8px; background: rgba(0,0,0,0.06); font-weight: bold; }}
+  td {{ padding: 3px 8px; border-bottom: 1px solid rgba(0,0,0,0.06); vertical-align: top; }}
+  tr:last-child td {{ border-bottom: none; }}
+  code {{ background: rgba(0,0,0,0.07); border-radius: 3px; padding: 1px 5px;
+          font-family: Consolas, 'Courier New', monospace; font-size: 9pt; }}
+  a {{ color: #0078D4; text-decoration: none; }}
+  .note {{ color: #666; font-style: italic; font-size: 9pt; }}
+  .warn {{ color: #B45309; }}
+</style>
+
+<h2 class="first">Quick Start</h2>
+<ol>
+  <li>
+    <b>Copy</b> Chinese text with <code>Ctrl+C</code>.<br>
+    <span class="note">Tip: copy rather than just highlight &mdash; some applications do not
+    expose selected text to other programs. Copying first ensures the text is available.</span>
+  </li>
+  <li>Press <code>{hotkey}</code> from anywhere on your desktop.</li>
+  <li>The translation popup appears at your cursor with the English translation,
+      pinyin romanisation, and action buttons.</li>
+</ol>
+
+<h2>Popup Controls</h2>
+<table>
+  <tr><th>Control</th><th>Action</th></tr>
+  <tr><td><b>&#x21BA;</b> button</td>
+      <td>Edit the source text, then click &#x21BA; or press <code>Ctrl+Enter</code> to retranslate.</td></tr>
+  <tr><td><b>Copy</b></td><td>Copies the English translation to the clipboard.</td></tr>
+  <tr><td><b>Replace</b></td>
+      <td>Pastes the English translation back over the original text in the source application.</td></tr>
+  <tr><td><b>Pin &rarr;</b></td><td>Sends the translation to the persistent sidebar panel.</td></tr>
+  <tr><td><b>Look up</b></td><td>Opens the source text in MDBG online dictionary.</td></tr>
+  <tr><td><b>&#x25BC; Details</b></td><td>Expands a word-by-word dictionary breakdown.</td></tr>
+  <tr><td>&#x1F4CC; (header)</td>
+      <td>Keeps the popup open when you click away, preventing auto-dismiss.</td></tr>
+  <tr><td><b>&#x2715; / Esc</b></td><td>Dismiss the popup.</td></tr>
+</table>
+
+<h2>Sidebar Mode</h2>
+<p>In sidebar mode the app shows a thin coloured strip at the screen edge instead of a popup.
+Click the strip to expand it; the strip changes colour when a new translation arrives.</p>
+<ul>
+  <li>Drag the strip up/down to reposition it on the edge.</li>
+  <li>Drag the inner edge to resize the panel width.</li>
+  <li>The last 20 translations appear in the History list; export to CSV from the toolbar.</li>
+</ul>
+<p><a href="pref://general">Switch between popup and sidebar mode &rarr; Preferences &rsaquo; General</a></p>
+
+{ocr_section}
+
+<h2>Glossary &amp; Domain Terms</h2>
+<p>Glossary terms override the translation engine for exact phrase matches &mdash;
+useful for product names, abbreviations, or technical jargon.</p>
+<ul>
+  <li>Built-in domain glossaries: manufacturing (149 terms), medical (504), legal (409), electronics (452).</li>
+  <li>Your user terms take the highest priority; built-in terms apply when no user term matches.</li>
+</ul>
+<p><a href="pref://glossary">Add or import user glossary terms &rarr; Preferences &rsaquo; Glossary</a></p>
+
+<h2>Translation Pipeline</h2>
+<p>Each translation passes through these steps in order, stopping at the first match:</p>
+<ol>
+  <li>User glossary exact match</li>
+  <li>Domain glossaries (manufacturing &rarr; medical &rarr; legal &rarr; electronics)</li>
+  <li>CC-CEDICT dictionary lookup + jieba word segmentation</li>
+  <li>Argos Translate &mdash; fully offline sentence translation</li>
+  <li>Azure Translator or DeepL (only if enabled in
+      <a href="pref://cloud">Preferences &rsaquo; Cloud</a>)</li>
+</ol>
+
+<h2>Cloud Translation</h2>
+<p>By default the app is <b>fully offline</b> &mdash; no text leaves your machine.
+Azure Translator and DeepL can be enabled for higher-quality output on an opt-in basis.</p>
+<p class="warn">&#x26A0; When enabled, every translated segment is sent to third-party servers.
+Only enable this if your organisation permits sending potentially sensitive data externally.</p>
+<p><a href="pref://cloud">Configure cloud translation &rarr; Preferences &rsaquo; Cloud</a></p>
+
+<h2>Hotkey</h2>
+<p>The current hotkey is <code>{hotkey}</code>.
+Change it in <a href="pref://general">Preferences &rsaquo; General</a> using pynput syntax,
+e.g. <code>&lt;ctrl&gt;+&lt;shift&gt;+t</code>.</p>
+"""
+        browser.setHtml(html)
+        layout.addWidget(browser)
+        return widget
+
+    def _on_help_link(self, url: QUrl) -> None:
+        """Handle link clicks in the Help tab browser."""
+        if url.scheme() == "pref":
+            tab_name = url.host()
+            tab_map = {
+                "general": 0, "display": 1, "sidebar": 2,
+                "lookup": 3, "glossary": 4, "cloud": 5, "help": 6, "about": 7,
+            }
+            idx = tab_map.get(tab_name.lower())
+            if idx is not None:
+                self._tabs.setCurrentIndex(idx)
+        else:
+            QDesktopServices.openUrl(url)
+
+    def open_to_tab(self, name: str) -> None:
+        """Switch the dialog to a named tab. Call before exec()."""
+        tab_map = {
+            "general": 0, "display": 1, "sidebar": 2,
+            "lookup": 3, "glossary": 4, "cloud": 5, "help": 6, "about": 7,
+        }
+        idx = tab_map.get(name.lower())
+        if idx is not None:
+            self._tabs.setCurrentIndex(idx)
+
+    # ------------------------------------------------------------------
+    # About tab
+    # ------------------------------------------------------------------
 
     def _build_about_tab(self) -> QWidget:
         from zh_en_translator import __version__

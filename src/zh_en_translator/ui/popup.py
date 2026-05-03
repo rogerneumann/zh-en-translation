@@ -65,6 +65,7 @@ class TranslatorPopup(QWidget):
         original_clipboard: str = "",
         dictionary: Dictionary | None = None,
         on_pin=None,                             # Callable[[str, str], None] | None
+        on_help=None,                            # Callable[[], None] | None
         is_ocr_pending: bool = False,
         config=None,                             # Config | None
         update_available: bool = False,
@@ -75,6 +76,7 @@ class TranslatorPopup(QWidget):
         self.original_clipboard = original_clipboard
         self.dictionary = dictionary
         self._on_pin = on_pin
+        self._on_help = on_help
         self._dismissed = False
         self._pinned = False
         self._drag_pos: QPoint | None = None
@@ -94,6 +96,8 @@ class TranslatorPopup(QWidget):
         self._apply_styling()
         self._apply_config(config)
         self._position_near_cursor()
+        if on_help is not None:
+            self._btn_help.setVisible(True)
         if update_available:
             self.set_update_available(update_available, update_version)
         if not is_ocr_pending:
@@ -151,6 +155,14 @@ class TranslatorPopup(QWidget):
         header.addWidget(self._drag_grip)
 
         header.addStretch()
+
+        # Help button (visible only when an on_help callback is provided)
+        self._btn_help = QPushButton("?")
+        self._btn_help.setFixedSize(24, 24)
+        self._btn_help.setToolTip("Help")
+        self._btn_help.setVisible(False)
+        self._btn_help.clicked.connect(self._open_help)
+        header.addWidget(self._btn_help)
 
         # Update-available dot (hidden until an update is found)
         self._update_dot = QLabel("\u25cf")
@@ -395,6 +407,7 @@ class TranslatorPopup(QWidget):
             _hdr + f"QPushButton:checked {{ background: {palette.btn_pressed}; }}"
         )
         self.btn_close.setStyleSheet(_hdr)
+        self._btn_help.setStyleSheet(_hdr)
 
         # Retranslate button style
         self.btn_retranslate.setStyleSheet(f"""
@@ -574,6 +587,10 @@ class TranslatorPopup(QWidget):
             return
         self._pinyin_label.setText(pinyin)
         self._pinyin_label.setVisible(True)
+
+    def _open_help(self):
+        if self._on_help:
+            self._on_help()
 
     def _replace_text(self):
         trans = self._translation_text

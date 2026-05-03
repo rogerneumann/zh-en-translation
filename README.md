@@ -12,6 +12,31 @@ Translator can be opted into explicitly (see [Cloud translation](#cloud-translat
 
 ---
 
+## Quick Start
+
+1. **Copy** Chinese text with **Ctrl+C**.
+   > **Tip:** copy rather than just highlight — some applications do not expose selected text to
+   > other programs. Copying first ensures the text is available to the translator.
+2. Press **Ctrl+Shift+T** (default hotkey) from anywhere on your desktop.
+3. The translation popup appears at your cursor with the English translation, pinyin, and action buttons.
+
+### Popup controls at a glance
+
+| Control | Action |
+|---|---|
+| ↺ button | Edit source text inline, then ↺ or **Ctrl+Enter** to retranslate |
+| **Copy** | Copy the English translation to clipboard |
+| **Replace** | Paste the translation back over the original text in the source app |
+| **Pin →** | Send translation to the persistent sidebar panel |
+| **Look up** | Open source text in MDBG dictionary |
+| **▼ Details** | Expand word-by-word dictionary breakdown |
+| 📌 (header) | Keep popup open when clicking away |
+| **✕ / Esc** | Dismiss |
+
+> Full usage guide also available in the app at **Preferences → Help**.
+
+---
+
 ## Features
 
 | Feature | Notes |

@@ -472,6 +472,7 @@ class TranslatorApp(QObject):
             original_clipboard,
             dictionary=self.dictionary,
             on_pin=self._pin_to_sidebar,
+            on_help=self._open_preferences_help,
             config=self.config,
             update_available=self._has_update,
             update_version=self._update_version,
@@ -498,7 +499,8 @@ class TranslatorApp(QObject):
                 self.sidebar.expand()
             else:
                 self.popup = TranslatorPopup(
-                    msg, "", on_pin=self._pin_to_sidebar, config=self.config,
+                    msg, "", on_pin=self._pin_to_sidebar, on_help=self._open_preferences_help,
+                    config=self.config,
                     update_available=self._has_update, update_version=self._update_version,
                 )
                 self.popup.show()
@@ -527,6 +529,7 @@ class TranslatorApp(QObject):
                 "🔍 Running OCR\u2026",
                 "",
                 on_pin=self._pin_to_sidebar,
+                on_help=self._open_preferences_help,
                 is_ocr_pending=True,
                 config=self.config,
                 update_available=self._has_update,
@@ -733,7 +736,10 @@ class TranslatorApp(QObject):
                     None, "Update Check", f"You are running the latest version ({__version__})."
                 )
 
-    def _open_preferences(self):
+    def _open_preferences_help(self):
+        self._open_preferences(tab="help")
+
+    def _open_preferences(self, tab: str | None = None):
         from zh_en_translator.ui.preferences import PreferencesDialog
         from zh_en_translator.config import Config as _Config
         # Build a snapshot that reflects current RUNTIME state (sidebar_mode may
@@ -772,6 +778,8 @@ class TranslatorApp(QObject):
         )
         dialog.settings_applied.connect(self._on_settings_applied)
         dialog._btn_check_now.clicked.connect(lambda: self._check_for_updates(manual=True))
+        if tab:
+            dialog.open_to_tab(tab)
         dialog.exec()
 
     def _on_settings_applied(self, cfg: Config) -> None:
