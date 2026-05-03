@@ -6,7 +6,7 @@ import dataclasses
 
 import time as _time
 
-from PyQt6.QtCore import pyqtSignal, QTimer, QUrl
+from PyQt6.QtCore import pyqtSignal, QThread, QTimer, QUrl
 from PyQt6.QtGui import QColor, QDesktopServices
 from PyQt6.QtWidgets import (
     QDialog,
@@ -206,6 +206,39 @@ class _ColorSwatchButton(QPushButton):
         self._update_appearance()
 
 
+class _ArgosDownloadWorker(QThread):
+    """Background thread: downloads and installs the Argos zh->en translation pack."""
+
+    progress = pyqtSignal(str)   # status message
+    finished = pyqtSignal(bool)  # True = success
+
+    def run(self):
+        try:
+            import argostranslate.package as pkg
+            self.progress.emit("Updating package index…")
+            pkg.update_package_index()
+            available = pkg.get_available_packages()
+            zh_en = next(
+                (p for p in available if p.from_code == "zh" and p.to_code == "en"),
+                None,
+            )
+            if zh_en is None:
+                self.progress.emit("zh->en pack not found in Argos index")
+                self.finished.emit(False)
+                return
+            self.progress.emit(f"Downloading model (version {zh_en.package_version})…")
+            zh_en.install()
+            from zh_en_translator.install_state import update_components
+            update_components(argos=True)
+            self.finished.emit(True)
+        except ImportError:
+            self.progress.emit("argostranslate not found — app may need reinstalling")
+            self.finished.emit(False)
+        except Exception as exc:
+            self.progress.emit(f"Error: {exc}")
+            self.finished.emit(False)
+
+
 class PreferencesDialog(QDialog):
     """Tabbed preferences dialog for zh-en-translator settings."""
 
@@ -227,6 +260,7 @@ class PreferencesDialog(QDialog):
         self._apply_global_styling()
 
         self._install_monitor: '_InstallMonitor | None' = None
+        self._argos_worker: '_ArgosDownloadWorker | None' = None
         self._setup_ui()
         self._load_config_into_ui()
 
@@ -508,6 +542,44 @@ class PreferencesDialog(QDialog):
         hint.setStyleSheet("color: gray; font-size: 9pt;")
         lookup_layout.addWidget(hint)
         layout.addWidget(lookup_group)
+
+        # ---- Offline Translation Model group ----
+        from zh_en_translator.engines.argos import is_available as _argos_available
+        _argos_installed = _argos_available()
+
+        argos_group = QGroupBox("Offline Translation Model")
+        argos_layout = QVBoxLayout(argos_group)
+
+        if _argos_installed:
+            self._argos_static_lbl = QLabel("Argos zh\u2192en model: Installed")
+            self._argos_static_lbl.setStyleSheet("color: #1a7a1a; font-weight: bold;")
+        else:
+            self._argos_static_lbl = QLabel(
+                "Offline translation model not installed.\n"
+                "Download to enable translation without cloud services (~100 MB).\n"
+                "Cloud translation (DeepL / Azure) still works without this model."
+            )
+            self._argos_static_lbl.setStyleSheet("color: #b85c00;")
+        self._argos_static_lbl.setWordWrap(True)
+        argos_layout.addWidget(self._argos_static_lbl)
+
+        argos_btn_row = QHBoxLayout()
+        self._btn_argos_download = QPushButton(
+            "Re-download Model" if _argos_installed else "Download Offline Model (~100 MB)"
+        )
+        if _argos_installed:
+            self._btn_argos_download.setStyleSheet(_REINSTALL_STYLE)
+        self._btn_argos_download.clicked.connect(self._do_argos_download)
+        argos_btn_row.addWidget(self._btn_argos_download)
+        argos_btn_row.addStretch()
+        argos_layout.addLayout(argos_btn_row)
+
+        self._argos_status_lbl = QLabel()
+        self._argos_status_lbl.setWordWrap(True)
+        self._argos_status_lbl.setVisible(False)
+        argos_layout.addWidget(self._argos_status_lbl)
+
+        layout.addWidget(argos_group)
 
         ocr_group = QGroupBox("OCR Engine")
         ocr_layout = QVBoxLayout(ocr_group)
@@ -941,6 +1013,41 @@ class PreferencesDialog(QDialog):
             last_update_check=self.config.last_update_check,
         )
 
+    def _do_argos_download(self) -> None:
+        """Start Argos model download in a background thread."""
+        if self._argos_worker is not None:
+            return  # already running
+        self._btn_argos_download.setEnabled(False)
+        self._btn_argos_download.setText("Downloading\u2026")
+        self._btn_argos_download.setStyleSheet("")
+        self._argos_status_lbl.setVisible(True)
+        self._argos_status_lbl.setStyleSheet("color: #555;")
+        self._argos_status_lbl.setText("\u29d6  Starting download\u2026")
+
+        self._argos_worker = _ArgosDownloadWorker()
+        self._argos_worker.progress.connect(self._on_argos_progress)
+        self._argos_worker.finished.connect(self._on_argos_done)
+        self._argos_worker.start()
+
+    def _on_argos_progress(self, msg: str) -> None:
+        self._argos_status_lbl.setText(f"\u29d6  {msg}")
+
+    def _on_argos_done(self, success: bool) -> None:
+        self._argos_worker = None
+        self._btn_argos_download.setEnabled(True)
+        if success:
+            self._btn_argos_download.setText("Re-download Model")
+            self._btn_argos_download.setStyleSheet(_REINSTALL_STYLE)
+            self._argos_static_lbl.setText("Argos zh\u2192en model: Installed")
+            self._argos_static_lbl.setStyleSheet("color: #1a7a1a; font-weight: bold;")
+            self._argos_status_lbl.setText("\u2713  Model installed — restart the app to use offline translation")
+            self._argos_status_lbl.setStyleSheet("color: #1a7a1a; font-weight: bold;")
+        else:
+            self._btn_argos_download.setText("Retry Download")
+            self._btn_argos_download.setStyleSheet("")
+            self._argos_status_lbl.setStyleSheet("color: #b85c00; font-weight: bold;")
+            # keep whatever error message was last emitted via _on_argos_progress
+
     def _do_install(self, trigger_btn: QPushButton, status_lbl: QLabel) -> None:
         """Launch setup_elevated.ps1 elevated and start the spinner monitor."""
         import ctypes
@@ -1192,7 +1299,8 @@ useful for product names, abbreviations, or technical jargon.</p>
   <li>User glossary exact match</li>
   <li>Domain glossaries (manufacturing &rarr; medical &rarr; legal &rarr; electronics)</li>
   <li>CC-CEDICT dictionary lookup + jieba word segmentation</li>
-  <li>Argos Translate &mdash; fully offline sentence translation</li>
+  <li>Argos Translate &mdash; fully offline sentence translation
+      (<a href="pref://lookup">download model &rarr; Preferences &rsaquo; Lookup &amp; OCR</a>)</li>
   <li>Azure Translator or DeepL (only if enabled in
       <a href="pref://cloud">Preferences &rsaquo; Cloud</a>)</li>
 </ol>

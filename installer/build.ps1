@@ -262,19 +262,26 @@ if (-not $SkipVersionBump) {
         [System.Text.Encoding]::UTF8)
     Write-Ok "Updated ${InitPyPath}"
 
-    # Patch MyAppVersion in the .iss file  (regex replace in-place)
-    $IssPath = Join-Path $PSScriptRoot "zh-en-translator.iss"
-    $IssRaw  = [System.IO.File]::ReadAllText($IssPath, [System.Text.Encoding]::UTF8)
-    $IssNew  = [System.Text.RegularExpressions.Regex]::Replace(
-        $IssRaw,
-        '(#define\s+MyAppVersion\s+")[^"]*(")',
-        "`${1}${VersionString}`${2}"
+    # Patch MyAppVersion in both .iss files (regex replace in-place)
+    $IssPaths = @(
+        Join-Path $PSScriptRoot "zh-en-translator.iss",
+        Join-Path $PSScriptRoot "zh-en-translator-lite.iss"
     )
-    [System.IO.File]::WriteAllText($IssPath, $IssNew, [System.Text.Encoding]::UTF8)
-    Write-Ok "Updated ${IssPath}"
+    foreach ($IssPath in $IssPaths) {
+        if (Test-Path $IssPath) {
+            $IssRaw = [System.IO.File]::ReadAllText($IssPath, [System.Text.Encoding]::UTF8)
+            $IssNew = [System.Text.RegularExpressions.Regex]::Replace(
+                $IssRaw,
+                '(#define\s+MyAppVersion\s+")[^"]*(")',
+                "`${1}${VersionString}`${2}"
+            )
+            [System.IO.File]::WriteAllText($IssPath, $IssNew, [System.Text.Encoding]::UTF8)
+            Write-Ok "Updated ${IssPath}"
+        }
+    }
 
-    # Stage both files
-    & git add "src\zh_en_translator\__init__.py" "installer\zh-en-translator.iss"
+    # Stage all version files
+    & git add "src\zh_en_translator\__init__.py" "installer\zh-en-translator.iss" "installer\zh-en-translator-lite.iss"
     if ($LASTEXITCODE -ne 0) { Write-Fail "git add failed"; exit 1 }
 
     # Commit
@@ -655,13 +662,14 @@ Write-Step "Step 3.5: Checking Output directory for old releases"
 
 $OutputDir = Join-Path $PSScriptRoot "Output"
 if (Test-Path $OutputDir) {
-    # Collect versioned setup and portable files
-    $SetupFiles    = @(Get-ChildItem $OutputDir -Filter "zh-en-translator-v*-setup.exe"    -ErrorAction SilentlyContinue)
-    $PortableFiles = @(Get-ChildItem $OutputDir -Filter "zh-en-translator-v*-portable.zip" -ErrorAction SilentlyContinue)
+    # Collect versioned setup and portable files (full + lite variants)
+    $SetupFiles    = @(Get-ChildItem $OutputDir -Filter "zh-en-translator-v*-setup.exe"         -ErrorAction SilentlyContinue) +
+                     @(Get-ChildItem $OutputDir -Filter "zh-en-translator-v*-lite-setup.exe"     -ErrorAction SilentlyContinue)
+    $PortableFiles = @(Get-ChildItem $OutputDir -Filter "zh-en-translator-v*-lite-portable.zip"  -ErrorAction SilentlyContinue)
 
     # Extract unique version strings from filenames (e.g. "2026.05.02")
     $Versions = @($SetupFiles + $PortableFiles | ForEach-Object {
-        if ($_.Name -match "zh-en-translator-v(.+?)-(setup|portable)") { $matches[1] }
+        if ($_.Name -match "zh-en-translator-v(.+?)-(lite-setup|setup|lite-portable|portable)") { $matches[1] }
     } | Sort-Object -Unique)
 
     if ($Versions.Count -ge 2) {
@@ -707,9 +715,9 @@ if (Test-Path $OutputDir) {
 }
 
 # ---------------------------------------------------------------------------
-# Step 4 -- Run Inno Setup compiler
+# Step 4 -- Run Inno Setup compiler (full + lite)
 # ---------------------------------------------------------------------------
-Write-Step "Step 4: Compiling installer with Inno Setup"
+Write-Step "Step 4: Compiling installers with Inno Setup"
 
 $IssFile = Join-Path $PSScriptRoot "zh-en-translator.iss"
 if (-not (Test-Path $IssFile)) {
@@ -717,11 +725,25 @@ if (-not (Test-Path $IssFile)) {
     exit 1
 }
 
-Write-Host "    Command: $Iscc $IssFile" -ForegroundColor Gray
+Write-Host "    [4a] Full installer: $IssFile" -ForegroundColor Gray
 & $Iscc $IssFile
 if ($LASTEXITCODE -ne 0) {
-    Write-Fail "Inno Setup compiler exited with code $LASTEXITCODE"
+    Write-Fail "Inno Setup compiler (full) exited with code $LASTEXITCODE"
     exit $LASTEXITCODE
+}
+Write-Ok "Full installer compiled"
+
+$LiteIssFile = Join-Path $PSScriptRoot "zh-en-translator-lite.iss"
+if (Test-Path $LiteIssFile) {
+    Write-Host "    [4b] Lite installer: $LiteIssFile" -ForegroundColor Gray
+    & $Iscc $LiteIssFile
+    if ($LASTEXITCODE -ne 0) {
+        Write-Fail "Inno Setup compiler (lite) exited with code $LASTEXITCODE"
+        exit $LASTEXITCODE
+    }
+    Write-Ok "Lite installer compiled"
+} else {
+    Write-Host "    WARNING: Lite .iss not found -- skipping lite installer." -ForegroundColor Yellow
 }
 
 # ---------------------------------------------------------------------------
@@ -729,23 +751,31 @@ if ($LASTEXITCODE -ne 0) {
 # ---------------------------------------------------------------------------
 Write-Step "Step 5: Build complete"
 
-$OutputFile = Join-Path $PSScriptRoot "Output\zh-en-translator-v$VersionString-setup.exe"
+$OutputFile     = Join-Path $PSScriptRoot "Output\zh-en-translator-v$VersionString-setup.exe"
+$LiteOutputFile = Join-Path $PSScriptRoot "Output\zh-en-translator-v$VersionString-lite-setup.exe"
+
 if (Test-Path $OutputFile) {
-    $Size = (Get-Item $OutputFile).Length
-    $SizeMB = [math]::Round($Size / 1MB, 1)
-    Write-Ok "Installer produced: $OutputFile ($SizeMB MB)"
+    $Size = [math]::Round((Get-Item $OutputFile).Length / 1MB, 1)
+    Write-Ok "Full installer:  $OutputFile ($Size MB)"
 } else {
-    Write-Host "    WARNING: Expected output file not found: $OutputFile" -ForegroundColor Yellow
+    Write-Host "    WARNING: Expected full installer not found: $OutputFile" -ForegroundColor Yellow
     Write-Host "    Check Inno Setup output above for the actual output path." -ForegroundColor Yellow
 }
 
+if (Test-Path $LiteOutputFile) {
+    $LiteSize = [math]::Round((Get-Item $LiteOutputFile).Length / 1MB, 1)
+    Write-Ok "Lite installer:  $LiteOutputFile ($LiteSize MB)"
+} else {
+    Write-Host "    NOTE: Lite installer not found: $LiteOutputFile (lite .iss may be missing)." -ForegroundColor Gray
+}
+
 # ---------------------------------------------------------------------------
-# Step 5.1 -- Create portable ZIP archive
+# Step 5.1 -- Create lite portable ZIP archive
 # ---------------------------------------------------------------------------
-Write-Step "Step 5.1: Creating portable ZIP archive"
+Write-Step "Step 5.1: Creating lite portable ZIP archive"
 
 $PortableDir  = Join-Path $env:TEMP "zh-en-translator-portable"
-$PortableZip  = Join-Path $PSScriptRoot "Output\zh-en-translator-v$VersionString-portable.zip"
+$PortableZip  = Join-Path $PSScriptRoot "Output\zh-en-translator-v$VersionString-lite-portable.zip"
 
 # Clean temp staging dir
 if (Test-Path $PortableDir) { Remove-Item -Recurse -Force $PortableDir }
@@ -768,8 +798,8 @@ if (Test-Path $TessBundle) {
 $ReadmePath = Join-Path $PortableDir "README-PORTABLE.txt"
 $TessLine = if (Test-Path $TessBundle) { "Tesseract OCR is bundled in the tesseract\ subfolder." } else { "Tesseract OCR is NOT included. Install it from https://github.com/UB-Mannheim/tesseract/wiki" }
 $ReadmeLines = @(
-    "zh-en-translator - Portable Edition",
-    "=====================================",
+    "zh-en-translator - Lite Portable Edition",
+    "=========================================",
     "",
     "USAGE",
     "-----",
@@ -868,10 +898,12 @@ if (-not $SkipRelease) {
         $ReleaseTag   = "v${VersionString}"
         $ReleaseTitle = "v${VersionString}"
 
-        # Collect assets that exist
+        # Collect assets that exist (full installer, lite installer, lite portable)
+        $LitePortableZip = $PortableZip
         $Assets = [System.Collections.Generic.List[string]]::new()
-        if (Test-Path $OutputFile)  { $Assets.Add($OutputFile) }
-        if (Test-Path $PortableZip) { $Assets.Add($PortableZip) }
+        if (Test-Path $OutputFile)      { $Assets.Add($OutputFile) }
+        if (Test-Path $LiteOutputFile)  { $Assets.Add($LiteOutputFile) }
+        if (Test-Path $LitePortableZip) { $Assets.Add($LitePortableZip) }
 
         if ($Assets.Count -eq 0) {
             Write-Host "    WARNING: No build artifacts found to upload -- skipping." -ForegroundColor Yellow

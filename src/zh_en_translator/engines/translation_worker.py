@@ -325,12 +325,15 @@ class TranslationWorker(QThread):
                 )
 
         # 3. Offline fallback: local Argos / ctranslate2 (with timeout)
-        from zh_en_translator.engines.argos import ensure_pack, translate_sentence
+        from zh_en_translator.engines.argos import is_available, translate_sentence
 
-        if not ensure_pack():
-            logger.warning("ensure_pack() failed")
-            logger.info("Translation path: dict-only (model unavailable)")
-            return "⚠ Translation model not available."
+        if not is_available():
+            logger.info("Translation path: none (Argos model not installed)")
+            return (
+                "\u26a0 Offline translation model not installed. "
+                "Enable cloud translation in Preferences \u203a Cloud, "
+                "or re-run the installer and select Full install to download the model."
+            )
 
         result = None
         try:
