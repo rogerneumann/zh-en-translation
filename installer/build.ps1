@@ -666,7 +666,7 @@ if (Test-Path $OutputDir) {
 
     if ($Versions.Count -ge 2) {
         Write-Host ""
-        Write-Host "    Found ${$Versions.Count} release versions in Output:" -ForegroundColor Yellow
+        Write-Host "    Found $($Versions.Count) release versions in Output:" -ForegroundColor Yellow
         $i = 1
         foreach ($v in ($Versions | Sort-Object -Descending)) {
             $files  = @(Get-ChildItem $OutputDir -Filter "zh-en-translator-v${v}-*" -ErrorAction SilentlyContinue)
