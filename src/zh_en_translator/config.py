@@ -74,6 +74,8 @@ class Config:
     deepl_enabled: bool = False
     deepl_api_key: str = ""
     deepl_pro: bool = False
+    google_translate_enabled: bool = False
+    google_translate_api_key: str = ""
 
     # [domains]
     # List of domain glossaries to load. Empty list means "all available".
@@ -146,6 +148,12 @@ def load_config(config_path: Path | None = None) -> Config:
         deepl_enabled=_get("cloud", "deepl_enabled", defaults.deepl_enabled),
         deepl_api_key=_get("cloud", "deepl_api_key", defaults.deepl_api_key),
         deepl_pro=_get("cloud", "deepl_pro", defaults.deepl_pro),
+        google_translate_enabled=_get(
+            "cloud", "google_translate_enabled", defaults.google_translate_enabled
+        ),
+        google_translate_api_key=_get(
+            "cloud", "google_translate_api_key", defaults.google_translate_api_key
+        ),
         domains_enabled=_get("domains", "domains_enabled", defaults.domains_enabled),
     )
 
@@ -201,6 +209,8 @@ ms_translator_region = {_toml_str(cfg.ms_translator_region)}
 deepl_enabled = {_toml_bool(cfg.deepl_enabled)}
 deepl_api_key = {_toml_str(cfg.deepl_api_key)}
 deepl_pro = {_toml_bool(cfg.deepl_pro)}
+google_translate_enabled = {_toml_bool(cfg.google_translate_enabled)}
+google_translate_api_key = {_toml_str(cfg.google_translate_api_key)}
 
 [domains]
 domains_enabled = {domains_list}

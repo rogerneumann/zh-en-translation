@@ -304,7 +304,16 @@ class TranslationWorker(QThread):
                 return result
             logger.warning("DeepL translation failed or not configured correctly: %s", result)
 
-        # 2. Try MS Cloud second
+        # 2. Try Google Translate second
+        if self.config and self.config.google_translate_enabled:
+            from zh_en_translator.engines.google_translate import translate_with_google
+            result = translate_with_google(text, self.config)
+            if result and not result.startswith("\u26a0") and _is_valid_translation(result, text):
+                logger.info("Translation path: Google Translate")
+                return result
+            logger.warning("Google Translate failed or not configured correctly: %s", result)
+
+        # 3. Try MS Cloud third
         if self.config and self.config.ms_translator_enabled:
             from zh_en_translator.engines.ms_cloud import (
                 is_configured,
@@ -324,7 +333,7 @@ class TranslationWorker(QThread):
                     " -- falling back to Argos"
                 )
 
-        # 3. Offline fallback: local Argos / ctranslate2 (with timeout)
+        # 4. Offline fallback: local Argos / ctranslate2 (with timeout)
         from zh_en_translator.engines.argos import is_available, translate_sentence
 
         if not is_available():

@@ -877,6 +877,24 @@ class PreferencesDialog(QDialog):
         deepl_layout.addWidget(self._deepl_pro_check)
         layout.addWidget(deepl_group)
 
+        google_group = QGroupBox("Google Cloud Translation")
+        google_layout = QVBoxLayout(google_group)
+        self._google_enabled_check = QCheckBox("Enable Google Cloud Translation")
+        google_layout.addWidget(self._google_enabled_check)
+        google_layout.addWidget(QLabel("API Key (GCP Cloud Translation API v2):"))
+        self._google_key_edit = QLineEdit()
+        self._google_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        self._google_key_edit.setPlaceholderText("AIza...")
+        google_layout.addWidget(self._google_key_edit)
+        google_hint = QLabel(
+            "Requires a GCP project with Cloud Translation API enabled.\n"
+            "Pricing: $20 / 1M characters (500K chars/month free tier)."
+        )
+        google_hint.setStyleSheet("color: gray; font-size: 9pt;")
+        google_hint.setWordWrap(True)
+        google_layout.addWidget(google_hint)
+        layout.addWidget(google_group)
+
         layout.addStretch()
         return widget
 
@@ -975,6 +993,8 @@ class PreferencesDialog(QDialog):
         self._deepl_enabled_check.setChecked(cfg.deepl_enabled)
         self._deepl_key_edit.setText(cfg.deepl_api_key)
         self._deepl_pro_check.setChecked(cfg.deepl_pro)
+        self._google_enabled_check.setChecked(cfg.google_translate_enabled)
+        self._google_key_edit.setText(cfg.google_translate_api_key)
         self._update_preview()
         self._connect_dirty_signals()
 
@@ -1010,6 +1030,8 @@ class PreferencesDialog(QDialog):
             deepl_enabled=self._deepl_enabled_check.isChecked(),
             deepl_api_key=self._deepl_key_edit.text(),
             deepl_pro=self._deepl_pro_check.isChecked(),
+            google_translate_enabled=self._google_enabled_check.isChecked(),
+            google_translate_api_key=self._google_key_edit.text(),
             last_update_check=self.config.last_update_check,
         )
 
@@ -1301,13 +1323,14 @@ useful for product names, abbreviations, or technical jargon.</p>
   <li>CC-CEDICT dictionary lookup + jieba word segmentation</li>
   <li>Argos Translate &mdash; fully offline sentence translation
       (<a href="pref://lookup">download model &rarr; Preferences &rsaquo; Lookup &amp; OCR</a>)</li>
-  <li>Azure Translator or DeepL (only if enabled in
+  <li>Google Translate, Azure Translator, or DeepL (only if enabled in
       <a href="pref://cloud">Preferences &rsaquo; Cloud</a>)</li>
 </ol>
 
 <h2>Cloud Translation</h2>
 <p>By default the app is <b>fully offline</b> &mdash; no text leaves your machine.
-Azure Translator and DeepL can be enabled for higher-quality output on an opt-in basis.</p>
+Google Translate, Azure Translator, and DeepL can be enabled for higher-quality output
+on an opt-in basis.</p>
 <p class="warn">&#x26A0; When enabled, every translated segment is sent to third-party servers.
 Only enable this if your organisation permits sending potentially sensitive data externally.</p>
 <p><a href="pref://cloud">Configure cloud translation &rarr; Preferences &rsaquo; Cloud</a></p>
