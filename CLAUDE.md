@@ -65,10 +65,11 @@ Build steps in order:
 4. Bundle Tesseract portable (~150 MB) into `installer/tesseract-bundle/`
 5. Bundle CC-CEDICT (~6 MB) into `installer/cedict-bundle/`
 6. Bundle Argos zh→en model (~100 MB) into `installer/argos-bundle/`
-7. Locate `iscc.exe` (Inno Setup compiler)
-8. Compile installer → `installer/Output/zh-en-translator-v{version}-setup.exe`
-9. Create portable ZIP → `installer/Output/zh-en-translator-v{version}-portable.zip`
-10. **Code signing** (Planned) — sign executable, DLLs, and installer using `signtool.exe`.
+7. Bundle Argos en→zh model (~100 MB) into `installer/argos-en-zh-bundle/` (back-translation)
+8. Locate `iscc.exe` (Inno Setup compiler)
+9. Compile installer → `installer/Output/zh-en-translator-v{version}-setup.exe`
+10. Create portable ZIP → `installer/Output/zh-en-translator-v{version}-portable.zip`
+11. **Code signing** (Planned) — sign executable, DLLs, and installer using `signtool.exe`.
 
 Bundle dirs are gitignored — generated at build time, not committed.
 
@@ -91,6 +92,7 @@ Everything through **Priority 4** is complete and on `main`.
 | P5 | Translation display fixes: plain-text data model (HTML view-layer only), `_render_translation_html()`, structured source segmentation (bullets/numbered lists/paragraphs/soft-wrap detection), test suite fully green (644 passed). |
 | P6 | Installer overhaul: install_state.toml + registry tracking, re-install detection with option pre-selection, new OCR Options wizard page (Windows OCR / Tesseract checkboxes with warnings), inline status labels, `install_state.py` runtime module. |
 | P7 | **Code Signing Integration Plan drafted** — See `signing_plan.md` for technical roadmap to stop SmartScreen warnings. |
+| P8 | Back-translation quality check: coloured confidence badge (●) in popup + sidebar headers. `BackTranslationWorker` scores via CER + content-word coverage. History entries enriched with `back_translation`, `confidence`, `bt_engine`. Argos en→zh bundled in installer. Interactive `_HotkeyRecorderWidget` in Preferences. 666 tests passing. |
 
 ---
 
@@ -137,7 +139,7 @@ Infrastructure partially exists; no UI wired up:
 
 ### Long-Term (Deliberate Decision Required)
 
-- **Back-translation augmentation** — use fine-tuned model to generate 3–5× synthetic corpus pairs, then re-train for another +2–4 BLEU
+- **Back-translation corpus augmentation** — use fine-tuned model to generate 3–5× synthetic corpus pairs, then re-train for another +2–4 BLEU (distinct from the P8 real-time quality check, which is already shipped)
 - **Code signing** — implementation of `signing_plan.md` (requires purchasing a cert)
 - **Region-capture OCR** — drag-to-select on-screen translation (PowerToys-style)
 - **Auto-update mechanism** — signed manifest check from configurable URL (off by default in v1)
@@ -169,30 +171,31 @@ Infrastructure partially exists; no UI wired up:
 ```
 src/zh_en_translator/
 ├── app.py                      ← entry point, tray, background update checker
-├── config.py                   ← config loader; keys: segmenter, clause_fallback_enabled
+├── config.py                   ← config loader; keys: segmenter, clause_fallback_enabled, back_translation_enabled
 ├── install_state.py            ← read/write %APPDATA%\zh-en-translator\install_state.toml
 ├── engines/
-│   ├── argos.py                ← sentence MT, split_into_clauses(), translate_with_clause_fallback()
+│   ├── argos.py                ← sentence MT, split_into_clauses(), translate_with_clause_fallback(), is_en_zh_available(), translate_en_to_zh()
+│   ├── back_translation.py     ← BackTranslationWorker, compute_confidence(), confidence_to_label(), content_word_coverage()
 │   ├── translation_worker.py   ← pipeline orchestration, _should_use_clause_fallback()
 │   ├── dictionary.py           ← CC-CEDICT + SQLite, ensure_cedict()
 │   ├── segmentation.py         ← jieba + PKUSEG wrapper, load_user_dict()
 │   ├── glossary.py             ← TOML glossary loader (user + domain)
 │   ├── glossary_db.py          ← SQLite multi-domain glossary backend
 │   ├── pipeline.py             ← glossary → dict → MT pipeline
-│   ├── history.py              ← last 20 translations, JSON storage
-│   ├── deepl.py                ← DeepL API (opt-in)
-│   ├── google_translate.py     ← Google Cloud Translation API v2 (opt-in)
-│   ├── ms_cloud.py             ← Azure Translator (opt-in)
-│   ├── libretranslate.py       ← LibreTranslate / self-hosted (opt-in, free)
+│   ├── history.py              ← last 20 translations, JSON storage; update_entry() for async back-translation enrichment
+│   ├── deepl.py                ← DeepL API (opt-in); source_lang/target_lang params for back-translation
+│   ├── google_translate.py     ← Google Cloud Translation API v2 (opt-in); source/target params
+│   ├── ms_cloud.py             ← Azure Translator (opt-in); from_lang/to_lang params
+│   ├── libretranslate.py       ← LibreTranslate / self-hosted (opt-in, free); source/target params
 │   ├── updates.py              ← GitHub releases version check
 │   └── ocr/
 │       ├── windows_ocr.py
 │       ├── tesseract_ocr.py    ← bundled path detection, TESSDATA_PREFIX
 │       └── paddle_ocr.py
 ├── ui/
-│   ├── popup.py                ← frameless popup, editable source, Retranslate button
-│   ├── sidebar.py              ← peek-tab, history list, export/clear
-│   ├── preferences.py          ← settings dialog (glossary tab, Tesseract status, DeepL)
+│   ├── popup.py                ← frameless popup, editable source, Retranslate button, _quality_dot badge
+│   ├── sidebar.py              ← peek-tab, history list, export/clear, _quality_dot badge
+│   ├── preferences.py          ← settings dialog (glossary tab, Tesseract status, DeepL, back-translation toggle, _HotkeyRecorderWidget)
 │   └── themes.py               ← system / dark / light / sepia / high-contrast
 ├── finetuning/                 ← Priority 3 GPU training
 │   ├── config.py               (implemented)
