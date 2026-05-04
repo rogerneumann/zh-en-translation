@@ -497,6 +497,7 @@ class TranslatorPopup(QWidget):
     def set_ocr_result(self, text: str):
         if self._dismissed:
             return
+        self._is_ocr_pending = False  # OCR done — resume normal dismiss-on-deactivate
         if text.startswith("⚠"):
             self._loading_timer.stop()
             self.translation_label.setText(text)
@@ -675,6 +676,7 @@ class TranslatorPopup(QWidget):
         if (
             event.type() == event.Type.WindowDeactivate
             and not self._pinned
+            and not self._is_ocr_pending
             and not self.isActiveWindow()
         ):
             QTimer.singleShot(150, self._dismiss)
