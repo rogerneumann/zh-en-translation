@@ -574,8 +574,20 @@ class PreferencesDialog(QDialog):
 
         trad_group = QGroupBox("Traditional Chinese")
         trad_layout = QVBoxLayout(trad_group)
-        self._trad_to_simp_check = QCheckBox("Convert Traditional → Simplified automatically")
+        self._trad_to_simp_check = QCheckBox("Convert Traditional \u2192 Simplified automatically")
         trad_layout.addWidget(self._trad_to_simp_check)
+        from zh_en_translator.engines.converter import is_available as _opencc_available
+        if _opencc_available():
+            _opencc_lbl = QLabel("OpenCC: active")
+            _opencc_lbl.setStyleSheet("color: #1a7a1a; font-size: 9pt;")
+        else:
+            _opencc_lbl = QLabel(
+                "\u26a0 OpenCC not available \u2014 conversion will be skipped.\n"
+                "Install opencc-python-reimplemented to enable."
+            )
+            _opencc_lbl.setStyleSheet("color: #b85c00; font-size: 9pt;")
+        _opencc_lbl.setWordWrap(True)
+        trad_layout.addWidget(_opencc_lbl)
         layout.addWidget(trad_group)
 
         engine_group = QGroupBox("Translation Engine")

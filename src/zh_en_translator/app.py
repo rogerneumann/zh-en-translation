@@ -740,37 +740,13 @@ class TranslatorApp(QObject):
         self._open_preferences(tab="help")
 
     def _open_preferences(self, tab: str | None = None):
+        import copy
         from zh_en_translator.ui.preferences import PreferencesDialog
-        from zh_en_translator.config import Config as _Config
-        # Build a snapshot that reflects current RUNTIME state (sidebar_mode may
-        # have been toggled via the tray menu without being saved to config yet).
-        current = _Config(
-            hotkey=self.config.hotkey,
-            mode="sidebar" if self.sidebar_mode else "popup",
-            startup=self.config.startup,
-            auto_check_updates=self.config.auto_check_updates,
-            last_update_check=self.config.last_update_check,
-            font_family=self.config.font_family,
-            font_size=self.config.font_size,
-            bg_color=self.config.bg_color,
-            theme=self.config.theme,
-            side=self.config.side,
-            sidebar_y=self.config.sidebar_y,
-            sidebar_width=self.config.sidebar_width,
-            color_fresh=self.config.color_fresh,
-            color_idle=self.config.color_idle,
-            external_lookup_url=self.config.external_lookup_url,
-            ocr_engine=self.config.ocr_engine,
-            show_pinyin=self.config.show_pinyin,
-            pinyin_max_chars=self.config.pinyin_max_chars,
-            traditional_to_simplified=self.config.traditional_to_simplified,
-            ms_translator_enabled=self.config.ms_translator_enabled,
-            ms_translator_api_key=self.config.ms_translator_api_key,
-            ms_translator_region=self.config.ms_translator_region,
-            deepl_enabled=self.config.deepl_enabled,
-            deepl_api_key=self.config.deepl_api_key,
-            deepl_pro=self.config.deepl_pro,
-        )
+        # Shallow-copy config so the dialog works on its own snapshot.
+        # Override mode to reflect current RUNTIME state (sidebar_mode may have
+        # been toggled via the tray menu without being saved to config yet).
+        current = copy.copy(self.config)
+        current.mode = "sidebar" if self.sidebar_mode else "popup"
         dialog = PreferencesDialog(
             current,
             update_available=self._has_update,
