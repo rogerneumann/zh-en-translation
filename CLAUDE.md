@@ -93,6 +93,7 @@ Everything through **Priority 4** is complete and on `main`.
 | P6 | Installer overhaul: install_state.toml + registry tracking, re-install detection with option pre-selection, new OCR Options wizard page (Windows OCR / Tesseract checkboxes with warnings), inline status labels, `install_state.py` runtime module. |
 | P7 | **Code Signing Integration Plan drafted** — See `signing_plan.md` for technical roadmap to stop SmartScreen warnings. |
 | P8 | Back-translation quality check: coloured confidence badge (●) in popup + sidebar headers. `BackTranslationWorker` scores via CER + content-word coverage. History entries enriched with `back_translation`, `confidence`, `bt_engine`. Argos en→zh bundled in installer. Interactive `_HotkeyRecorderWidget` in Preferences. 666 tests passing. |
+| P9 | Popup UX overhaul: translation label promoted to top (first thing visible). Source text + pinyin moved into collapsible `▶ Original text` section (read-only, no retranslate button — users don't read Chinese). Word-by-word breakdown behind `▶ Details` section; shows CC-CEDICT install hint when dictionary absent. Min width 380px, auto-height. |
 
 ---
 
@@ -193,7 +194,7 @@ src/zh_en_translator/
 │       ├── tesseract_ocr.py    ← bundled path detection, TESSDATA_PREFIX
 │       └── paddle_ocr.py
 ├── ui/
-│   ├── popup.py                ← frameless popup, editable source, Retranslate button, _quality_dot badge
+│   ├── popup.py                ← frameless popup, read-only source (collapsed), _quality_dot badge; collapsible Original text + Details sections
 │   ├── sidebar.py              ← peek-tab, history list, export/clear, _quality_dot badge
 │   ├── preferences.py          ← settings dialog (glossary tab, Tesseract status, DeepL, back-translation toggle, _HotkeyRecorderWidget)
 │   └── themes.py               ← system / dark / light / sepia / high-contrast
