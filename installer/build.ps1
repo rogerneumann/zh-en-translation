@@ -264,8 +264,8 @@ if (-not $SkipVersionBump) {
 
     # Patch MyAppVersion in both .iss files (regex replace in-place)
     $IssPaths = @(
-        Join-Path $PSScriptRoot "zh-en-translator.iss",
-        Join-Path $PSScriptRoot "zh-en-translator-lite.iss"
+        (Join-Path $PSScriptRoot "zh-en-translator.iss"),
+        (Join-Path $PSScriptRoot "zh-en-translator-lite.iss")
     )
     foreach ($IssPath in $IssPaths) {
         if (Test-Path $IssPath) {
