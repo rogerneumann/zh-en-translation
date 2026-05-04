@@ -895,6 +895,27 @@ class PreferencesDialog(QDialog):
         google_layout.addWidget(google_hint)
         layout.addWidget(google_group)
 
+        libre_group = QGroupBox("LibreTranslate (free / self-hosted)")
+        libre_layout = QVBoxLayout(libre_group)
+        self._libre_enabled_check = QCheckBox("Enable LibreTranslate")
+        libre_layout.addWidget(self._libre_enabled_check)
+        libre_layout.addWidget(QLabel("Instance URL:"))
+        self._libre_url_edit = QLineEdit()
+        self._libre_url_edit.setPlaceholderText("https://libretranslate.com")
+        libre_layout.addWidget(self._libre_url_edit)
+        libre_layout.addWidget(QLabel("API Key (leave blank if not required):"))
+        self._libre_key_edit = QLineEdit()
+        self._libre_key_edit.setEchoMode(QLineEdit.EchoMode.Password)
+        libre_layout.addWidget(self._libre_key_edit)
+        libre_hint = QLabel(
+            "Free public instances: translate.argosopentech.com \u00b7 libretranslate.de\n"
+            "No account needed on most instances. Self-host for unlimited, private use."
+        )
+        libre_hint.setStyleSheet("color: gray; font-size: 9pt;")
+        libre_hint.setWordWrap(True)
+        libre_layout.addWidget(libre_hint)
+        layout.addWidget(libre_group)
+
         layout.addStretch()
         return widget
 
@@ -995,6 +1016,9 @@ class PreferencesDialog(QDialog):
         self._deepl_pro_check.setChecked(cfg.deepl_pro)
         self._google_enabled_check.setChecked(cfg.google_translate_enabled)
         self._google_key_edit.setText(cfg.google_translate_api_key)
+        self._libre_enabled_check.setChecked(cfg.libretranslate_enabled)
+        self._libre_url_edit.setText(cfg.libretranslate_url)
+        self._libre_key_edit.setText(cfg.libretranslate_api_key)
         self._update_preview()
         self._connect_dirty_signals()
 
@@ -1032,6 +1056,9 @@ class PreferencesDialog(QDialog):
             deepl_pro=self._deepl_pro_check.isChecked(),
             google_translate_enabled=self._google_enabled_check.isChecked(),
             google_translate_api_key=self._google_key_edit.text(),
+            libretranslate_enabled=self._libre_enabled_check.isChecked(),
+            libretranslate_url=self._libre_url_edit.text().strip() or "https://libretranslate.com",
+            libretranslate_api_key=self._libre_key_edit.text(),
             last_update_check=self.config.last_update_check,
         )
 
@@ -1323,14 +1350,14 @@ useful for product names, abbreviations, or technical jargon.</p>
   <li>CC-CEDICT dictionary lookup + jieba word segmentation</li>
   <li>Argos Translate &mdash; fully offline sentence translation
       (<a href="pref://lookup">download model &rarr; Preferences &rsaquo; Lookup &amp; OCR</a>)</li>
-  <li>Google Translate, Azure Translator, or DeepL (only if enabled in
+  <li>DeepL, Google Translate, Azure Translator, or LibreTranslate (only if enabled in
       <a href="pref://cloud">Preferences &rsaquo; Cloud</a>)</li>
 </ol>
 
 <h2>Cloud Translation</h2>
 <p>By default the app is <b>fully offline</b> &mdash; no text leaves your machine.
-Google Translate, Azure Translator, and DeepL can be enabled for higher-quality output
-on an opt-in basis.</p>
+Four cloud engines can be enabled on an opt-in basis: DeepL, Google Translate,
+Azure Translator, and LibreTranslate (free/self-hosted, no account required).</p>
 <p class="warn">&#x26A0; When enabled, every translated segment is sent to third-party servers.
 Only enable this if your organisation permits sending potentially sensitive data externally.</p>
 <p><a href="pref://cloud">Configure cloud translation &rarr; Preferences &rsaquo; Cloud</a></p>

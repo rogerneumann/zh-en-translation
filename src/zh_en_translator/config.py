@@ -76,6 +76,9 @@ class Config:
     deepl_pro: bool = False
     google_translate_enabled: bool = False
     google_translate_api_key: str = ""
+    libretranslate_enabled: bool = False
+    libretranslate_url: str = "https://libretranslate.com"
+    libretranslate_api_key: str = ""
 
     # [domains]
     # List of domain glossaries to load. Empty list means "all available".
@@ -154,6 +157,13 @@ def load_config(config_path: Path | None = None) -> Config:
         google_translate_api_key=_get(
             "cloud", "google_translate_api_key", defaults.google_translate_api_key
         ),
+        libretranslate_enabled=_get(
+            "cloud", "libretranslate_enabled", defaults.libretranslate_enabled
+        ),
+        libretranslate_url=_get("cloud", "libretranslate_url", defaults.libretranslate_url),
+        libretranslate_api_key=_get(
+            "cloud", "libretranslate_api_key", defaults.libretranslate_api_key
+        ),
         domains_enabled=_get("domains", "domains_enabled", defaults.domains_enabled),
     )
 
@@ -211,6 +221,9 @@ deepl_api_key = {_toml_str(cfg.deepl_api_key)}
 deepl_pro = {_toml_bool(cfg.deepl_pro)}
 google_translate_enabled = {_toml_bool(cfg.google_translate_enabled)}
 google_translate_api_key = {_toml_str(cfg.google_translate_api_key)}
+libretranslate_enabled = {_toml_bool(cfg.libretranslate_enabled)}
+libretranslate_url = {_toml_str(cfg.libretranslate_url)}
+libretranslate_api_key = {_toml_str(cfg.libretranslate_api_key)}
 
 [domains]
 domains_enabled = {domains_list}

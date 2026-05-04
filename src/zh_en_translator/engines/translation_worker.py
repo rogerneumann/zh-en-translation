@@ -333,7 +333,16 @@ class TranslationWorker(QThread):
                     " -- falling back to Argos"
                 )
 
-        # 4. Offline fallback: local Argos / ctranslate2 (with timeout)
+        # 4. Try LibreTranslate (free/self-hosted)
+        if self.config and self.config.libretranslate_enabled:
+            from zh_en_translator.engines.libretranslate import translate_with_libretranslate
+            result = translate_with_libretranslate(text, self.config)
+            if result and not result.startswith("\u26a0") and _is_valid_translation(result, text):
+                logger.info("Translation path: LibreTranslate")
+                return result
+            logger.warning("LibreTranslate failed or not configured correctly: %s", result)
+
+        # 5. Offline fallback: local Argos / ctranslate2 (with timeout)
         from zh_en_translator.engines.argos import is_available, translate_sentence
 
         if not is_available():
