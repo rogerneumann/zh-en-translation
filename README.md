@@ -7,8 +7,10 @@ English translation, pinyin, action buttons, and an optional persistent sidebar.
 
 No text leaves the machine by default — translation runs locally via
 [Argos Translate](https://github.com/argosopentech/argostranslate) +
-[ctranslate2](https://github.com/OpenNMT/CTranslate2). Microsoft Azure
-Translator can be opted into explicitly (see [Cloud translation](#cloud-translation-optional)).
+[ctranslate2](https://github.com/OpenNMT/CTranslate2). Four cloud engines
+can be opted into explicitly: DeepL, Google Translate, Azure Translator, and
+LibreTranslate — including free options that require no account
+(see [Cloud translation](#cloud-translation-optional)).
 
 ---
 
@@ -53,7 +55,7 @@ Translator can be opted into explicitly (see [Cloud translation](#cloud-translat
 | Themes | System / Light / Dark / Sepia |
 | Preferences | In-app dialog — hotkey, font, colours, OCR engine, cloud key, and more |
 | Accessibility | Screen-reader names/descriptions, logical tab order |
-| Cloud (opt-in) | Azure Translator with explicit privacy warning; zero egress when disabled |
+| Cloud (opt-in) | DeepL, Google Translate, Azure Translator, LibreTranslate — all opt-in with privacy warning; zero egress when disabled |
 
 ---
 
@@ -115,22 +117,58 @@ Toggle the setting in **Preferences → General → Traditional Chinese**.
 
 ## Cloud translation (optional)
 
-By default the app is fully offline. To use Microsoft Azure Translator:
+By default the app is **fully offline** — no text leaves your machine. Four cloud
+engines can be enabled on an opt-in basis in **Preferences → Cloud**. They run in
+priority order, falling back to the next available engine on any failure:
 
-1. Get an API key from the [Azure portal](https://portal.azure.com) (Cognitive Services → Translator). The **Free tier (F0)** allows 2 million characters/month.
-2. Open **Preferences → Cloud** tab.
-3. Tick **Enable cloud translation**, paste your key, and optionally enter your region (e.g. `eastus`).
-4. Click **Apply**.
+| # | Engine | Cost | Account needed | Setup |
+|---|---|---|---|---|
+| 1 | **DeepL** | Free tier: 500 K chars/month | Yes (deepl.com) | API key |
+| 2 | **Google Translate** | Free tier: 500 K chars/month | Yes (GCP project) | API key |
+| 3 | **Azure Translator** | Free tier: 2 M chars/month | Yes (Azure portal) | API key + region |
+| 4 | **LibreTranslate** | Free (public instances) | **No** | URL only |
 
-> **Privacy:** enabling this option sends every translated text segment to
-> Microsoft Azure servers. The API key is stored in plain text in
-> `config.toml` — secure that file if the machine is shared.
->
-> When disabled (the default), zero outbound network traffic is generated
-> during translation.
+If none of the cloud engines are enabled or succeed, the app falls back to the
+local Argos offline model automatically.
 
-Cloud translation uses Azure as the primary engine and falls back to local
-Argos automatically on any network or API failure.
+### LibreTranslate — no account required
+
+LibreTranslate is an open-source translation server. Several public instances
+accept requests with no API key at all:
+
+| Instance | API key required |
+|---|---|
+| `https://translate.argosopentech.com` | No |
+| `https://libretranslate.de` | No |
+| `https://libretranslate.com` | Yes (free tier available) |
+
+To use a public instance: enable LibreTranslate in **Preferences → Cloud**,
+set the URL to one of the above, and leave the API key blank.
+
+You can also [self-host LibreTranslate](https://github.com/LibreTranslate/LibreTranslate)
+for unlimited, fully private cloud-quality translation on your own machine or server.
+
+### Setting up the paid/freemium engines
+
+**DeepL:**
+1. Create a free account at [deepl.com](https://www.deepl.com/pro-api)
+2. Copy your API key from the account dashboard
+3. Preferences → Cloud → DeepL → paste key → Apply
+
+**Google Translate:**
+1. Create a project in [Google Cloud Console](https://console.cloud.google.com)
+2. Enable the **Cloud Translation API**
+3. Create an API key under Credentials
+4. Preferences → Cloud → Google Cloud Translation → paste key → Apply
+
+**Azure Translator:**
+1. Get an API key from the [Azure portal](https://portal.azure.com) (Cognitive Services → Translator)
+2. Preferences → Cloud → Azure Translator → paste key + region → Apply
+
+> **Privacy:** when any cloud engine is enabled, translated text is sent to that
+> provider's servers. API keys are stored in plain text in `config.toml` — secure
+> that file if the machine is shared. When all cloud engines are disabled (the
+> default), zero outbound network traffic is generated during translation.
 
 ---
 
@@ -181,9 +219,17 @@ pinyin_max_chars = 80
 traditional_to_simplified = true
 
 [cloud]
+deepl_enabled = false
+deepl_api_key = ""
+deepl_pro = false
+google_translate_enabled = false
+google_translate_api_key = ""
 ms_translator_enabled = false
 ms_translator_api_key = ""
 ms_translator_region = ""
+libretranslate_enabled = false
+libretranslate_url = "https://libretranslate.com"
+libretranslate_api_key = ""
 ```
 
 ---
@@ -229,12 +275,15 @@ zh-en-translation/
 │  ├─ config.py               ← TOML config loader/writer
 │  ├─ engines/
 │  │  ├─ argos.py             ← offline sentence MT (ctranslate2)
+│  │  ├─ deepl.py             ← DeepL API (opt-in)
+│  │  ├─ google_translate.py  ← Google Cloud Translation API (opt-in)
 │  │  ├─ ms_cloud.py          ← Azure Translator (opt-in)
+│  │  ├─ libretranslate.py    ← LibreTranslate / self-hosted (opt-in, free)
 │  │  ├─ dictionary.py        ← CC-CEDICT + SQLite
 │  │  ├─ segmentation.py      ← jieba word segmenter
 │  │  ├─ converter.py         ← OpenCC Traditional→Simplified
 │  │  ├─ themes.py            ← theme palette definitions
-│  │  ├─ translation_worker.py← QThread wrapper (cloud → argos fallback)
+│  │  ├─ translation_worker.py← QThread: DeepL→Google→Azure→LibreTranslate→Argos
 │  │  └─ ocr/                 ← Windows / Tesseract / PaddleOCR engines
 │  └─ ui/
 │     ├─ popup.py             ← frameless translation popup
@@ -264,4 +313,4 @@ Released under the [GNU General Public License v3 or later](LICENSE).
 | M7 | Preferences — TOML config + in-app dialog | ✅ |
 | M8 | Packaging (MSI) | ⏳ |
 | M9 | Accessibility + Traditional Chinese — OpenCC, Qt a11y tree | ✅ |
-| M10 | Optional MS Cloud — Azure Translator opt-in | ✅ |
+| M10 | Cloud translation — DeepL, Google Translate, Azure, LibreTranslate (all opt-in) | ✅ |

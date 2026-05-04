@@ -181,6 +181,9 @@ src/zh_en_translator/
 │   ├── pipeline.py             ← glossary → dict → MT pipeline
 │   ├── history.py              ← last 20 translations, JSON storage
 │   ├── deepl.py                ← DeepL API (opt-in)
+│   ├── google_translate.py     ← Google Cloud Translation API v2 (opt-in)
+│   ├── ms_cloud.py             ← Azure Translator (opt-in)
+│   ├── libretranslate.py       ← LibreTranslate / self-hosted (opt-in, free)
 │   ├── updates.py              ← GitHub releases version check
 │   └── ocr/
 │       ├── windows_ocr.py
@@ -222,8 +225,9 @@ signing_plan.md                 ← Code signing implementation roadmap
 1. User glossary exact match → use glossary translation (highest precedence)
 2. Domain glossaries (manufacturing → medical → legal → electronics)
 3. CC-CEDICT dictionary lookup + jieba segmentation
-4. Argos MT (with adaptive clause-level fallback for complex sentences)
-5. DeepL / Azure as opt-in overrides
+4. Cloud engines (opt-in, tried in order): DeepL → Google Translate → Azure → LibreTranslate
+5. Argos MT offline (with adaptive clause-level fallback for complex sentences)
+6. Dictionary-only fallback ("no translation found")
 
 ---
 

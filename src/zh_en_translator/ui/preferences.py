@@ -1343,24 +1343,38 @@ useful for product names, abbreviations, or technical jargon.</p>
 <p><a href="pref://glossary">Add or import user glossary terms &rarr; Preferences &rsaquo; Glossary</a></p>
 
 <h2>Translation Pipeline</h2>
-<p>Each translation passes through these steps in order, stopping at the first match:</p>
+<p>Each translation request passes through these steps in order, stopping at the first success:</p>
 <ol>
-  <li>User glossary exact match</li>
+  <li>User glossary exact match (highest precedence)</li>
   <li>Domain glossaries (manufacturing &rarr; medical &rarr; legal &rarr; electronics)</li>
   <li>CC-CEDICT dictionary lookup + jieba word segmentation</li>
+  <li><b>Cloud engines</b> (whichever are enabled, in priority order):
+    <a href="pref://cloud">DeepL &rarr; Google &rarr; Azure &rarr; LibreTranslate</a></li>
   <li>Argos Translate &mdash; fully offline sentence translation
       (<a href="pref://lookup">download model &rarr; Preferences &rsaquo; Lookup &amp; OCR</a>)</li>
-  <li>DeepL, Google Translate, Azure Translator, or LibreTranslate (only if enabled in
-      <a href="pref://cloud">Preferences &rsaquo; Cloud</a>)</li>
+  <li>Dictionary-only result (fallback if all engines unavailable)</li>
 </ol>
 
 <h2>Cloud Translation</h2>
 <p>By default the app is <b>fully offline</b> &mdash; no text leaves your machine.
-Four cloud engines can be enabled on an opt-in basis: DeepL, Google Translate,
-Azure Translator, and LibreTranslate (free/self-hosted, no account required).</p>
-<p class="warn">&#x26A0; When enabled, every translated segment is sent to third-party servers.
-Only enable this if your organisation permits sending potentially sensitive data externally.</p>
-<p><a href="pref://cloud">Configure cloud translation &rarr; Preferences &rsaquo; Cloud</a></p>
+Four cloud engines can be enabled on an opt-in basis in
+<a href="pref://cloud">Preferences &rsaquo; Cloud</a>:</p>
+<table>
+  <tr><th>Engine</th><th>Cost</th><th>Account needed</th></tr>
+  <tr><td><b>DeepL</b></td><td>Free tier: 500&thinsp;K chars/month</td><td>Yes &mdash; deepl.com</td></tr>
+  <tr><td><b>Google Translate</b></td><td>Free tier: 500&thinsp;K chars/month</td><td>Yes &mdash; GCP project + API key</td></tr>
+  <tr><td><b>Azure Translator</b></td><td>Free tier: 2&thinsp;M chars/month</td><td>Yes &mdash; Azure portal</td></tr>
+  <tr><td><b>LibreTranslate</b></td><td><b>Free</b> (public instances)</td><td><b>No account needed</b></td></tr>
+</table>
+<p><b>LibreTranslate with no account:</b> set the URL to a free public instance and leave the API key blank:</p>
+<ul>
+  <li><code>https://translate.argosopentech.com</code> &mdash; no key required</li>
+  <li><code>https://libretranslate.de</code> &mdash; no key required</li>
+</ul>
+<p class="warn">&#x26A0; When any cloud engine is enabled, every translated segment is sent to
+that provider&rsquo;s servers. Only enable this if your organisation permits sending
+potentially sensitive data externally.</p>
+<p><a href="pref://cloud">Configure cloud engines &rarr; Preferences &rsaquo; Cloud</a></p>
 
 <h2>Hotkey</h2>
 <p>The current hotkey is <code>{hotkey}</code>.
