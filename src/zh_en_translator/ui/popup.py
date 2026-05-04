@@ -198,39 +198,7 @@ class TranslatorPopup(QWidget):
 
         layout.addLayout(header)
 
-        # ── Pinyin label ────────────────────────────────────────────────
-        self._pinyin_label = QLabel("")
-        self._pinyin_label.setObjectName("pinyinLabel")
-        self._pinyin_label.setWordWrap(True)
-        self._pinyin_label.setVisible(False)
-        layout.addWidget(self._pinyin_label)
-
-        # ── Source text ─────────────────────────────────────────────────
-        source_row = QHBoxLayout()
-        source_row.setSpacing(6)
-
-        self.text_display = QTextEdit()
-        self.text_display.setPlainText(self.captured_text)
-        self.text_display.setReadOnly(False)
-        self.text_display.setFrameShape(QFrame.Shape.NoFrame)
-        self.text_display.setMaximumHeight(60)
-        self.text_display.installEventFilter(self) # For Ctrl+Enter
-        source_row.addWidget(self.text_display, 1)
-
-        self.btn_retranslate = QPushButton("↺")
-        self.btn_retranslate.setFixedSize(28, 28)
-        self.btn_retranslate.setToolTip("Retranslate (Ctrl+Enter)")
-        self.btn_retranslate.clicked.connect(self._retranslate)
-        source_row.addWidget(self.btn_retranslate)
-
-        layout.addLayout(source_row)
-
-        # ── Divider ─────────────────────────────────────────────────────
-        self._sep = QFrame()
-        self._sep.setFrameShape(QFrame.Shape.HLine)
-        layout.addWidget(self._sep)
-
-        # ── Translation text ────────────────────────────────────────────
+        # ── Translation text (always visible) ──────────────────────────
         self.translation_label = QLabel("Translating…")
         self.translation_label.setWordWrap(True)
         self.translation_label.setAlignment(
@@ -247,11 +215,42 @@ class TranslatorPopup(QWidget):
         self.translation_label.setFont(font)
         layout.addWidget(self.translation_label)
 
-        # ── Collapsible Details ─────────────────────────────────────────
-        self._details_toggle = QPushButton("▼ Details")
+        # ── Collapsible: Original text ───────────────────────────────────
+        self._btn_original_toggle = QPushButton("\u25b6  Original text")
+        self._btn_original_toggle.setCheckable(True)
+        self._btn_original_toggle.setChecked(False)
+        self._btn_original_toggle.clicked.connect(self._toggle_original)
+        layout.addWidget(self._btn_original_toggle)
+
+        self._original_area = QWidget()
+        self._original_area.setVisible(False)
+        orig_layout = QVBoxLayout(self._original_area)
+        orig_layout.setContentsMargins(0, 2, 0, 0)
+        orig_layout.setSpacing(4)
+
+        self._pinyin_label = QLabel("")
+        self._pinyin_label.setObjectName("pinyinLabel")
+        self._pinyin_label.setWordWrap(True)
+        self._pinyin_label.setVisible(False)
+        orig_layout.addWidget(self._pinyin_label)
+
+        self.text_display = QTextEdit()
+        self.text_display.setPlainText(self.captured_text)
+        self.text_display.setReadOnly(True)
+        self.text_display.setFrameShape(QFrame.Shape.NoFrame)
+        self.text_display.setMaximumHeight(60)
+        orig_layout.addWidget(self.text_display)
+
+        self._sep = QFrame()
+        self._sep.setFrameShape(QFrame.Shape.HLine)
+        orig_layout.addWidget(self._sep)
+
+        layout.addWidget(self._original_area)
+
+        # ── Collapsible: Details ─────────────────────────────────────────
+        self._details_toggle = QPushButton("\u25b6  Details")
         self._details_toggle.setCheckable(True)
         self._details_toggle.setChecked(False)
-        self._details_toggle.setFixedWidth(84)
         self._details_toggle.clicked.connect(self._toggle_details)
         layout.addWidget(self._details_toggle)
 
@@ -261,7 +260,10 @@ class TranslatorPopup(QWidget):
         self._details_area.setMaximumHeight(0)  # Collapsed by default
         self._details_area.setVisible(False)
 
-        self._details_content = QLabel("Word-by-word breakdown...")
+        self._details_content = QLabel(
+            "CC-CEDICT not installed \u2014 word-by-word breakdown unavailable.\n"
+            "Install via Preferences \u203a Lookup &amp; OCR to enable this feature."
+        )
         self._details_content.setWordWrap(True)
         self._details_content.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
         self._details_content.setAlignment(Qt.AlignmentFlag.AlignTop | Qt.AlignmentFlag.AlignLeft)
@@ -308,16 +310,8 @@ class TranslatorPopup(QWidget):
 
         self.setLayout(layout)
         self._setup_accessibility()
-        self.resize(420, 180)
-
-    def eventFilter(self, obj, event):
-        if obj is self.text_display and event.type() == event.Type.KeyPress:
-            if event.key() in (Qt.Key.Key_Return, Qt.Key.Key_Enter) and (
-                event.modifiers() & Qt.KeyboardModifier.ControlModifier
-            ):
-                self._retranslate()
-                return True
-        return super().eventFilter(obj, event)
+        self.setMinimumWidth(380)
+        self.resize(400, 120)
 
     def _setup_accessibility(self):
         self._pinyin_label.setAccessibleName("Pinyin romanisation")
@@ -332,7 +326,7 @@ class TranslatorPopup(QWidget):
         self.btn_pin.setAccessibleDescription("Toggle keep-open mode for this popup")
         self.btn_close.setAccessibleName("Close")
         self.btn_lang_settings.setAccessibleDescription("Open Windows language settings to install Chinese OCR pack")
-        self.text_display.setAccessibleDescription("Edit the Chinese source text to retranslate")
+        self.text_display.setAccessibleDescription("Chinese source text")
         self.translation_label.setAccessibleDescription("English translation of the source text")
         self._pinyin_label.setAccessibleDescription("Pinyin romanisation of the source text")
         self.btn_pin_sidebar.setAccessibleDescription(
@@ -418,12 +412,6 @@ class TranslatorPopup(QWidget):
         self.btn_close.setStyleSheet(_hdr)
         self._btn_help.setStyleSheet(_hdr)
 
-        # Retranslate button style
-        self.btn_retranslate.setStyleSheet(f"""
-            QPushButton {{ border-radius: 14px; background: {palette.btn_bg}; border: none; font-size: 12pt; }}
-            QPushButton:hover {{ background: {palette.btn_hover}; }}
-        """)
-
         # Divider color
         self._sep.setStyleSheet(f"border: none; border-top: 1px solid {palette.border};")
 
@@ -432,11 +420,15 @@ class TranslatorPopup(QWidget):
         text_palette.setColor(text_palette.ColorRole.Text, QColor(palette.text))
         self.text_display.setPalette(text_palette)
 
-        # Details toggle style
-        self._details_toggle.setStyleSheet(f"""
-            QPushButton {{ font-size: 9pt; padding: 2px 8px; border-radius: 10px; background: {palette.btn_bg}; border: none; }}
-            QPushButton:hover {{ background: {palette.btn_hover}; }}
-        """)
+        # Collapsible section toggle style (shared by Original text + Details)
+        _toggle_style = (
+            f"QPushButton {{ font-size: 9pt; padding: 2px 8px; border-radius: 10px;"
+            f" background: transparent; border: none; color: {palette.muted};"
+            f" text-align: left; }}"
+            f"QPushButton:hover {{ background: {palette.btn_hover}; color: {palette.text}; }}"
+        )
+        self._btn_original_toggle.setStyleSheet(_toggle_style)
+        self._details_toggle.setStyleSheet(_toggle_style)
 
     def _apply_config(self, config):
         if config is None:
@@ -517,16 +509,6 @@ class TranslatorPopup(QWidget):
         self._loading_timer.start()
         self._start_translation()
 
-    def _retranslate(self):
-        new_text = self.text_display.toPlainText().strip()
-        if not new_text:
-            return
-        self.captured_text = new_text
-        self.translation_label.setText("Translating…")
-        self._loading_timer.start()
-        self._start_translation()
-        self._start_pinyin(new_text)
-
     def _on_translation_ready(self, text: str):
         if self._dismissed:
             return
@@ -540,7 +522,7 @@ class TranslatorPopup(QWidget):
 
         self.translation_label.adjustSize()
         needed_h = (self.layout().sizeHint().height() + 20)
-        self.resize(self.width(), min(520, max(180, needed_h)))
+        self.resize(self.width(), min(520, max(100, needed_h)))
 
         is_real = not text.startswith("⚠") and text != "Translating…"
         self.btn_copy.setEnabled(is_real)
@@ -589,17 +571,33 @@ class TranslatorPopup(QWidget):
         )
         QToolTip.showText(QCursor.pos(), tip, self)
 
+    def _toggle_original(self, checked: bool):
+        self._btn_original_toggle.setText(
+            "\u25bc  Original text" if checked else "\u25b6  Original text"
+        )
+        self._original_area.setVisible(checked)
+        needed_h = self.layout().sizeHint().height() + 20
+        self.resize(self.width(), min(520, max(100, needed_h)))
+
     def _toggle_details(self, checked: bool):
-        self._details_toggle.setText("▲ Details" if checked else "▼ Details")
+        self._details_toggle.setText(
+            "\u25bc  Details" if checked else "\u25b6  Details"
+        )
         self._details_area.setVisible(checked)
         self._details_area.setMaximumHeight(150 if checked else 0)
         if checked:
             self._update_details()
         needed_h = self.layout().sizeHint().height() + 20
-        self.resize(self.width(), min(520, max(180, needed_h)))
+        self.resize(self.width(), min(520, max(100, needed_h)))
 
     def _update_details(self):
-        if not self.dictionary or not self.captured_text:
+        if not self.dictionary:
+            self._details_content.setText(
+                "CC-CEDICT not installed \u2014 word-by-word breakdown unavailable.\n"
+                "Install via Preferences \u203a Lookup &amp; OCR to enable this feature."
+            )
+            return
+        if not self.captured_text:
             return
         try:
             from zh_en_translator.engines import pipeline
