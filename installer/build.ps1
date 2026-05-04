@@ -152,6 +152,54 @@ Set-Location $RepoRoot
 Write-Step "Working directory: $RepoRoot"
 
 # ---------------------------------------------------------------------------
+# Pre-flight -- Validate build script before any real work begins.
+#
+# Runs two checks that complement each other:
+#   1. AST parse  -- catches syntax errors (what Parser::ParseFile detects).
+#   2. Runtime type checks -- catches errors the AST parser cannot detect,
+#      e.g. a Join-Path call receiving an Object[] instead of a String
+#      due to a trailing comma inside an @() array literal.
+#
+# Exits immediately with a clear error if either check fails, so problems
+# are caught before the script modifies files, bumps the version, or pushes.
+# ---------------------------------------------------------------------------
+Write-Step "Pre-flight: Validating build script"
+
+# 1. AST parse check
+$_PfErrors = $null
+[System.Management.Automation.Language.Parser]::ParseFile(
+    $PSCommandPath, [ref]$null, [ref]$_PfErrors
+) | Out-Null
+if ($_PfErrors.Count -gt 0) {
+    Write-Fail "build.ps1 has parse errors -- fix before running:"
+    $_PfErrors | ForEach-Object {
+        Write-Host "  Line $($_.Extent.StartLineNumber): $($_.Message)" -ForegroundColor Red
+    }
+    exit 1
+}
+Write-Ok "Syntax check passed"
+
+# 2. Runtime type checks
+# Construct the .iss path array the same way Step 1.6 does and verify
+# every element is a plain String. A trailing comma before a Join-Path call
+# inside @() silently passes the next expression as an extra argument,
+# turning the element into an Object[] -- valid syntax, fatal at runtime.
+$_PfIssPaths = @(
+    (Join-Path $PSScriptRoot "zh-en-translator.iss"),
+    (Join-Path $PSScriptRoot "zh-en-translator-lite.iss")
+)
+$_PfTypeError = $false
+foreach ($_PfPath in $_PfIssPaths) {
+    if ($_PfPath -isnot [string]) {
+        Write-Fail ("Pre-flight: IssPaths element is [{0}], expected [String]." -f $_PfPath.GetType().Name)
+        Write-Host "    Check Join-Path array construction in Step 1.6 -- wrap each call in (...)." -ForegroundColor Yellow
+        $_PfTypeError = $true
+    }
+}
+if ($_PfTypeError) { exit 1 }
+Write-Ok "Runtime type checks passed"
+
+# ---------------------------------------------------------------------------
 # Step 0 -- Verify Python version is 3.11.x
 # ---------------------------------------------------------------------------
 Write-Step "Step 0: Checking Python version"
