@@ -69,6 +69,8 @@ Source: "tesseract-bundle\*"; DestDir: "{app}\tesseract"; Flags: ignoreversion r
 Source: "cedict-bundle\cedict_ts.u8"; DestDir: "{userappdata}\zh-en-translator"; Flags: ignoreversion; Check: BundleExists('cedict-bundle\cedict_ts.u8')
 ; Bundled Argos zh->en model (pre-populated packages dir)
 Source: "argos-bundle\*"; DestDir: "{userappdata}\argos-translate\packages"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: BundleDirExists('argos-bundle')
+; Bundled Argos en->zh model (back-translation quality check)
+Source: "argos-en-zh-bundle\*"; DestDir: "{userappdata}\argos-translate\packages"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: BundleDirExists('argos-en-zh-bundle')
 
 [Icons]
 ; Start Menu shortcut

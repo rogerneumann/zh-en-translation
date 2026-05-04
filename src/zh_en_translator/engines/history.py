@@ -11,10 +11,13 @@ from typing import TypedDict
 
 logger = logging.getLogger(__name__)
 
-class HistoryEntry(TypedDict):
-    source: str
-    translation: str
-    timestamp: str
+class HistoryEntry(TypedDict, total=False):
+    source: str           # required
+    translation: str      # required
+    timestamp: str        # required
+    back_translation: str # optional — populated after back-translation completes
+    confidence: float     # optional — 0.0-1.0 confidence score
+    bt_engine: str        # optional — engine used for back-translation
 
 class HistoryManager:
     """Manages a rotating list of the last 20 translations."""
@@ -74,6 +77,19 @@ class HistoryManager:
 
         self.save_history(history)
         return history
+
+    def update_entry(self, timestamp: str, **fields) -> None:
+        """Update an existing history entry in-place by its timestamp key.
+
+        Used to add back-translation results after the main translation entry
+        has already been written. Silently does nothing if no entry matches.
+        """
+        history = self.load_history()
+        for entry in history:
+            if entry.get("timestamp") == timestamp:
+                entry.update(fields)
+                self.save_history(history)
+                return
 
     def clear_history(self) -> None:
         """Wipe the history file."""

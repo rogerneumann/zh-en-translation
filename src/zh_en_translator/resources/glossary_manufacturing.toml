@@ -165,6 +165,25 @@
 "交货期" = "delivery time / lead time"
 "提货" = "pickup / collection"
 
+[maintenance]
+"水路" = "water line"
+"堵塞" = "blockage"
+"疏通" = "clear the blockage"
+"拆机点检" = "disassemble and inspect"
+"拆机" = "disassemble the unit"
+"点检" = "routine inspection"
+"功能异常" = "functional abnormality"
+"检修" = "service / overhaul"
+"维修" = "repair / maintenance"
+"保养" = "preventive maintenance"
+"停机" = "downtime"
+"报修" = "report for repair"
+"备件" = "spare part"
+"故障" = "fault / malfunction"
+"异常" = "abnormality"
+"水路堵塞" = "water line blockage"
+"拆机检查" = "disassemble for inspection"
+
 [business]
 "成本" = "cost"
 "价格" = "price"

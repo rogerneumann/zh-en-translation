@@ -603,6 +603,51 @@ print("ERROR: installed pack dir not found", file=sys.stderr); sys.exit(1)
 }
 
 # ---------------------------------------------------------------------------
+# Step 2.7b -- Download Argos en->zh model for bundling (back-translation)
+# ---------------------------------------------------------------------------
+Write-Step "Step 2.7b: Bundling Argos en->zh model (~100 MB)"
+$ArgosEnZhBundle = Join-Path $PSScriptRoot "argos-en-zh-bundle"
+if ((Test-Path $ArgosEnZhBundle) -and (Get-ChildItem $ArgosEnZhBundle -Recurse -Filter "model.bin" | Select-Object -First 1)) {
+    Write-Ok "argos-en-zh-bundle already exists -- skipping download"
+} else {
+    Write-Host "    Installing argostranslate and downloading en->zh pack..." -ForegroundColor Gray
+    pip install argostranslate --quiet
+    $ArgosEnZhScript = @'
+import sys, pathlib, shutil, argostranslate.package, argostranslate.settings
+
+argostranslate.package.update_package_index()
+avail = argostranslate.package.get_available_packages()
+pkg = next((p for p in avail if p.from_code == "en" and p.to_code == "zh"), None)
+if not pkg:
+    print("ERROR: en->zh pack not found", file=sys.stderr); sys.exit(1)
+print(f"Installing {pkg} ...")
+pkg.install()
+
+# Find installed pack dir
+for d in argostranslate.settings.package_dirs:
+    p = pathlib.Path(d)
+    if not p.exists(): continue
+    for sub in p.iterdir():
+        if sub.is_dir() and "en_zh" in sub.name and (sub / "sentencepiece.model").exists():
+            dest = pathlib.Path(sys.argv[1])
+            dest.mkdir(parents=True, exist_ok=True)
+            shutil.copytree(str(sub), str(dest / sub.name), dirs_exist_ok=True)
+            print(f"Copied {sub.name} -> {dest}")
+            sys.exit(0)
+print("ERROR: installed en->zh pack dir not found", file=sys.stderr); sys.exit(1)
+'@
+    $ArgosEnZhScriptPath = Join-Path $env:TEMP "bundle_argos_enzh.py"
+    $ArgosEnZhScript | Set-Content $ArgosEnZhScriptPath -Encoding UTF8
+    python $ArgosEnZhScriptPath $ArgosEnZhBundle
+    Remove-Item $ArgosEnZhScriptPath -Force -ErrorAction SilentlyContinue
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "    WARNING: Argos en->zh model download failed. Quality check will use cloud engines only." -ForegroundColor Yellow
+    } else {
+        Write-Ok "Argos en->zh bundle ready at: ${ArgosEnZhBundle}"
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Step 2.8 -- Pre-populate glossary database (multi-domain support)
 # ---------------------------------------------------------------------------
 Write-Step "Step 2.8: Pre-populating glossary database (4 domains, 1514 terms)"

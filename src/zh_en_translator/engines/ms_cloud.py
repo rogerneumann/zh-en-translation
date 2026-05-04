@@ -24,22 +24,31 @@ def is_configured(api_key: str) -> bool:
     return bool(api_key and api_key.strip())
 
 
-def translate_sentence(text: str, api_key: str, region: str = "") -> str | None:
+def translate_sentence(
+    text: str,
+    api_key: str,
+    region: str = "",
+    from_lang: str = "zh-Hans",
+    to_lang: str = "en",
+) -> str | None:
     """
-    Translate Chinese text to English via Azure Cognitive Services.
+    Translate text via Azure Cognitive Services.
 
     Returns the translated string, or None on any failure.
     This function is only called when the user has explicitly enabled cloud
-    translation — the caller is responsible for the enabled/key checks.
+    translation -- the caller is responsible for the enabled/key checks.
+
+    from_lang / to_lang default to zh-Hans -> en.
+    Pass from_lang="en", to_lang="zh-Hans" for back-translation.
     """
     if not text.strip():
         return None
 
     if not is_configured(api_key):
-        logger.warning("Azure Translator called without an API key — skipping")
+        logger.warning("Azure Translator called without an API key -- skipping")
         return None
 
-    url = f"{_ENDPOINT}?api-version={_API_VERSION}&from=zh-Hans&to=en"
+    url = f"{_ENDPOINT}?api-version={_API_VERSION}&from={from_lang}&to={to_lang}"
     body = json.dumps([{"text": text}]).encode("utf-8")
 
     headers = {

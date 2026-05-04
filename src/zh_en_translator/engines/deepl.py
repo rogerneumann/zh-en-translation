@@ -13,8 +13,17 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-def translate_with_deepl(text: str, config: Config) -> str:
-    """Translate text using DeepL API."""
+def translate_with_deepl(
+    text: str,
+    config: Config,
+    source_lang: str = "ZH",
+    target_lang: str = "EN-US",
+) -> str:
+    """Translate text using DeepL API.
+
+    source_lang / target_lang default to ZH -> EN-US.
+    Pass source_lang="EN", target_lang="ZH" for back-translation.
+    """
     if not config.deepl_enabled or not config.deepl_api_key:
         return "⚠ DeepL not configured."
 
@@ -28,8 +37,8 @@ def translate_with_deepl(text: str, config: Config) -> str:
     params = {
         "auth_key": api_key,
         "text": text,
-        "source_lang": "ZH",
-        "target_lang": "EN-US"
+        "source_lang": source_lang,
+        "target_lang": target_lang,
     }
 
     data = urllib.parse.urlencode(params).encode("utf-8")

@@ -98,6 +98,10 @@ class TranslatorSidebar(QWidget):
         self._loading_timer.setInterval(400)
         self._loading_timer.timeout.connect(self._animate_loading)
 
+        self._bt_worker = None
+        self._current_zh = ""
+        self._current_entry_ts = ""
+
         self._setup_ui()
         self._apply_styling()
         self._setup_accessibility()
@@ -147,6 +151,14 @@ class TranslatorSidebar(QWidget):
         self._update_dot.setStyleSheet("color: #F5A623; font-size: 10px;")
         self._update_dot.setVisible(False)
         header.addWidget(self._update_dot)
+
+        # Quality badge (back-translation confidence indicator)
+        self._quality_dot = QLabel("\u25cf")
+        self._quality_dot.setFixedSize(14, 14)
+        self._quality_dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._quality_dot.setStyleSheet("color: #9CA3AF; font-size: 10px;")
+        self._quality_dot.setVisible(False)
+        header.addWidget(self._quality_dot)
 
         self.btn_pin = QPushButton("\U0001f4cc")
         self.btn_pin.setCheckable(True)
@@ -261,9 +273,15 @@ class TranslatorSidebar(QWidget):
             _render_translation_html(translation) if not translation.startswith("⚠") else translation
         )
         self._indicator_colour = self.COLOUR_FRESH
-        self._history_manager.add_entry(source, translation)
+        history = self._history_manager.add_entry(source, translation)
+        self._current_zh = source
+        self._current_entry_ts = history[0].get("timestamp", "") if history else ""
         self._load_history_ui()
         self.expand()
+        if self._config and self._config.back_translation_enabled and not translation.startswith("⚠"):
+            self._start_back_translation(translation)
+        else:
+            self._quality_dot.setVisible(False)
 
     def set_translation_pending(self, source: str):
         self.source_label.setText(source)
@@ -277,9 +295,42 @@ class TranslatorSidebar(QWidget):
         )
         if not self._expanded:
             self._indicator_colour = self.COLOUR_FRESH
-        self._history_manager.add_entry(self.source_label.text(), translation)
+        source = self.source_label.text()
+        history = self._history_manager.add_entry(source, translation)
+        self._current_zh = source
+        self._current_entry_ts = history[0].get("timestamp", "") if history else ""
         self._load_history_ui()
         self.update()
+        if self._config and self._config.back_translation_enabled and not translation.startswith("⚠"):
+            self._start_back_translation(translation)
+        else:
+            self._quality_dot.setVisible(False)
+
+    def _start_back_translation(self, en_text: str) -> None:
+        from zh_en_translator.engines.back_translation import BackTranslationWorker
+        if self._bt_worker is not None:
+            self._bt_worker.back_translation_ready.disconnect()
+            self._bt_worker = None
+        self._quality_dot.setVisible(True)
+        self._quality_dot.setStyleSheet("color: #9CA3AF; font-size: 10px;")
+        self._quality_dot.setToolTip("Checking translation quality\u2026")
+        self._bt_worker = BackTranslationWorker(en_text, self._current_zh, self._config)
+        self._bt_worker.back_translation_ready.connect(self._on_back_translation_ready)
+        self._bt_worker.start()
+
+    def _on_back_translation_ready(
+        self, zh_back: str, confidence: float, colour: str, tooltip: str, engine: str
+    ) -> None:
+        self._bt_worker = None
+        self._quality_dot.setStyleSheet(f"color: {colour}; font-size: 10px;")
+        self._quality_dot.setToolTip(tooltip)
+        if self._current_entry_ts:
+            self._history_manager.update_entry(
+                self._current_entry_ts,
+                back_translation=zh_back,
+                confidence=confidence,
+                bt_engine=engine,
+            )
 
     def _on_link_activated(self, link: str):
         if not link.startswith("word:") or not self.dictionary:

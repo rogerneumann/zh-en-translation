@@ -66,6 +66,7 @@ class Config:
     traditional_to_simplified: bool = True
     clause_fallback_enabled: bool = True
     segmenter: str = "jieba"      # "jieba" | "pkuseg" | "hanlp" (future)
+    back_translation_enabled: bool = True  # quality check via reverse translation
 
     # [cloud]
     ms_translator_enabled: bool = False
@@ -141,6 +142,9 @@ def load_config(config_path: Path | None = None) -> Config:
             "translation", "clause_fallback_enabled", defaults.clause_fallback_enabled
         ),
         segmenter=_get("translation", "segmenter", defaults.segmenter),
+        back_translation_enabled=_get(
+            "translation", "back_translation_enabled", defaults.back_translation_enabled
+        ),
         ms_translator_enabled=_get(
             "cloud", "ms_translator_enabled", defaults.ms_translator_enabled
         ),
@@ -211,6 +215,7 @@ pinyin_max_chars = {cfg.pinyin_max_chars}
 traditional_to_simplified = {_toml_bool(cfg.traditional_to_simplified)}
 clause_fallback_enabled = {_toml_bool(cfg.clause_fallback_enabled)}
 segmenter = {_toml_str(cfg.segmenter)}
+back_translation_enabled = {_toml_bool(cfg.back_translation_enabled)}
 
 [cloud]
 ms_translator_enabled = {_toml_bool(cfg.ms_translator_enabled)}

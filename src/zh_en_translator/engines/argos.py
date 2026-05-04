@@ -13,13 +13,14 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 
-def _find_pack_dir() -> Path | None:
+def _find_pack_dir(from_code: str = "zh", to_code: str = "en") -> "Path | None":
     """
-    Locate the installed zh→en ctranslate2 pack directory.
+    Locate an installed ctranslate2 pack directory for the given language pair.
 
     Uses argostranslate.settings (which does NOT import stanza) to find the
     correct platform-specific packages directory.
     """
+    pair_tag = f"{from_code}_{to_code}"
     try:
         import argostranslate.settings
         package_dirs = argostranslate.settings.package_dirs
@@ -31,7 +32,7 @@ def _find_pack_dir() -> Path | None:
         if not pkg_path.exists():
             continue
         for d in pkg_path.iterdir():
-            if d.is_dir() and "zh_en" in d.name:
+            if d.is_dir() and pair_tag in d.name:
                 model_dir = d / "model"
                 spm_file = d / "sentencepiece.model"
                 if (model_dir / "model.bin").exists() and spm_file.exists():
@@ -40,8 +41,20 @@ def _find_pack_dir() -> Path | None:
 
 
 def is_available() -> bool:
-    """Return True if the zh→en pack and required libraries are present."""
-    if _find_pack_dir() is None:
+    """Return True if the zh->en pack and required libraries are present."""
+    if _find_pack_dir("zh", "en") is None:
+        return False
+    try:
+        import ctranslate2  # noqa: F401
+        import sentencepiece  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def is_en_zh_available() -> bool:
+    """Return True if the en->zh pack and required libraries are present."""
+    if _find_pack_dir("en", "zh") is None:
         return False
     try:
         import ctranslate2  # noqa: F401
@@ -53,7 +66,7 @@ def is_available() -> bool:
 
 def ensure_pack() -> bool:
     """
-    Ensure the zh→en pack is ready to use.
+    Ensure the zh->en pack is ready to use.
 
     Returns True immediately if already installed. Falls back to downloading
     via argostranslate.package (requires internet for one-time ~100 MB download).
@@ -79,21 +92,38 @@ def ensure_pack() -> bool:
         return False
 
 
-def translate_sentence(text: str) -> str | None:
+def ensure_en_zh_pack() -> bool:
     """
-    Translate Chinese text to English.
+    Ensure the en->zh pack is ready to use.
 
-    Uses ctranslate2 + sentencepiece directly — no stanza, no network calls.
-    Returns the translated string, or None on failure.
+    Returns True immediately if already installed. Falls back to downloading
+    via argostranslate.package (requires internet for one-time ~100 MB download).
     """
-    if not text.strip():
-        return None
+    if is_en_zh_available():
+        return True
 
-    pack_dir = _find_pack_dir()
-    if not pack_dir:
-        logger.debug("pack directory not found")
-        return None
+    try:
+        import argostranslate.package
 
+        argostranslate.package.update_package_index()
+        available = argostranslate.package.get_available_packages()
+        pkg = next(
+            (p for p in available if p.from_code == "en" and p.to_code == "zh"),
+            None,
+        )
+        if not pkg:
+            logger.warning("Argos en->zh pack not found in package index")
+            return False
+        path = pkg.download()
+        argostranslate.package.install_from_path(path)
+        return is_en_zh_available()
+    except Exception as exc:
+        logger.warning("Failed to download Argos en->zh pack: %s", exc)
+        return False
+
+
+def _run_argos(text: str, pack_dir: Path) -> "str | None":
+    """Run ctranslate2 + sentencepiece against a pack directory."""
     try:
         import ctranslate2
         import sentencepiece as spm
@@ -114,9 +144,7 @@ def translate_sentence(text: str) -> str | None:
         target_tokens = results[0].hypotheses[0]
 
         translation = sp_model.decode(target_tokens)
-        # Sentencepiece ▁ (U+2581) marks word boundaries; strip from decoded output
         translation = translation.replace("\u2581", " ").strip()
-        # Collapse any double-spaces left by the substitution
         while "  " in translation:
             translation = translation.replace("  ", " ")
         logger.debug("translation successful (length: %d chars)", len(translation))
@@ -127,6 +155,42 @@ def translate_sentence(text: str) -> str | None:
         logger.debug("exception: %s", e)
         logger.debug("traceback", exc_info=True)
         return None
+
+
+def translate_sentence(text: str) -> "str | None":
+    """
+    Translate Chinese text to English.
+
+    Uses ctranslate2 + sentencepiece directly -- no stanza, no network calls.
+    Returns the translated string, or None on failure.
+    """
+    if not text.strip():
+        return None
+
+    pack_dir = _find_pack_dir("zh", "en")
+    if not pack_dir:
+        logger.debug("zh->en pack directory not found")
+        return None
+
+    return _run_argos(text, pack_dir)
+
+
+def translate_en_to_zh(text: str) -> "str | None":
+    """
+    Translate English text to Chinese (simplified).
+
+    Uses ctranslate2 + sentencepiece directly -- no stanza, no network calls.
+    Returns the translated string, or None if the en->zh pack is not installed.
+    """
+    if not text.strip():
+        return None
+
+    pack_dir = _find_pack_dir("en", "zh")
+    if not pack_dir:
+        logger.debug("en->zh pack directory not found")
+        return None
+
+    return _run_argos(text, pack_dir)
 
 
 def split_into_clauses(text: str, max_clause_length: int = 60) -> list[str]:

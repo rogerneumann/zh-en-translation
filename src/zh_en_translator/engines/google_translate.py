@@ -16,19 +16,27 @@ logger = logging.getLogger(__name__)
 _API_URL = "https://translation.googleapis.com/language/translate/v2"
 
 
-def translate_with_google(text: str, config: Config) -> str:
+def translate_with_google(
+    text: str,
+    config: Config,
+    source: str = "zh-CN",
+    target: str = "en",
+) -> str:
     """Translate text using the Google Cloud Translation API (v2 Basic).
 
     Requires a GCP API key with the Cloud Translation API enabled.
     Pricing: $20 per 1M characters (500K chars/month free tier).
+
+    source / target default to zh-CN -> en.
+    Pass source="en", target="zh-CN" for back-translation.
     """
     if not config.google_translate_enabled or not config.google_translate_api_key:
         return "\u26a0 Google Translate not configured."
 
     payload = {
         "q": text,
-        "source": "zh-CN",
-        "target": "en",
+        "source": source,
+        "target": target,
         "format": "text",
     }
     url = f"{_API_URL}?key={urllib.parse.quote(config.google_translate_api_key, safe='')}"

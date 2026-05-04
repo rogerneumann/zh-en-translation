@@ -38,6 +38,20 @@ pos  = "n"
 note = "Complete laser head + driver board assembly."
 
 [[terms]]
+zh   = "拆机点检"
+en   = ["disassemble and inspect", "teardown inspection"]
+freq = 20
+pos  = "v"
+note = "Compound maintenance procedure: disassemble the unit then perform a formal inspection check. Must not be split."
+
+[[terms]]
+zh   = "功能异常"
+en   = ["functional abnormality", "functional fault", "abnormal function"]
+freq = 15
+pos  = "n"
+note = "Describes a unit whose functions are not operating normally. Keep as compound."
+
+[[terms]]
 zh   = "进能部门"
 en   = ["calibration department", "testing department", "energy input department"]
 freq = 15
@@ -268,6 +282,93 @@ en   = ["calibrate", "mark", "label"]
 freq = 8
 pos  = "v"
 note = "Short for 标定 (calibrate) or 标注 (annotate). Context determines meaning."
+
+[[terms]]
+zh   = "水路"
+en   = ["water line", "water channel", "water circuit"]
+freq = 15
+pos  = "n"
+note = "Fluid/coolant line in a machine or facility. Would be split as 水+路 by default."
+
+[[terms]]
+zh   = "拆机"
+en   = ["disassemble the unit", "take apart the machine"]
+freq = 15
+pos  = "v"
+note = "Disassemble a machine or device. Distinguish from bare 拆 (remove a component)."
+
+[[terms]]
+zh   = "点检"
+en   = ["routine inspection", "inspection check", "spot check"]
+freq = 12
+pos  = "v"
+note = "Formal scheduled inspection, typically as part of maintenance procedure."
+
+[[terms]]
+zh   = "堵塞"
+en   = ["blockage", "clog", "obstruction"]
+freq = 12
+pos  = "n"
+note = "Blockage in a line, pipe, or channel."
+
+[[terms]]
+zh   = "疏通"
+en   = ["clear", "unblock", "flush out"]
+freq = 12
+pos  = "v"
+note = "Clear a blockage — often paired with 水路 (unblock a water line)."
+
+[[terms]]
+zh   = "检修"
+en   = ["service", "overhaul", "maintenance inspection"]
+freq = 12
+pos  = "v"
+note = "Scheduled service or overhaul — more thorough than 点检."
+
+[[terms]]
+zh   = "维修"
+en   = ["repair", "maintenance", "fix"]
+freq = 12
+pos  = "v"
+
+[[terms]]
+zh   = "保养"
+en   = ["preventive maintenance", "upkeep", "service"]
+freq = 12
+pos  = "v"
+note = "Scheduled preventive maintenance, not breakdown repair."
+
+[[terms]]
+zh   = "停机"
+en   = ["downtime", "machine stop", "halt production"]
+freq = 12
+pos  = "v"
+note = "Machine or line stoppage, planned or unplanned."
+
+[[terms]]
+zh   = "报修"
+en   = ["report for repair", "submit a repair request"]
+freq = 12
+pos  = "v"
+
+[[terms]]
+zh   = "备件"
+en   = ["spare part", "replacement part"]
+freq = 12
+pos  = "n"
+
+[[terms]]
+zh   = "故障"
+en   = ["fault", "malfunction", "failure"]
+freq = 12
+pos  = "n"
+
+[[terms]]
+zh   = "异常"
+en   = ["abnormality", "anomaly", "abnormal condition"]
+freq = 12
+pos  = "n"
+note = "General abnormal condition. Often appears as 功能异常 (functional fault)."
 
 [[terms]]
 zh   = "拆"

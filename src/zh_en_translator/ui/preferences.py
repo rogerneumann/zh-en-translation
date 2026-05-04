@@ -6,7 +6,7 @@ import dataclasses
 
 import time as _time
 
-from PyQt6.QtCore import pyqtSignal, QThread, QTimer, QUrl
+from PyQt6.QtCore import pyqtSignal, Qt, QThread, QTimer, QUrl
 from PyQt6.QtGui import QColor, QDesktopServices
 from PyQt6.QtWidgets import (
     QDialog,
@@ -85,6 +85,215 @@ _REINSTALL_STYLE = (
     "border: 1px solid rgba(0,0,0,0.08); border-radius: 12px; padding: 5px 15px; }"
     "QPushButton:hover { color: #333; background: rgba(0,0,0,0.06); }"
 )
+
+# Canonical modifier order for pynput hotkey strings
+_MOD_ORDER = {"<ctrl>": 0, "<alt>": 1, "<shift>": 2, "<cmd>": 3}
+
+
+def _fmt_pynput_hotkey(hotkey: str) -> str:
+    """Convert pynput format '<ctrl>+<shift>+t' to readable 'Ctrl+Shift+T'."""
+    if not hotkey:
+        return ""
+    parts = hotkey.split("+")
+    out = []
+    for p in parts:
+        p = p.strip().strip("<>")
+        out.append(p.capitalize() if len(p) > 1 else p.upper())
+    return "+".join(out)
+
+
+class _HotkeyRecorderWidget(QPushButton):
+    """Click to enter recording mode, then hold the desired key combination.
+
+    When all keys are released the combination is stored in pynput format,
+    e.g. '<ctrl>+<shift>+t'. Press Escape to cancel without changing the hotkey.
+    """
+
+    hotkey_changed = pyqtSignal(str)
+
+    # Built lazily on first use so Qt is fully initialised
+    _QT_MOD_MAP: "dict | None" = None
+    _QT_KEY_MAP: "dict | None" = None
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._hotkey = ""
+        self._recording = False
+        self._held_keys: set = set()
+        self._modifiers: set = set()
+        self._main_key: "str | None" = None
+        self._release_timer = QTimer(self)
+        self._release_timer.setSingleShot(True)
+        self._release_timer.setInterval(120)
+        self._release_timer.timeout.connect(self._finalize)
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
+        self._update_display()
+        self.clicked.connect(self._start_recording)
+
+    @classmethod
+    def _ensure_maps(cls) -> None:
+        if cls._QT_MOD_MAP is not None:
+            return
+        K = Qt.Key
+        cls._QT_MOD_MAP = {
+            K.Key_Control: "<ctrl>",
+            K.Key_Alt:     "<alt>",
+            K.Key_Shift:   "<shift>",
+            K.Key_Meta:    "<cmd>",
+        }
+        cls._QT_KEY_MAP = {
+            K.Key_F1:  "<f1>",  K.Key_F2:  "<f2>",  K.Key_F3:  "<f3>",
+            K.Key_F4:  "<f4>",  K.Key_F5:  "<f5>",  K.Key_F6:  "<f6>",
+            K.Key_F7:  "<f7>",  K.Key_F8:  "<f8>",  K.Key_F9:  "<f9>",
+            K.Key_F10: "<f10>", K.Key_F11: "<f11>", K.Key_F12: "<f12>",
+            K.Key_Space:     "<space>",
+            K.Key_Tab:       "<tab>",
+            K.Key_Return:    "<enter>",
+            K.Key_Enter:     "<enter>",
+            K.Key_Backspace: "<backspace>",
+            K.Key_Delete:    "<delete>",
+            K.Key_Insert:    "<insert>",
+            K.Key_Home:      "<home>",
+            K.Key_End:       "<end>",
+            K.Key_PageUp:    "<page_up>",
+            K.Key_PageDown:  "<page_down>",
+            K.Key_Up:        "<up>",
+            K.Key_Down:      "<down>",
+            K.Key_Left:      "<left>",
+            K.Key_Right:     "<right>",
+        }
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def set_hotkey(self, hotkey: str) -> None:
+        self._hotkey = hotkey
+        self._update_display()
+
+    def get_hotkey(self) -> str:
+        return self._hotkey
+
+    # ------------------------------------------------------------------
+    # Recording flow
+    # ------------------------------------------------------------------
+
+    def _start_recording(self) -> None:
+        self._ensure_maps()
+        self._recording = True
+        self._held_keys.clear()
+        self._modifiers.clear()
+        self._main_key = None
+        self.setText("Press hotkey combination...")
+        self.setStyleSheet(
+            "QPushButton { background: #FFF3CD; border: 2px solid #FFC107; "
+            "border-radius: 6px; padding: 4px 10px; font-style: italic; color: #92400E; }"
+        )
+        self.grabKeyboard()
+
+    def _cancel_recording(self) -> None:
+        if not self._recording:
+            return
+        self._recording = False
+        self._release_timer.stop()
+        self.releaseKeyboard()
+        self._update_display()
+
+    def _finalize(self) -> None:
+        if not self._main_key:
+            self._cancel_recording()
+            return
+        mods = sorted(self._modifiers, key=lambda m: _MOD_ORDER.get(m, 99))
+        self._hotkey = "+".join(mods + [self._main_key])
+        self._recording = False
+        self.releaseKeyboard()
+        self._update_display()
+        self.hotkey_changed.emit(self._hotkey)
+
+    # ------------------------------------------------------------------
+    # Qt event overrides
+    # ------------------------------------------------------------------
+
+    def keyPressEvent(self, event) -> None:
+        if not self._recording:
+            super().keyPressEvent(event)
+            return
+        if event.isAutoRepeat():
+            event.accept()
+            return
+
+        try:
+            qt_key = Qt.Key(event.key())
+        except ValueError:
+            event.accept()
+            return
+
+        if qt_key == Qt.Key.Key_Escape:
+            self._cancel_recording()
+            event.accept()
+            return
+
+        self._release_timer.stop()
+        self._held_keys.add(event.key())
+
+        if qt_key in self._QT_MOD_MAP:
+            self._modifiers.add(self._QT_MOD_MAP[qt_key])
+        elif self._main_key is None:
+            if qt_key in self._QT_KEY_MAP:
+                self._main_key = self._QT_KEY_MAP[qt_key]
+            else:
+                text = event.text().lower()
+                if text and text.isprintable() and len(text) == 1:
+                    self._main_key = text
+                else:
+                    self._held_keys.discard(event.key())
+                    event.accept()
+                    return
+
+        self._update_recording_display()
+        event.accept()
+
+    def keyReleaseEvent(self, event) -> None:
+        if not self._recording:
+            super().keyReleaseEvent(event)
+            return
+        if event.isAutoRepeat():
+            event.accept()
+            return
+
+        self._held_keys.discard(event.key())
+
+        if not self._held_keys and self._main_key:
+            self._release_timer.start()
+
+        event.accept()
+
+    def focusOutEvent(self, event) -> None:
+        self._cancel_recording()
+        super().focusOutEvent(event)
+
+    # ------------------------------------------------------------------
+    # Display helpers
+    # ------------------------------------------------------------------
+
+    def _update_recording_display(self) -> None:
+        mods = sorted(self._modifiers, key=lambda m: _MOD_ORDER.get(m, 99))
+        parts = [_fmt_pynput_hotkey(m) for m in mods]
+        if self._main_key:
+            parts.append(_fmt_pynput_hotkey(self._main_key))
+        display = " + ".join(parts)
+        self.setText((display + "  ...") if display else "Press hotkey combination...")
+
+    def _update_display(self) -> None:
+        if self._hotkey:
+            self.setText(_fmt_pynput_hotkey(self._hotkey))
+        else:
+            self.setText("Click to record hotkey...")
+        self.setStyleSheet(
+            "QPushButton { border: 1px solid rgba(0,0,0,0.12); border-radius: 6px; "
+            "padding: 4px 10px; text-align: left; font-style: normal; color: inherit; }"
+            "QPushButton:hover { background: rgba(0,0,0,0.06); }"
+        )
 
 
 class _InstallMonitor:
@@ -206,6 +415,37 @@ class _ColorSwatchButton(QPushButton):
         self._update_appearance()
 
 
+class _EnZhArgosDownloadWorker(QThread):
+    """Background thread: downloads and installs the Argos en->zh translation pack."""
+
+    progress = pyqtSignal(str)   # status message
+    finished = pyqtSignal(bool)  # True = success
+
+    def run(self):
+        try:
+            import argostranslate.package as pkg
+            self.progress.emit("Updating package index\u2026")
+            pkg.update_package_index()
+            available = pkg.get_available_packages()
+            en_zh = next(
+                (p for p in available if p.from_code == "en" and p.to_code == "zh"),
+                None,
+            )
+            if en_zh is None:
+                self.progress.emit("en->zh pack not found in Argos index")
+                self.finished.emit(False)
+                return
+            self.progress.emit(f"Downloading model (version {en_zh.package_version})\u2026")
+            en_zh.install()
+            self.finished.emit(True)
+        except ImportError:
+            self.progress.emit("argostranslate not found \u2014 app may need reinstalling")
+            self.finished.emit(False)
+        except Exception as exc:
+            self.progress.emit(f"Error: {exc}")
+            self.finished.emit(False)
+
+
 class _ArgosDownloadWorker(QThread):
     """Background thread: downloads and installs the Argos zh->en translation pack."""
 
@@ -261,6 +501,7 @@ class PreferencesDialog(QDialog):
 
         self._install_monitor: '_InstallMonitor | None' = None
         self._argos_worker: '_ArgosDownloadWorker | None' = None
+        self._argos_enzh_worker: '_EnZhArgosDownloadWorker | None' = None
         self._setup_ui()
         self._load_config_into_ui()
 
@@ -308,11 +549,15 @@ class PreferencesDialog(QDialog):
 
         hotkey_group = QGroupBox("Global Hotkey")
         hotkey_layout = QVBoxLayout(hotkey_group)
-        self._hotkey_edit = QLineEdit()
-        self._hotkey_edit.setPlaceholderText("<ctrl>+<shift>+t")
-        hotkey_layout.addWidget(self._hotkey_edit)
-        hint = QLabel("Use pynput angle-bracket syntax, e.g. <ctrl>+<shift>+t")
+        self._hotkey_recorder = _HotkeyRecorderWidget()
+        self._hotkey_recorder.hotkey_changed.connect(self._mark_dirty)
+        hotkey_layout.addWidget(self._hotkey_recorder)
+        hint = QLabel(
+            "Click the button above, then hold your key combination (e.g. Ctrl+Shift+T). "
+            "Release all keys to confirm. Press Esc to cancel."
+        )
         hint.setStyleSheet("color: gray; font-size: 9pt;")
+        hint.setWordWrap(True)
         hotkey_layout.addWidget(hint)
         layout.addWidget(hotkey_group)
 
@@ -348,6 +593,19 @@ class PreferencesDialog(QDialog):
         )
         engine_layout.addWidget(self._clause_fallback_check)
         layout.addWidget(engine_group)
+
+        quality_group = QGroupBox("Translation Quality")
+        quality_layout = QVBoxLayout(quality_group)
+        self._bt_check = QCheckBox("Enable quality check (back-translation)")
+        quality_layout.addWidget(self._bt_check)
+        quality_hint = QLabel(
+            "Translates output back to Chinese to verify accuracy. "
+            "Runs in the background \u2014 requires a cloud engine or the back-translation model."
+        )
+        quality_hint.setWordWrap(True)
+        quality_hint.setStyleSheet("color: #666; font-size: 9pt;")
+        quality_layout.addWidget(quality_hint)
+        layout.addWidget(quality_group)
 
         update_group = QGroupBox("Updates && Startup")
         update_layout = QVBoxLayout(update_group)
@@ -580,6 +838,41 @@ class PreferencesDialog(QDialog):
         argos_layout.addWidget(self._argos_status_lbl)
 
         layout.addWidget(argos_group)
+
+        from zh_en_translator.engines.argos import is_en_zh_available as _enzh_available
+        _enzh_installed = _enzh_available()
+
+        enzh_group = QGroupBox("Back-translation Model (en\u2192zh)")
+        enzh_layout = QVBoxLayout(enzh_group)
+        if _enzh_installed:
+            self._enzh_static_lbl = QLabel("Argos en\u2192zh model: Installed")
+            self._enzh_static_lbl.setStyleSheet("color: #1a7a1a; font-weight: bold;")
+        else:
+            self._enzh_static_lbl = QLabel(
+                "Back-translation model not installed.\n"
+                "Download to enable offline quality checking (~100 MB).\n"
+                "Cloud engines (DeepL / Google / Azure) work without this model."
+            )
+            self._enzh_static_lbl.setStyleSheet("color: #b85c00;")
+        self._enzh_static_lbl.setWordWrap(True)
+        enzh_layout.addWidget(self._enzh_static_lbl)
+
+        enzh_btn_row = QHBoxLayout()
+        self._btn_enzh_download = QPushButton(
+            "Re-download Model" if _enzh_installed else "Download Back-translation Model (~100 MB)"
+        )
+        if _enzh_installed:
+            self._btn_enzh_download.setStyleSheet(_REINSTALL_STYLE)
+        self._btn_enzh_download.clicked.connect(self._do_enzh_download)
+        enzh_btn_row.addWidget(self._btn_enzh_download)
+        enzh_btn_row.addStretch()
+        enzh_layout.addLayout(enzh_btn_row)
+
+        self._enzh_status_lbl = QLabel()
+        self._enzh_status_lbl.setWordWrap(True)
+        self._enzh_status_lbl.setVisible(False)
+        enzh_layout.addWidget(self._enzh_status_lbl)
+        layout.addWidget(enzh_group)
 
         ocr_group = QGroupBox("OCR Engine")
         ocr_layout = QVBoxLayout(ocr_group)
@@ -969,7 +1262,7 @@ class PreferencesDialog(QDialog):
     def _load_config_into_ui(self):
         cfg = self.config
         # General tab
-        self._hotkey_edit.setText(cfg.hotkey)
+        self._hotkey_recorder.set_hotkey(cfg.hotkey)
         (self._mode_sidebar if cfg.mode == "sidebar" else self._mode_popup).setChecked(True)
         self._trad_to_simp_check.setChecked(cfg.traditional_to_simplified)
         self._auto_update_check.setChecked(cfg.auto_check_updates)
@@ -979,6 +1272,7 @@ class PreferencesDialog(QDialog):
         idx = self._segmenter_combo.findData(cfg.segmenter)
         self._segmenter_combo.setCurrentIndex(idx if idx >= 0 else 0)
         self._clause_fallback_check.setChecked(cfg.clause_fallback_enabled)
+        self._bt_check.setChecked(cfg.back_translation_enabled)
         # Display tab
         idx = self._theme_combo.findData(cfg.theme)
         self._theme_combo.setCurrentIndex(idx if idx >= 0 else 0)
@@ -1024,7 +1318,7 @@ class PreferencesDialog(QDialog):
 
     def _collect_config(self) -> Config:
         return Config(
-            hotkey=self._hotkey_edit.text(),
+            hotkey=self._hotkey_recorder.get_hotkey(),
             mode="sidebar" if self._mode_sidebar.isChecked() else "popup",
             startup=self._startup_check.isChecked(),
             auto_check_updates=self._auto_update_check.isChecked(),
@@ -1047,6 +1341,7 @@ class PreferencesDialog(QDialog):
             pinyin_max_chars=self._pinyin_max_spin.value(),
             traditional_to_simplified=self._trad_to_simp_check.isChecked(),
             clause_fallback_enabled=self._clause_fallback_check.isChecked(),
+            back_translation_enabled=self._bt_check.isChecked(),
             segmenter=self._segmenter_combo.currentData() or "jieba",
             ms_translator_enabled=self._ms_enabled_check.isChecked(),
             ms_translator_api_key=self._ms_api_key_edit.text(),
@@ -1089,13 +1384,48 @@ class PreferencesDialog(QDialog):
             self._btn_argos_download.setStyleSheet(_REINSTALL_STYLE)
             self._argos_static_lbl.setText("Argos zh\u2192en model: Installed")
             self._argos_static_lbl.setStyleSheet("color: #1a7a1a; font-weight: bold;")
-            self._argos_status_lbl.setText("\u2713  Model installed — restart the app to use offline translation")
+            self._argos_status_lbl.setText("\u2713  Model installed \u2014 restart the app to use offline translation")
             self._argos_status_lbl.setStyleSheet("color: #1a7a1a; font-weight: bold;")
         else:
             self._btn_argos_download.setText("Retry Download")
             self._btn_argos_download.setStyleSheet("")
             self._argos_status_lbl.setStyleSheet("color: #b85c00; font-weight: bold;")
             # keep whatever error message was last emitted via _on_argos_progress
+
+    def _do_enzh_download(self) -> None:
+        """Start Argos en->zh model download in a background thread."""
+        if self._argos_enzh_worker is not None:
+            return  # already running
+        self._btn_enzh_download.setEnabled(False)
+        self._btn_enzh_download.setText("Downloading\u2026")
+        self._btn_enzh_download.setStyleSheet("")
+        self._enzh_status_lbl.setVisible(True)
+        self._enzh_status_lbl.setStyleSheet("color: #555;")
+        self._enzh_status_lbl.setText("\u29d6  Starting download\u2026")
+
+        self._argos_enzh_worker = _EnZhArgosDownloadWorker()
+        self._argos_enzh_worker.progress.connect(self._on_enzh_progress)
+        self._argos_enzh_worker.finished.connect(self._on_enzh_done)
+        self._argos_enzh_worker.start()
+
+    def _on_enzh_progress(self, msg: str) -> None:
+        self._enzh_status_lbl.setText(f"\u29d6  {msg}")
+
+    def _on_enzh_done(self, success: bool) -> None:
+        self._argos_enzh_worker = None
+        self._btn_enzh_download.setEnabled(True)
+        if success:
+            self._btn_enzh_download.setText("Re-download Model")
+            self._btn_enzh_download.setStyleSheet(_REINSTALL_STYLE)
+            self._enzh_static_lbl.setText("Argos en\u2192zh model: Installed")
+            self._enzh_static_lbl.setStyleSheet("color: #1a7a1a; font-weight: bold;")
+            self._enzh_status_lbl.setText("\u2713  Model installed \u2014 restart the app to use quality checking offline")
+            self._enzh_status_lbl.setStyleSheet("color: #1a7a1a; font-weight: bold;")
+        else:
+            self._btn_enzh_download.setText("Retry Download")
+            self._btn_enzh_download.setStyleSheet("")
+            self._enzh_status_lbl.setStyleSheet("color: #b85c00; font-weight: bold;")
+            # keep whatever error message was last emitted via _on_enzh_progress
 
     def _do_install(self, trigger_btn: QPushButton, status_lbl: QLabel) -> None:
         """Launch setup_elevated.ps1 elevated and start the spinner monitor."""
@@ -1237,16 +1567,7 @@ class PreferencesDialog(QDialog):
         browser.anchorClicked.connect(self._on_help_link)
         browser.setStyleSheet("QTextBrowser { border: none; background: transparent; }")
 
-        # Format the configured hotkey into a readable form, e.g. <ctrl>+<shift>+t -> Ctrl+Shift+T
-        def _fmt_hotkey(hk: str) -> str:
-            parts = hk.split("+")
-            out = []
-            for p in parts:
-                p = p.strip().strip("<>")
-                out.append(p.capitalize() if len(p) > 1 else p.upper())
-            return "+".join(out)
-
-        hotkey = _fmt_hotkey(self.config.hotkey or "<ctrl>+<shift>+t")
+        hotkey = _fmt_pynput_hotkey(self.config.hotkey or "<ctrl>+<shift>+t")
 
         if _sys.platform == "win32":
             _screenshot_hint = "e.g. a screenshot with <code>Win+Shift+S</code>"
@@ -1378,8 +1699,9 @@ potentially sensitive data externally.</p>
 
 <h2>Hotkey</h2>
 <p>The current hotkey is <code>{hotkey}</code>.
-Change it in <a href="pref://general">Preferences &rsaquo; General</a> using pynput syntax,
-e.g. <code>&lt;ctrl&gt;+&lt;shift&gt;+t</code>.</p>
+To change it, open <a href="pref://general">Preferences &rsaquo; General</a>,
+click the hotkey button, and hold your desired key combination (e.g. Ctrl+Shift+T).
+Release all keys to confirm, or press Esc to cancel.</p>
 """
         browser.setHtml(html)
         layout.addWidget(browser)

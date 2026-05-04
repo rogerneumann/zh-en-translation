@@ -24,8 +24,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def translate_with_libretranslate(text: str, config: Config) -> str:
-    """Translate text using a LibreTranslate instance."""
+def translate_with_libretranslate(
+    text: str,
+    config: Config,
+    source: str = "zh",
+    target: str = "en",
+) -> str:
+    """Translate text using a LibreTranslate instance.
+
+    source / target default to zh -> en.
+    Pass source="en", target="zh" for back-translation.
+    """
     if not config.libretranslate_enabled:
         return "\u26a0 LibreTranslate not enabled."
 
@@ -34,8 +43,8 @@ def translate_with_libretranslate(text: str, config: Config) -> str:
 
     payload: dict = {
         "q": text,
-        "source": "zh",
-        "target": "en",
+        "source": source,
+        "target": target,
         "format": "text",
     }
     if config.libretranslate_api_key:

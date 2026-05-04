@@ -49,6 +49,7 @@ config.toml
 installer/tesseract-bundle/
 installer/cedict-bundle/
 installer/argos-bundle/
+installer/argos-en-zh-bundle/
 installer/Output/
 
 # Tooling

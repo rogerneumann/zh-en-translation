@@ -81,6 +81,7 @@ class TranslatorPopup(QWidget):
         self._pinned = False
         self._drag_pos: QPoint | None = None
         self._worker: TranslationWorker | None = None
+        self._bt_worker = None  # BackTranslationWorker | None
         self._pinyin_worker: PinyinWorker | None = None
         self._is_ocr_pending = is_ocr_pending
         self._config = config
@@ -171,6 +172,14 @@ class TranslatorPopup(QWidget):
         self._update_dot.setStyleSheet("color: #F5A623; font-size: 10px;")
         self._update_dot.setVisible(False)
         header.addWidget(self._update_dot)
+
+        # Quality badge (grey while pending, green/amber/red after back-translation)
+        self._quality_dot = QLabel("\u25cf")
+        self._quality_dot.setFixedSize(14, 14)
+        self._quality_dot.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self._quality_dot.setStyleSheet("color: #9CA3AF; font-size: 10px;")
+        self._quality_dot.setVisible(False)
+        header.addWidget(self._quality_dot)
 
         self.btn_pin = QPushButton("\U0001f4cc")
         self.btn_pin.setEnabled(False)
@@ -540,6 +549,33 @@ class TranslatorPopup(QWidget):
         self.btn_pin.setEnabled(is_real)
         if self._on_pin:
             self.btn_pin_sidebar.setEnabled(is_real)
+
+        # Start back-translation quality check
+        if is_real and self._config and self._config.back_translation_enabled:
+            self._start_back_translation(text)
+        else:
+            self._quality_dot.setVisible(False)
+
+    def _start_back_translation(self, en_text: str) -> None:
+        from zh_en_translator.engines.back_translation import BackTranslationWorker
+        if self._bt_worker is not None:
+            self._bt_worker.back_translation_ready.disconnect()
+            self._bt_worker = None
+        self._quality_dot.setVisible(True)
+        self._quality_dot.setStyleSheet("color: #9CA3AF; font-size: 10px;")
+        self._quality_dot.setToolTip("Checking translation quality\u2026")
+        self._bt_worker = BackTranslationWorker(en_text, self.captured_text, self._config)
+        self._bt_worker.back_translation_ready.connect(self._on_back_translation_ready)
+        self._bt_worker.start()
+
+    def _on_back_translation_ready(
+        self, zh_back: str, confidence: float, colour: str, tooltip: str, engine: str
+    ) -> None:
+        if self._dismissed:
+            return
+        self._bt_worker = None
+        self._quality_dot.setStyleSheet(f"color: {colour}; font-size: 10px;")
+        self._quality_dot.setToolTip(tooltip)
 
     def _on_link_activated(self, link: str):
         if not link.startswith("word:") or not self.dictionary:
