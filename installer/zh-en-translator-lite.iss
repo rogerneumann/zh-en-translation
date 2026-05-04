@@ -10,7 +10,7 @@
 ; (build.ps1 compiles this automatically alongside the full installer)
 
 #define MyAppName      "zh-en-translator"
-#define MyAppVersion   "2026.05.04.1"
+#define MyAppVersion   "2026.05.04.2"
 #define MyAppPublisher "rogerneumann"
 #define MyAppExeName   "zh-en-translator.exe"
 #define MyDistDir      "..\dist\zh-en-translator"
