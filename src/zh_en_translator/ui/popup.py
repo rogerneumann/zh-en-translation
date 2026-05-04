@@ -47,14 +47,18 @@ def _render_translation_html(text: str) -> str:
 
 class TranslatorPopup(QWidget):
     """
-    Frameless popup: source text at top, English sentence translation below.
+    Frameless popup: English translation shown immediately at top.
 
-    Translation runs in a background thread — the popup appears immediately
-    with a 'Translating…' placeholder that is replaced when the result arrives.
+    Translation runs in a background thread — the popup appears with a
+    'Translating…' placeholder that is replaced when the result arrives.
+    Original Chinese text and pinyin are available in a collapsible section.
+    Word-by-word dictionary breakdown in a second collapsible section.
 
     Buttons (enabled once translation is ready):
-      • Replace text — pastes the translation over the original selection
-      • Pin →        — sends the translation to the persistent sidebar
+      • Copy    — copies translation to clipboard
+      • Look up — opens source text in external dictionary
+      • Replace — pastes translation over the original selection
+      • Pin →   — sends the translation to the persistent sidebar
 
     Dismiss: Esc key or clicking outside the popup.
     """
@@ -262,7 +266,7 @@ class TranslatorPopup(QWidget):
 
         self._details_content = QLabel(
             "CC-CEDICT not installed \u2014 word-by-word breakdown unavailable.\n"
-            "Install via Preferences \u203a Lookup &amp; OCR to enable this feature."
+            "Install via Preferences \u203a Lookup & OCR to enable this feature."
         )
         self._details_content.setWordWrap(True)
         self._details_content.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
@@ -509,6 +513,7 @@ class TranslatorPopup(QWidget):
         self.translation_label.setText("Translating…")
         self._loading_timer.start()
         self._start_translation()
+        self._start_pinyin(text)
 
     def _on_translation_ready(self, text: str):
         if self._dismissed:
@@ -595,7 +600,7 @@ class TranslatorPopup(QWidget):
         if not self.dictionary:
             self._details_content.setText(
                 "CC-CEDICT not installed \u2014 word-by-word breakdown unavailable.\n"
-                "Install via Preferences \u203a Lookup &amp; OCR to enable this feature."
+                "Install via Preferences \u203a Lookup & OCR to enable this feature."
             )
             return
         if not self.captured_text:
