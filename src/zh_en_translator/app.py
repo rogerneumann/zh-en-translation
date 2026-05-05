@@ -179,6 +179,23 @@ def _get_frozen_exe_path() -> str:
     return ""
 
 
+def _migrate_install_state() -> None:
+    """One-time migration: mark legacy installs as overlay-capable.
+
+    If install_state.toml has no [app] section (pre-P10 install), write
+    architecture = "overlay" so the overlay mechanism is active for the next
+    core update.  The overlay directory is NOT created here — it will be
+    populated on first successful core update download.
+    """
+    try:
+        from zh_en_translator.install_state import get_architecture, set_architecture
+        if get_architecture() is None:
+            set_architecture("overlay")
+            logger.debug("install_state migrated to overlay architecture")
+    except Exception as exc:
+        logger.debug("install_state migration skipped: %s", exc)
+
+
 def _ensure_cedict_background() -> None:
     """Download full CC-CEDICT in background so it is ready on first popup use."""
     try:
@@ -269,6 +286,9 @@ class TranslatorApp(QObject):
         super().__init__()
 
         self.config: Config = load_config()
+
+        # Auto-migrate legacy installs to overlay architecture on first run
+        _migrate_install_state()
 
         # Apply startup-on-login setting (Windows packaged exe only)
         _apply_startup_setting(self.config.startup, _get_frozen_exe_path())
@@ -718,16 +738,26 @@ class TranslatorApp(QObject):
         tag = release_info["tag_name"]
         if is_newer(tag, __version__):
             self._set_update_available(True, tag)
-            if manual:
-                from PyQt6.QtWidgets import QMessageBox
-                msg = f"A new version is available: {tag}\n\nWould you like to visit the download page?"
-                ans = QMessageBox.question(
-                    None, "Update Available", msg,
-                    QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-                )
-                if ans == QMessageBox.StandardButton.Yes:
-                    import webbrowser
-                    webbrowser.open(release_info["html_url"])
+
+            # Check whether a fast core package is available for this release
+            core_version, core_url = self._find_core_asset_for_release()
+            if core_version and core_url and not manual:
+                # Auto-offer the in-app core update (non-blocking)
+                self._offer_core_update(core_version, core_url)
+            elif manual:
+                # Manual check: offer core update if available, else full installer
+                if core_version and core_url:
+                    self._offer_core_update(core_version, core_url)
+                else:
+                    from PyQt6.QtWidgets import QMessageBox
+                    msg = f"A new version is available: {tag}\n\nWould you like to visit the download page?"
+                    ans = QMessageBox.question(
+                        None, "Update Available", msg,
+                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
+                    )
+                    if ans == QMessageBox.StandardButton.Yes:
+                        import webbrowser
+                        webbrowser.open(release_info["html_url"])
         else:
             self._set_update_available(False)
             if manual:
@@ -735,6 +765,24 @@ class TranslatorApp(QObject):
                 QMessageBox.information(
                     None, "Update Check", f"You are running the latest version ({__version__})."
                 )
+
+    def _find_core_asset_for_release(self) -> tuple[str | None, str | None]:
+        """Return (version, url) for a core-v*.zip asset if available."""
+        try:
+            from zh_en_translator.engines.updater import check_core_update
+            return check_core_update(self.config)
+        except Exception as exc:
+            logger.debug("Core asset check failed: %s", exc)
+            return None, None
+
+    def _offer_core_update(self, version: str, url: str) -> None:
+        """Open the CoreUpdateDialog for a fast in-app update."""
+        try:
+            from zh_en_translator.ui.update_dialog import CoreUpdateDialog
+            dlg = CoreUpdateDialog(version, url)
+            dlg.exec()
+        except Exception as exc:
+            logger.warning("Could not open CoreUpdateDialog: %s", exc)
 
     def _open_preferences_help(self):
         self._open_preferences(tab="help")

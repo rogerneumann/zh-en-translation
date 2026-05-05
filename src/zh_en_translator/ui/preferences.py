@@ -624,10 +624,27 @@ class PreferencesDialog(QDialog):
 
         # Version row
         from zh_en_translator import __version__
+        from zh_en_translator.install_state import get_overlay_version
         ver_row = QHBoxLayout()
         ver_row.addWidget(QLabel(f"Version: {__version__}"))
+        _ov = get_overlay_version()
+        if _ov:
+            _ov_lbl = QLabel(f"(core overlay: {_ov})")
+            _ov_lbl.setStyleSheet("color: #555; font-size: 9pt;")
+            ver_row.addWidget(_ov_lbl)
         ver_row.addStretch()
         update_layout.addLayout(ver_row)
+
+        # Argos model versions row
+        self._argos_model_status_lbl = QLabel()
+        self._argos_model_status_lbl.setStyleSheet("color: #555; font-size: 9pt;")
+        self._argos_model_status_lbl.setVisible(False)
+        update_layout.addWidget(self._argos_model_status_lbl)
+
+        self._btn_check_models = QPushButton("Check for Model Updates")
+        self._btn_check_models.setFixedWidth(200)
+        self._btn_check_models.clicked.connect(self._check_argos_models)
+        update_layout.addWidget(self._btn_check_models)
 
         # Update-available banner (hidden until an update is found)
         self._update_banner = QLabel()
@@ -1836,6 +1853,57 @@ Release all keys to confirm, or press Esc to cancel.</p>
         layout.addWidget(components_group)
         layout.addStretch()
         return widget
+
+    def _check_argos_models(self) -> None:
+        """Check for Argos model updates and display results inline."""
+        self._btn_check_models.setEnabled(False)
+        self._btn_check_models.setText("Checking\u2026")
+        QApplication.processEvents()
+        try:
+            from zh_en_translator.engines.updater import check_argos_updates
+            results = check_argos_updates()
+        except Exception as exc:
+            results = []
+            self._argos_model_status_lbl.setText(f"Check failed: {exc}")
+            self._argos_model_status_lbl.setVisible(True)
+        finally:
+            self._btn_check_models.setEnabled(True)
+            self._btn_check_models.setText("Check for Model Updates")
+
+        if not results:
+            self._argos_model_status_lbl.setText("No Argos model information available.")
+            self._argos_model_status_lbl.setVisible(True)
+            return
+
+        lines = []
+        for r in results:
+            pair = r["lang_pair"]
+            inst  = r["installed_version"] or "(not installed)"
+            avail = r["available_version"] or "(unknown)"
+            if r["needs_update"]:
+                lines.append(f"\u25cf {pair}: installed {inst} \u2192 update {avail} available")
+            else:
+                lines.append(f"\u2713 {pair}: {inst} (up to date)")
+
+        self._argos_model_status_lbl.setText("\n".join(lines))
+        self._argos_model_status_lbl.setVisible(True)
+
+        if any(r["needs_update"] for r in results):
+            QMessageBox.information(
+                self,
+                "Model Updates Available",
+                "Argos model updates are available.\n\n"
+                + "\n".join(
+                    f"  {r['lang_pair']}: {r['installed_version']} -> {r['available_version']}"
+                    for r in results if r["needs_update"]
+                )
+                + "\n\nUse Lookup & OCR tab to re-download the models.",
+            )
+        else:
+            QMessageBox.information(
+                self, "Models Up to Date",
+                "All installed Argos models are up to date."
+            )
 
     def closeEvent(self, event):
         if self._install_monitor is not None:

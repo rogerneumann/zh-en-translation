@@ -96,6 +96,119 @@ def load_state(path: Path | None = None) -> InstallState:
     )
 
 
+# ---------------------------------------------------------------------------
+# [app] section helpers — overlay architecture
+# ---------------------------------------------------------------------------
+
+def get_architecture(path: Path | None = None) -> str | None:
+    """Return [app].architecture from install_state.toml, or None if absent.
+
+    None means a legacy install that predates the overlay architecture.
+    """
+    if path is None:
+        path = get_state_path()
+    if not path.exists():
+        return None
+    try:
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+        return data.get("app", {}).get("architecture") or None
+    except Exception as exc:
+        logger.warning("Could not read [app].architecture: %s", exc)
+        return None
+
+
+def set_architecture(value: str, path: Path | None = None) -> None:
+    """Write [app].architecture to install_state.toml. Never raises."""
+    _update_app_section(architecture=value, path=path)
+
+
+def get_overlay_version(path: Path | None = None) -> str:
+    """Return [app].overlay_version from install_state.toml, or '' if absent."""
+    if path is None:
+        path = get_state_path()
+    if not path.exists():
+        return ""
+    try:
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+        return data.get("app", {}).get("overlay_version", "")
+    except Exception as exc:
+        logger.warning("Could not read [app].overlay_version: %s", exc)
+        return ""
+
+
+def set_overlay_version(version: str, path: Path | None = None) -> None:
+    """Write [app].overlay_version to install_state.toml. Never raises."""
+    _update_app_section(overlay_version=version, path=path)
+
+
+def _update_app_section(
+    architecture: str | None = None,
+    overlay_version: str | None = None,
+    path: Path | None = None,
+) -> None:
+    """Patch [app] keys in install_state.toml without disturbing other sections."""
+    if path is None:
+        path = get_state_path()
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+
+        # Read existing raw text so we can do a surgical patch
+        existing = path.read_text(encoding="utf-8") if path.exists() else ""
+
+        # Parse current values
+        try:
+            with open(path, "rb") as f:
+                data = tomllib.load(f) if path.exists() else {}
+        except Exception:
+            data = {}
+
+        app_section = dict(data.get("app", {}))
+        if architecture is not None:
+            app_section["architecture"] = architecture
+        if overlay_version is not None:
+            app_section["overlay_version"] = overlay_version
+
+        # Re-serialise the entire file preserving other sections
+        state = load_state(path)
+        date_str = state.date or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        dir_str  = state.install_dir or ""
+
+        arch_val = app_section.get("architecture", "overlay")
+        ov_val   = app_section.get("overlay_version", "")
+
+        content = (
+            "# zh-en-translator installation state\n"
+            "# Written by installer and updated at runtime -- do not edit manually.\n"
+            "\n"
+            "[install]\n"
+            f'version = "{state.version}"\n'
+            f'type    = "{state.install_type}"\n'
+            f'date    = "{date_str}"\n'
+            f'dir     = "{dir_str}"\n'
+            "\n"
+            "[components]\n"
+            f"argos        = {'true' if state.argos else 'false'}\n"
+            f"windows_ocr  = {'true' if state.windows_ocr else 'false'}\n"
+            f"tesseract    = {'true' if state.tesseract else 'false'}\n"
+            "\n"
+            "[app]\n"
+            f'architecture    = "{arch_val}"\n'
+            f'overlay_version = "{ov_val}"\n'
+        )
+
+        tmp = path.with_suffix(".toml.tmp")
+        tmp.write_text(content, encoding="utf-8")
+        tmp.replace(path)
+    except Exception as exc:
+        logger.warning("Could not update [app] section in install_state.toml: %s", exc)
+
+
+# ---------------------------------------------------------------------------
+# [components] helpers
+# ---------------------------------------------------------------------------
+
 def update_components(
     argos: bool | None = None,
     windows_ocr: bool | None = None,
@@ -132,6 +245,18 @@ def _write_state(state: InstallState, path: Path) -> None:
         date_str = state.date or datetime.now().strftime("%Y-%m-%d %H:%M:%S")
         dir_str  = state.install_dir or ""
 
+        # Preserve existing [app] section if present
+        existing_app: dict = {}
+        if path.exists():
+            try:
+                with open(path, "rb") as f:
+                    existing_app = tomllib.load(f).get("app", {})
+            except Exception:
+                pass
+
+        arch_val = existing_app.get("architecture", "overlay")
+        ov_val   = existing_app.get("overlay_version", "")
+
         content = (
             "# zh-en-translator installation state\n"
             "# Written by installer and updated at runtime -- do not edit manually.\n"
@@ -146,6 +271,10 @@ def _write_state(state: InstallState, path: Path) -> None:
             f"argos        = {'true' if state.argos else 'false'}\n"
             f"windows_ocr  = {'true' if state.windows_ocr else 'false'}\n"
             f"tesseract    = {'true' if state.tesseract else 'false'}\n"
+            "\n"
+            "[app]\n"
+            f'architecture    = "{arch_val}"\n'
+            f'overlay_version = "{ov_val}"\n'
         )
 
         # Write to a temp file then rename for atomic replacement

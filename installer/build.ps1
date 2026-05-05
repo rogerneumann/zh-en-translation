@@ -22,6 +22,7 @@ param(
     [switch] $SkipPyInstaller,
     [switch] $SkipVersionBump,
     [switch] $SkipRelease,
+    [switch] $CorePackage,
     [string] $DistPath  = "dist",
     [string] $WorkPath  = "build"
 )
@@ -709,6 +710,109 @@ finally:
 }
 
 # ---------------------------------------------------------------------------
+# Step 2.9 -- Build core update package (core-vX.Y.Z.zip)
+#
+# Compiles zh_en_translator .py files to .pyc in-place, then copies only
+# the .pyc files (no .py, no .pyd/.dll) into a staging directory and zips
+# them.  The result is uploaded as a GitHub release asset alongside the
+# full installer so the in-app updater can apply code-only fixes without
+# re-downloading the full bundle.
+#
+# When -CorePackage is specified this step is the ONLY step that runs
+# (PyInstaller, bundling, Inno Setup, and the portable ZIP are all skipped).
+# A pre-existing dist\ bundle is required in that case.
+# ---------------------------------------------------------------------------
+Write-Step "Step 2.9: Building core update package"
+
+$CoreSrc     = Join-Path $BundleDir "_internal\zh_en_translator"
+$CoreStage   = Join-Path $DistPath "core-staging"
+$OutputDir29 = Join-Path $PSScriptRoot "Output"
+$CoreZip     = Join-Path $OutputDir29 "core-v${VersionString}.zip"
+
+if (-not (Test-Path $CoreSrc)) {
+    Write-Host "    Core source not found at: $CoreSrc" -ForegroundColor Yellow
+    Write-Host "    Skipping core package (run without -CorePackage to build the full bundle first)." -ForegroundColor Yellow
+} else {
+    # Compile to .pyc (in-place, -b = write .pyc next to .py)
+    Write-Host "    Compiling .py files to .pyc..." -ForegroundColor Gray
+    & python -m compileall -b -q $CoreSrc
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "    WARNING: compileall returned $LASTEXITCODE -- some files may not have compiled." -ForegroundColor Yellow
+    }
+
+    # Copy only .pyc files (no .py source, no .pyd/.dll binaries)
+    if (Test-Path $CoreStage) { Remove-Item -Recurse -Force $CoreStage }
+    New-Item -ItemType Directory -Force -Path $CoreStage | Out-Null
+
+    Write-Host "    Copying .pyc files to staging..." -ForegroundColor Gray
+    $PycFiles = Get-ChildItem -Path $CoreSrc -Recurse -Filter "*.pyc"
+    foreach ($pf in $PycFiles) {
+        $rel = $pf.FullName.Substring($CoreSrc.Length).TrimStart('\','/')
+        $dst = Join-Path $CoreStage $rel
+        $dstDir = Split-Path $dst
+        if (-not (Test-Path $dstDir)) { New-Item -ItemType Directory -Force -Path $dstDir | Out-Null }
+        Copy-Item $pf.FullName $dst -Force
+    }
+
+    # Zip staging directory
+    New-Item -ItemType Directory -Force -Path $OutputDir29 | Out-Null
+    if (Test-Path $CoreZip) { Remove-Item $CoreZip -Force }
+
+    Add-Type -AssemblyName System.IO.Compression.FileSystem
+    [System.IO.Compression.ZipFile]::CreateFromDirectory(
+        $CoreStage,
+        $CoreZip,
+        [System.IO.Compression.CompressionLevel]::Optimal,
+        $false
+    )
+
+    Remove-Item -Recurse -Force $CoreStage
+
+    if (Test-Path $CoreZip) {
+        $CoreZipSize = [math]::Round((Get-Item $CoreZip).Length / 1MB, 2)
+        Write-Ok "Core package: $CoreZip ($CoreZipSize MB)"
+    } else {
+        Write-Host "    WARNING: core zip was not created." -ForegroundColor Yellow
+    }
+}
+
+# When -CorePackage is set, skip the full installer pipeline and go straight
+# to the release upload (Step 6) then exit.
+if ($CorePackage) {
+    Write-Step "-CorePackage: skipping Inno Setup / portable ZIP (Step 3-5.1)"
+
+    if (-not $SkipRelease) {
+        Write-Step "Step 6 (CorePackage): Uploading core zip to GitHub release"
+
+        $GhExeCp = $null
+        try { $GhExeCp = (Get-Command gh -ErrorAction Stop).Source } catch {
+            $GhFallbackCp = "C:\Program Files\GitHub CLI\gh.exe"
+            if (Test-Path $GhFallbackCp) { $GhExeCp = $GhFallbackCp }
+        }
+
+        if (-not $GhExeCp) {
+            Write-Host "    WARNING: GitHub CLI not found -- cannot upload core zip." -ForegroundColor Yellow
+        } elseif (-not (Test-Path $CoreZip)) {
+            Write-Host "    WARNING: Core zip not found -- nothing to upload." -ForegroundColor Yellow
+        } else {
+            $ReleasesRepoCp = "rogerneumann/zh-en-translation"
+            $ReleaseTagCp   = "v${VersionString}"
+            Write-Host "    Uploading $CoreZip to release ${ReleaseTagCp} on ${ReleasesRepoCp}..." -ForegroundColor Gray
+            & "$GhExeCp" release upload $ReleaseTagCp $CoreZip --repo $ReleasesRepoCp --clobber
+            if ($LASTEXITCODE -ne 0) {
+                Write-Host "    WARNING: core zip upload failed (exit $LASTEXITCODE)" -ForegroundColor Yellow
+            } else {
+                Write-Ok "Uploaded: $(Split-Path -Leaf $CoreZip)"
+            }
+        }
+    }
+
+    Write-Host ""
+    Write-Host "Done! (CorePackage mode)" -ForegroundColor Green
+    exit 0
+}
+
+# ---------------------------------------------------------------------------
 # Step 3 -- Locate Inno Setup compiler (iscc.exe)
 # ---------------------------------------------------------------------------
 Write-Step "Step 3: Locating Inno Setup compiler (iscc.exe)"
@@ -991,12 +1095,13 @@ if (-not $SkipRelease) {
         $ReleaseTag   = "v${VersionString}"
         $ReleaseTitle = "v${VersionString}"
 
-        # Collect assets that exist (full installer, lite installer, lite portable)
+        # Collect assets that exist (full installer, lite installer, lite portable, core zip)
         $LitePortableZip = $PortableZip
         $Assets = [System.Collections.Generic.List[string]]::new()
         if (Test-Path $OutputFile)      { $Assets.Add($OutputFile) }
         if (Test-Path $LiteOutputFile)  { $Assets.Add($LiteOutputFile) }
         if (Test-Path $LitePortableZip) { $Assets.Add($LitePortableZip) }
+        if (Test-Path $CoreZip)         { $Assets.Add($CoreZip) }
 
         if ($Assets.Count -eq 0) {
             Write-Host "    WARNING: No build artifacts found to upload -- skipping." -ForegroundColor Yellow

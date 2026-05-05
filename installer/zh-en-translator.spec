@@ -123,7 +123,7 @@ hidden_imports += pyqt6_hidden
 # Analysis
 # ---------------------------------------------------------------------------
 a = Analysis(
-    [str(src_root / "zh_en_translator" / "app.py")],
+    [str(src_root / "zh_en_translator" / "__main__.py")],
     pathex=[str(src_root)],
     binaries=zh_en_bins + pyqt6_bins + ct2_bins + argos_bins,
     datas=datas,

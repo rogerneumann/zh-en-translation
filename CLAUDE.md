@@ -58,18 +58,27 @@ Outputs:
 - `installer/Output/zh-en-translator-v{version}-setup.exe` — full installer (~350–400 MB, Tesseract + CC-CEDICT + Argos bundled)
 - `installer/Output/zh-en-translator-v{version}-portable.zip` — portable ZIP (~80–120 MB)
 
+Outputs:
+- `installer/Output/core-v{version}.zip` — core update package (~5–10 MB, .pyc only, for in-app updates)
+
+Use `-CorePackage` flag for hotfix-only builds (skips PyInstaller / Inno Setup, requires existing `dist/`):
+```powershell
+.\installer\build.ps1 -SkipVersionBump -CorePackage
+```
+
 Build steps in order:
 1. Verify Python 3.11 + PyInstaller
 2. `pip install -e .`
-3. PyInstaller → `dist/zh-en-translator/`
+3. PyInstaller → `dist/zh-en-translator/` (entry: `__main__.py`)
 4. Bundle Tesseract portable (~150 MB) into `installer/tesseract-bundle/`
 5. Bundle CC-CEDICT (~6 MB) into `installer/cedict-bundle/`
 6. Bundle Argos zh→en model (~100 MB) into `installer/argos-bundle/`
 7. Bundle Argos en→zh model (~100 MB) into `installer/argos-en-zh-bundle/` (back-translation)
-8. Locate `iscc.exe` (Inno Setup compiler)
-9. Compile installer → `installer/Output/zh-en-translator-v{version}-setup.exe`
-10. Create portable ZIP → `installer/Output/zh-en-translator-v{version}-portable.zip`
-11. **Code signing** (Planned) — sign executable, DLLs, and installer using `signtool.exe`.
+8. **Step 2.9**: `compileall` + zip `core-vX.Y.Z.zip` (always runs)
+9. Locate `iscc.exe` (Inno Setup compiler)
+10. Compile installer → `installer/Output/zh-en-translator-v{version}-setup.exe`
+11. Create portable ZIP → `installer/Output/zh-en-translator-v{version}-portable.zip`
+12. **Code signing** (Planned) — sign executable, DLLs, and installer using `signtool.exe`.
 
 Bundle dirs are gitignored — generated at build time, not committed.
 
@@ -94,6 +103,7 @@ Everything through **Priority 4** is complete and on `main`.
 | P7 | **Code Signing Integration Plan drafted** — See `signing_plan.md` for technical roadmap to stop SmartScreen warnings. |
 | P8 | Back-translation quality check: coloured confidence badge (●) in popup + sidebar headers. `BackTranslationWorker` scores via CER + content-word coverage. History entries enriched with `back_translation`, `confidence`, `bt_engine`. Argos en→zh bundled in installer. Interactive `_HotkeyRecorderWidget` in Preferences. 666 tests passing. |
 | P9 | Popup UX overhaul: translation label promoted to top (first thing visible). Source text + pinyin moved into collapsible `▶ Original text` section (read-only, no retranslate button — users don't read Chinese). Word-by-word breakdown behind `▶ Details` section; shows CC-CEDICT install hint when dictionary absent. Min width 380px, auto-height. |
+| P10 | Tiered update architecture: AppData overlay (`%APPDATA%/zh-en-translator/app/`) over PyInstaller bundle. `__main__.py` bootstrap with auto-rollback. `engines/updater.py` (download/apply/rollback/Argos model check). `ui/update_dialog.py` one-click progress dialog. `install_state.py` `[app]` section (architecture, overlay_version). `engines/updates.py` extended with `find_core_asset()`. `build.ps1` Step 2.9 produces `core-vX.Y.Z.zip` (~5 MB); `-CorePackage` flag for hotfix-only builds. 700 tests passing (34 new). |
 
 ---
 
@@ -171,9 +181,10 @@ Infrastructure partially exists; no UI wired up:
 
 ```
 src/zh_en_translator/
-├── app.py                      ← entry point, tray, background update checker
+├── __main__.py                 ← PyInstaller entry point; AppData overlay bootstrap + auto-rollback
+├── app.py                      ← tray, update checker; _migrate_install_state(), _offer_core_update()
 ├── config.py                   ← config loader; keys: segmenter, clause_fallback_enabled, back_translation_enabled
-├── install_state.py            ← read/write %APPDATA%\zh-en-translator\install_state.toml
+├── install_state.py            ← read/write install_state.toml; [app] section: get/set_architecture(), get/set_overlay_version()
 ├── engines/
 │   ├── argos.py                ← sentence MT, split_into_clauses(), translate_with_clause_fallback(), is_en_zh_available(), translate_en_to_zh()
 │   ├── back_translation.py     ← BackTranslationWorker, compute_confidence(), confidence_to_label(), content_word_coverage()
@@ -188,7 +199,8 @@ src/zh_en_translator/
 │   ├── google_translate.py     ← Google Cloud Translation API v2 (opt-in); source/target params
 │   ├── ms_cloud.py             ← Azure Translator (opt-in); from_lang/to_lang params
 │   ├── libretranslate.py       ← LibreTranslate / self-hosted (opt-in, free); source/target params
-│   ├── updates.py              ← GitHub releases version check
+│   ├── updater.py              ← check_core_update(), download_core(), apply_core(), rollback_core(), check_argos_updates()
+│   ├── updates.py              ← GitHub releases version check; find_core_asset(), get_latest_release_assets()
 │   └── ocr/
 │       ├── windows_ocr.py
 │       ├── tesseract_ocr.py    ← bundled path detection, TESSDATA_PREFIX
@@ -196,7 +208,8 @@ src/zh_en_translator/
 ├── ui/
 │   ├── popup.py                ← frameless popup, read-only source (collapsed), _quality_dot badge; collapsible Original text + Details sections
 │   ├── sidebar.py              ← peek-tab, history list, export/clear, _quality_dot badge
-│   ├── preferences.py          ← settings dialog (glossary tab, Tesseract status, DeepL, back-translation toggle, _HotkeyRecorderWidget)
+│   ├── preferences.py          ← settings dialog; Updates section (overlay version, Argos model check)
+│   ├── update_dialog.py        ← CoreUpdateDialog: download + progress + restart-to-apply
 │   └── themes.py               ← system / dark / light / sepia / high-contrast
 ├── finetuning/                 ← Priority 3 GPU training
 │   ├── config.py               (implemented)
