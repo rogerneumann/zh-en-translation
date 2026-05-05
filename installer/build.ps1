@@ -150,6 +150,14 @@ function Find-TesseractInstallation {
 # ---------------------------------------------------------------------------
 $RepoRoot = Split-Path -Parent $PSScriptRoot
 Set-Location $RepoRoot
+# Resolve relative paths now so .NET ZipFile calls (which use the process CWD,
+# not PowerShell's Set-Location CWD) get absolute paths.
+if (-not [System.IO.Path]::IsPathRooted($DistPath)) {
+    $DistPath = Join-Path $RepoRoot $DistPath
+}
+if (-not [System.IO.Path]::IsPathRooted($WorkPath)) {
+    $WorkPath = Join-Path $RepoRoot $WorkPath
+}
 Write-Step "Working directory: $RepoRoot"
 
 # ---------------------------------------------------------------------------
