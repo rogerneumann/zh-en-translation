@@ -22,6 +22,7 @@ class ReleaseInfo(TypedDict):
     tag_name: str
     html_url: str
     body: str
+    assets: list[dict]
 
 
 def _fetch_release_json() -> dict | None:
@@ -46,6 +47,7 @@ def get_latest_release() -> ReleaseInfo | None:
         "tag_name": data.get("tag_name", ""),
         "html_url": data.get("html_url", ""),
         "body": data.get("body", ""),
+        "assets": data.get("assets", []),
     }
 
 
@@ -79,6 +81,24 @@ def find_core_asset(assets: list[dict]) -> tuple[str | None, str | None]:
             version = m.group(1) if m else ""
             return version, url
     return None, None
+
+
+def find_installer_assets(assets: list[dict]) -> tuple[str | None, str | None]:
+    """Search *assets* for lite and full setup installers.
+
+    Returns ``(lite_url, full_url)``.  Either may be ``None`` if not found.
+    Lite is matched by ``*-lite-setup.exe``; full by ``*-setup.exe`` (excluding lite).
+    """
+    lite_url = None
+    full_url = None
+    for asset in assets:
+        name: str = asset.get("name", "")
+        url = asset.get("browser_download_url", "")
+        if fnmatch.fnmatch(name, "*-lite-setup.exe"):
+            lite_url = url
+        elif fnmatch.fnmatch(name, "*-setup.exe"):
+            full_url = url
+    return lite_url, full_url
 
 
 def is_newer(latest_tag: str, current_version: str) -> bool:

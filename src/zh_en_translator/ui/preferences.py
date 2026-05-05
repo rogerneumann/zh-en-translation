@@ -663,7 +663,6 @@ class PreferencesDialog(QDialog):
         update_layout.addWidget(self._auto_update_check)
         self._btn_check_now = QPushButton("Check for Updates Now")
         self._btn_check_now.setFixedWidth(180)
-        self._btn_check_now.clicked.connect(self._check_updates_now)
         update_layout.addWidget(self._btn_check_now)
         layout.addWidget(update_group)
 
@@ -1296,7 +1295,9 @@ class PreferencesDialog(QDialog):
         self._trad_to_simp_check.setChecked(cfg.traditional_to_simplified)
         self._auto_update_check.setChecked(cfg.auto_check_updates)
         self._startup_check.setChecked(cfg.startup)
-        if self._update_available and self._update_version:
+        from zh_en_translator import __version__
+        if (self._update_available and self._update_version
+                and self._update_version.lstrip("v") != __version__):
             self._show_update_banner(self._update_version)
         idx = self._segmenter_combo.findData(cfg.segmenter)
         self._segmenter_combo.setCurrentIndex(idx if idx >= 0 else 0)
@@ -1542,43 +1543,11 @@ class PreferencesDialog(QDialog):
                 self._btn_win_ocr_install.setStyleSheet("")
 
     def _show_update_banner(self, version: str) -> None:
+        display = version.lstrip("v")
         self._update_banner.setText(
-            f"\u25cf  Update available: {version} -- click 'Check for Updates Now' to download."
+            f"\u25cf  Update available: {display} \u2014 click \u2018Check for Updates Now\u2019 to update."
         )
         self._update_banner.setVisible(True)
-
-    def _check_updates_now(self):
-        from zh_en_translator.engines.updates import get_latest_release, is_newer
-        from zh_en_translator import __version__
-        self._btn_check_now.setEnabled(False)
-        self._btn_check_now.setText("Checking\u2026")
-        QApplication.processEvents()
-        try:
-            info = get_latest_release()
-        finally:
-            self._btn_check_now.setEnabled(True)
-            self._btn_check_now.setText("Check for Updates Now")
-        if info is None:
-            self._update_banner.setVisible(False)
-            QMessageBox.information(
-                self, "Update Check",
-                "Could not reach the update server. Check your internet connection.",
-            )
-        elif is_newer(info["tag_name"], __version__):
-            self._show_update_banner(info["tag_name"])
-            import webbrowser
-            if QMessageBox.question(
-                self, "Update Available",
-                f"A new version is available: {info['tag_name']}\n\nOpen download page?",
-                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
-            ) == QMessageBox.StandardButton.Yes:
-                webbrowser.open(info["html_url"])
-        else:
-            self._update_banner.setVisible(False)
-            QMessageBox.information(
-                self, "Up to Date",
-                f"You are running the latest version ({__version__}).",
-            )
 
     # ------------------------------------------------------------------
     # Help tab
@@ -1731,6 +1700,12 @@ potentially sensitive data externally.</p>
 To change it, open <a href="pref://general">Preferences &rsaquo; General</a>,
 click the hotkey button, and hold your desired key combination (e.g. Ctrl+Shift+T).
 Release all keys to confirm, or press Esc to cancel.</p>
+
+<h2>Feedback</h2>
+<p>Have a suggestion or noticed something wrong?
+<a href="pref://feedback"><b>Send feedback &rarr;</b></a><br>
+<span class="note">Opens a short form; you can submit via GitHub or email.
+No account required to send by email.</span></p>
 """
         browser.setHtml(html)
         layout.addWidget(browser)
@@ -1740,6 +1715,10 @@ Release all keys to confirm, or press Esc to cancel.</p>
         """Handle link clicks in the Help tab browser."""
         if url.scheme() == "pref":
             tab_name = url.host()
+            if tab_name.lower() == "feedback":
+                from zh_en_translator.ui.feedback_dialog import open_feedback_dialog
+                open_feedback_dialog(parent=self)
+                return
             tab_map = {
                 "general": 0, "display": 1, "sidebar": 2,
                 "lookup": 3, "glossary": 4, "cloud": 5, "help": 6, "about": 7,

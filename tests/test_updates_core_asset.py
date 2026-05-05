@@ -1,6 +1,6 @@
-"""Tests for the core asset detection additions to engines/updates.py.
+"""Tests for asset detection helpers in engines/updates.py.
 
-Tests find_core_asset() and get_latest_release_assets().
+Tests find_core_asset(), find_installer_assets(), and get_latest_release_assets().
 """
 
 from __future__ import annotations
@@ -9,7 +9,11 @@ from unittest.mock import patch
 
 import pytest
 
-from zh_en_translator.engines.updates import find_core_asset, get_latest_release_assets
+from zh_en_translator.engines.updates import (
+    find_core_asset,
+    find_installer_assets,
+    get_latest_release_assets,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -107,3 +111,55 @@ class TestGetLatestReleaseAssets:
         with patch("zh_en_translator.engines.updates._fetch_release_json", return_value={"tag_name": "v1.0"}):
             assets = get_latest_release_assets()
         assert assets == []
+
+
+# ---------------------------------------------------------------------------
+# find_installer_assets
+# ---------------------------------------------------------------------------
+
+class TestFindInstallerAssets:
+    def _asset(self, name: str, url: str = "") -> dict:
+        return {
+            "name": name,
+            "browser_download_url": url or f"https://example.com/{name}",
+            "size": 1024,
+        }
+
+    def test_finds_both(self):
+        assets = [
+            self._asset("zh-en-translator-v2026.05.04-lite-setup.exe", "https://example.com/lite.exe"),
+            self._asset("zh-en-translator-v2026.05.04-setup.exe", "https://example.com/full.exe"),
+        ]
+        lite, full = find_installer_assets(assets)
+        assert lite == "https://example.com/lite.exe"
+        assert full == "https://example.com/full.exe"
+
+    def test_finds_only_full(self):
+        assets = [self._asset("zh-en-translator-v2026.05.04-setup.exe", "https://example.com/full.exe")]
+        lite, full = find_installer_assets(assets)
+        assert lite is None
+        assert full == "https://example.com/full.exe"
+
+    def test_finds_only_lite(self):
+        assets = [self._asset("zh-en-translator-v2026.05.04-lite-setup.exe", "https://example.com/lite.exe")]
+        lite, full = find_installer_assets(assets)
+        assert lite == "https://example.com/lite.exe"
+        assert full is None
+
+    def test_empty_list(self):
+        lite, full = find_installer_assets([])
+        assert lite is None
+        assert full is None
+
+    def test_lite_pattern_does_not_match_full(self):
+        """A full setup .exe must not be classified as lite."""
+        assets = [self._asset("zh-en-translator-v2026.05.04-setup.exe")]
+        lite, _ = find_installer_assets(assets)
+        assert lite is None
+
+    def test_core_zip_ignored(self):
+        """core-v*.zip assets must not be matched as lite or full."""
+        assets = [self._asset("core-v2026.05.04.zip")]
+        lite, full = find_installer_assets(assets)
+        assert lite is None
+        assert full is None

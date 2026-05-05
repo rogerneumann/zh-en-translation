@@ -237,27 +237,33 @@ def test_update_preview_applies_font_size(qapp):
 
 
 # ---------------------------------------------------------------------------
-# "Check for Updates Now" button wired up
+# "Check for Updates Now" button wired by app.py, not internally
 # ---------------------------------------------------------------------------
 
-def test_check_updates_method_exists(qapp):
-    """_check_updates_now must exist on the dialog."""
+def test_check_updates_button_exists(qapp):
+    """_btn_check_now must exist; _check_updates_now must NOT (wired by app.py)."""
     dlg = PreferencesDialog(Config())
-    assert hasattr(dlg, "_check_updates_now")
-    assert callable(dlg._check_updates_now)
+    assert hasattr(dlg, "_btn_check_now")
+    assert not hasattr(dlg, "_check_updates_now"), (
+        "_check_updates_now should not exist on the dialog; "
+        "the button is wired externally by app.py"
+    )
 
 
-def test_check_updates_button_connected(qapp, monkeypatch):
-    """Clicking the button must reach _check_updates_now (verified via its network call)."""
-    import zh_en_translator.engines.updates as upd
-    from PyQt6.QtWidgets import QMessageBox
-    called = []
-    # Stub out the network call and the result dialog so the test doesn't block
-    monkeypatch.setattr(upd, "get_latest_release", lambda: called.append(True) or None)
-    monkeypatch.setattr(QMessageBox, "information", staticmethod(lambda *a, **kw: None))
-    dlg = PreferencesDialog(Config())
-    dlg._btn_check_now.click()
-    assert called, "Button click did not invoke _check_updates_now"
+def test_update_banner_strips_v_prefix(qapp):
+    """Banner text must contain the version without its 'v' prefix."""
+    dlg = PreferencesDialog(Config(), update_available=True, update_version="v9999.01.01")
+    text = dlg._update_banner.text()
+    assert text, "Expected banner text to be set for a newer version"
+    assert "9999.01.01" in text
+    assert "v9999" not in text
+
+
+def test_update_banner_empty_when_version_matches_current(qapp):
+    """Banner must not be populated when the stored update version equals the running version."""
+    from zh_en_translator import __version__
+    dlg = PreferencesDialog(Config(), update_available=True, update_version=__version__)
+    assert not dlg._update_banner.text(), "Banner should be empty for same-version"
 
 
 # ---------------------------------------------------------------------------

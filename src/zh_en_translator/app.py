@@ -396,6 +396,10 @@ class TranslatorApp(QObject):
         self.action_pause.triggered.connect(self._on_pause_resume)
 
         menu.addSeparator()
+        action_feedback = menu.addAction("Send Feedback…")
+        action_feedback.triggered.connect(self._open_feedback_dialog)
+
+        menu.addSeparator()
         action_quit = menu.addAction("Quit")
         action_quit.triggered.connect(self.app.quit)
 
@@ -738,26 +742,9 @@ class TranslatorApp(QObject):
         tag = release_info["tag_name"]
         if is_newer(tag, __version__):
             self._set_update_available(True, tag)
-
-            # Check whether a fast core package is available for this release
-            core_version, core_url = self._find_core_asset_for_release()
-            if core_version and core_url and not manual:
-                # Auto-offer the in-app core update (non-blocking)
-                self._offer_core_update(core_version, core_url)
-            elif manual:
-                # Manual check: offer core update if available, else full installer
-                if core_version and core_url:
-                    self._offer_core_update(core_version, core_url)
-                else:
-                    from PyQt6.QtWidgets import QMessageBox
-                    msg = f"A new version is available: {tag}\n\nWould you like to visit the download page?"
-                    ans = QMessageBox.question(
-                        None, "Update Available", msg,
-                        QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No
-                    )
-                    if ans == QMessageBox.StandardButton.Yes:
-                        import webbrowser
-                        webbrowser.open(release_info["html_url"])
+            if manual:
+                self._offer_update_options(release_info)
+            # Auto-check: badge/indicator set by _set_update_available; no popup
         else:
             self._set_update_available(False)
             if manual:
@@ -766,26 +753,34 @@ class TranslatorApp(QObject):
                     None, "Update Check", f"You are running the latest version ({__version__})."
                 )
 
-    def _find_core_asset_for_release(self) -> tuple[str | None, str | None]:
-        """Return (version, url) for a core-v*.zip asset if available."""
+    def _offer_update_options(self, release_info: dict) -> None:
+        """Show the update options dialog (core / lite installer / full installer)."""
         try:
-            from zh_en_translator.engines.updater import check_core_update
-            return check_core_update(self.config)
-        except Exception as exc:
-            logger.debug("Core asset check failed: %s", exc)
-            return None, None
+            from zh_en_translator.engines.updates import find_core_asset, find_installer_assets
+            from zh_en_translator.ui.update_options_dialog import UpdateOptionsDialog
 
-    def _offer_core_update(self, version: str, url: str) -> None:
-        """Open the CoreUpdateDialog for a fast in-app update."""
-        try:
-            from zh_en_translator.ui.update_dialog import CoreUpdateDialog
-            dlg = CoreUpdateDialog(version, url)
+            assets = release_info.get("assets", [])
+            core_version, core_url = find_core_asset(assets)
+            lite_url, full_url = find_installer_assets(assets)
+            version = release_info.get("tag_name", "").lstrip("v")
+
+            dlg = UpdateOptionsDialog(
+                version=version,
+                core_url=core_url,
+                lite_url=lite_url,
+                full_url=full_url,
+                release_html_url=release_info.get("html_url", ""),
+            )
             dlg.exec()
         except Exception as exc:
-            logger.warning("Could not open CoreUpdateDialog: %s", exc)
+            logger.warning("Could not open UpdateOptionsDialog: %s", exc)
 
     def _open_preferences_help(self):
         self._open_preferences(tab="help")
+
+    def _open_feedback_dialog(self) -> None:
+        from zh_en_translator.ui.feedback_dialog import open_feedback_dialog
+        open_feedback_dialog()
 
     def _open_preferences(self, tab: str | None = None):
         import copy
