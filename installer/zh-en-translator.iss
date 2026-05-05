@@ -7,7 +7,7 @@
 ;         (single self-contained installer, ~240-290 MB)
 
 #define MyAppName      "zh-en-translator"
-#define MyAppVersion   "2026.05.04.4"
+#define MyAppVersion   "2026.05.05"
 #define MyAppPublisher "rogerneumann"
 #define MyAppExeName   "zh-en-translator.exe"
 #define MyDistDir      "..\dist\zh-en-translator"
