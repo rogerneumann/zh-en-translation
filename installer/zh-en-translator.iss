@@ -22,9 +22,8 @@ DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 ; Show installation directory page explicitly
 DisableDirPage=no
-; User-level install -- no admin required for base install
+; User-level install -- always installs to current user, no admin required
 PrivilegesRequired=lowest
-PrivilegesRequiredOverridesAllowed=dialog
 ; Output
 OutputDir=Output
 OutputBaseFilename=zh-en-translator-v{#MyAppVersion}-setup
@@ -59,9 +58,11 @@ Name: "startup"; Description: "Launch {#MyAppName} when Windows starts"; GroupDe
 Source: "{#MyDistDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Post-install helper scripts
 Source: "download_packs.ps1"; DestDir: "{app}"; Flags: ignoreversion
-; Elevated OCR setup (Windows OCR capability + Tesseract Program Files)
+; Elevated OCR setup -- Windows OCR capability only (one UAC prompt for this step)
+Source: "setup_ocr_elevated.ps1"; DestDir: "{app}"; Flags: ignoreversion
+; Full elevated setup for Preferences OCR page (Windows OCR + Tesseract system-wide)
 Source: "setup_elevated.ps1"; DestDir: "{app}"; Flags: ignoreversion
-; User-level Tesseract install fallback (used by Preferences if elevated script unavailable)
+; User-level Tesseract install (no admin required -- installs to LocalAppData via winget/direct)
 Source: "install_tesseract.ps1"; DestDir: "{app}"; Flags: ignoreversion
 ; Bundled Tesseract OCR -- only installed if user keeps the Tesseract checkbox checked
 Source: "tesseract-bundle\*"; DestDir: "{app}\tesseract"; Flags: ignoreversion recursesubdirs createallsubdirs; Check: ShouldInstallTesseract
@@ -521,7 +522,7 @@ begin
         begin
           ShellExec('runas', 'powershell.exe',
             '-ExecutionPolicy Bypass -WindowStyle Normal' +
-            ' -File "' + ExpandConstant('{app}\setup_elevated.ps1') + '"',
+            ' -File "' + ExpandConstant('{app}\setup_ocr_elevated.ps1') + '"',
             ExpandConstant('{app}'),
             SW_SHOWNORMAL, ewWaitUntilTerminated, ResultCode);
           WinOcrInstalled := (ResultCode = 0);

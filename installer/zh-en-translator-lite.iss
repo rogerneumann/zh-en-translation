@@ -24,8 +24,8 @@ DefaultDirName={autopf}\{#MyAppName}
 DefaultGroupName={#MyAppName}
 AllowNoIcons=yes
 DisableDirPage=no
+; User-level install -- always installs to current user, no admin required
 PrivilegesRequired=lowest
-PrivilegesRequiredOverridesAllowed=dialog
 OutputDir=Output
 OutputBaseFilename=zh-en-translator-v{#MyAppVersion}-lite-setup
 LicenseFile=..\LICENSE
@@ -51,13 +51,17 @@ Name: "startup"; Description: "Launch {#MyAppName} when Windows starts"; GroupDe
 Source: "{#MyDistDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 ; Post-install helper scripts (download_packs.ps1 used when Full install is selected)
 Source: "download_packs.ps1"; DestDir: "{app}"; Flags: ignoreversion
+; Elevated OCR setup -- Windows OCR capability only (one UAC prompt for this step)
+Source: "setup_ocr_elevated.ps1"; DestDir: "{app}"; Flags: ignoreversion
+; Full elevated setup for Preferences OCR page (Windows OCR + Tesseract system-wide)
 Source: "setup_elevated.ps1"; DestDir: "{app}"; Flags: ignoreversion
+; User-level Tesseract install (no admin required -- installs to LocalAppData via winget/direct)
 Source: "install_tesseract.ps1"; DestDir: "{app}"; Flags: ignoreversion
 ; CC-CEDICT bundled (only 6 MB -- always included even in Lite)
 Source: "cedict-bundle\cedict_ts.u8"; DestDir: "{userappdata}\zh-en-translator"; Flags: ignoreversion; Check: BundleExists('cedict-bundle\cedict_ts.u8')
 ; NOTE: argos-bundle and tesseract-bundle intentionally omitted from Lite installer.
 ; When user selects Full install, download_packs.ps1 fetches the Argos model (~100 MB).
-; When user enables Tesseract on the OCR page, setup_elevated.ps1 downloads it.
+; When user enables Tesseract on the OCR page, install_tesseract.ps1 downloads it (no UAC).
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"
@@ -108,7 +112,7 @@ end;
 
 // ---------------------------------------------------------------------------
 // Tesseract install gate -- no bundle in Lite, so this always returns False.
-// Tesseract is downloaded via setup_elevated.ps1 when user enables it on OCR page.
+// Tesseract is downloaded via install_tesseract.ps1 (user-level, no UAC) when user enables it.
 // ---------------------------------------------------------------------------
 function ShouldInstallTesseract: Boolean;
 begin
@@ -327,9 +331,9 @@ begin
   );
   OcrPage.Add(OcrWinNote);
   OcrPage.Add(
-    'Tesseract OCR  [will download ~150 MB + admin prompt]' + #13#10 +
+    'Tesseract OCR  [will download ~150 MB, no admin required]' + #13#10 +
     '    Backup OCR engine used when Windows OCR is unavailable.' + #13#10 +
-    '    Downloads and installs Tesseract via an administrator (UAC) prompt.' + #13#10 +
+    '    Downloads and installs Tesseract to your user profile (no UAC prompt).' + #13#10 +
     '    Skip this if you plan to use Windows OCR (above) or cloud translation only.'
   );
 
@@ -363,8 +367,8 @@ begin
     if InstallTesseract then
     begin
       if MsgBox(
-          'Tesseract OCR will be downloaded (~150 MB) and installed.' + #13#10#13#10 +
-          'An administrator (UAC) prompt will appear after installation completes.' + #13#10#13#10 +
+          'Tesseract OCR will be downloaded (~150 MB) and installed to your user profile.' + #13#10#13#10 +
+          'No administrator prompt is required for this step.' + #13#10#13#10 +
           'Continue?',
           mbConfirmation, MB_YESNO) = IDNO then
       begin
@@ -482,7 +486,7 @@ begin
         begin
           ShellExec('runas', 'powershell.exe',
             '-ExecutionPolicy Bypass -WindowStyle Normal' +
-            ' -File "' + ExpandConstant('{app}\setup_elevated.ps1') + '"',
+            ' -File "' + ExpandConstant('{app}\setup_ocr_elevated.ps1') + '"',
             ExpandConstant('{app}'),
             SW_SHOWNORMAL, ewWaitUntilTerminated, ResultCode);
           WinOcrInstalled := (ResultCode = 0);
@@ -501,21 +505,21 @@ begin
     end;
 
     // ----------------------------------------------------------------
-    // Step: Tesseract (download via setup_elevated.ps1)
+    // Step: Tesseract (user-level install via install_tesseract.ps1, no UAC)
     // ----------------------------------------------------------------
     if InstallTesseract then
     begin
       StepCurrent := StepCurrent + 1;
       WizardForm.StatusLabel.Caption :=
         'Step ' + IntToStr(StepCurrent) + ' of ' + IntToStr(StepTotal) +
-        ': Installing Tesseract OCR (administrator required)...';
+        ': Installing Tesseract OCR (~150 MB download)...';
       WizardForm.FilenameLabel.Caption :=
-        'Downloading Tesseract (~150 MB). An admin (UAC) prompt will appear.';
+        'Downloading Tesseract to your user profile. No admin prompt required.';
       WizardForm.Update();
 
-      ShellExec('runas', 'powershell.exe',
+      Exec('powershell.exe',
         '-ExecutionPolicy Bypass -WindowStyle Normal' +
-        ' -File "' + ExpandConstant('{app}\setup_elevated.ps1') + '"',
+        ' -File "' + ExpandConstant('{app}\install_tesseract.ps1') + '"',
         ExpandConstant('{app}'),
         SW_SHOWNORMAL, ewWaitUntilTerminated, ResultCode);
 
@@ -565,7 +569,7 @@ begin
       OcrSummary := OcrSummary + Space + 'Windows OCR (will install -- requires admin prompt)' + NewLine;
   end;
   if OcrPage.Values[1] then
-    OcrSummary := OcrSummary + Space + 'Tesseract OCR (will download ~150 MB -- requires admin prompt)' + NewLine;
+    OcrSummary := OcrSummary + Space + 'Tesseract OCR (will download ~150 MB, no admin required)' + NewLine;
   if OcrSummary = '' then
     OcrSummary := Space + '(no OCR engines selected)' + NewLine;
 
