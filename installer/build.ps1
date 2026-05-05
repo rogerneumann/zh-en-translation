@@ -208,6 +208,17 @@ foreach ($_PfPath in $_PfIssPaths) {
 if ($_PfTypeError) { exit 1 }
 Write-Ok "Runtime type checks passed"
 
+# 3. Entry-point existence check
+# The .spec was changed from app.py to __main__.py. A missing entry point gives
+# a confusing mid-PyInstaller error; catch it here with a clear message instead.
+$_PfEntryPoint = Join-Path $RepoRoot "src\zh_en_translator\__main__.py"
+if (-not (Test-Path $_PfEntryPoint)) {
+    Write-Fail "Pre-flight: PyInstaller entry point not found: $_PfEntryPoint"
+    Write-Host "    Expected src\zh_en_translator\__main__.py -- was the file renamed or deleted?" -ForegroundColor Yellow
+    exit 1
+}
+Write-Ok "Entry point found: src\zh_en_translator\__main__.py"
+
 # ---------------------------------------------------------------------------
 # Step 0 -- Verify Python version is 3.11.x
 # ---------------------------------------------------------------------------
@@ -368,6 +379,15 @@ if (-not $SkipVersionBump) {
     }
     Write-Ok "Current version: ${VersionString}"
 }
+
+# Version string sanity check -- must match CalVer YYYY.MM.DD[.N] pattern.
+# A malformed string here would silently produce broken filenames and git tags.
+if ($VersionString -notmatch '^\d{4}\.\d{2}\.\d{2}(\.\d+)?$') {
+    Write-Fail "Version string '${VersionString}' does not match expected CalVer format (YYYY.MM.DD[.N])."
+    Write-Host "    Check src\zh_en_translator\__init__.py and re-run." -ForegroundColor Yellow
+    exit 1
+}
+Write-Ok "Version format OK: ${VersionString}"
 
 # ---------------------------------------------------------------------------
 # Step 2 -- Run PyInstaller
@@ -754,6 +774,21 @@ if (-not (Test-Path $CoreSrc)) {
 
     Write-Host "    Copying .pyc files to staging..." -ForegroundColor Gray
     $PycFiles = Get-ChildItem -Path $CoreSrc -Recurse -Filter "*.pyc"
+
+    # Gate: compileall silently produces 0 files if the source tree is missing
+    # or moved. Zipping an empty staging dir would ship a broken update.
+    if ($PycFiles.Count -eq 0) {
+        Write-Fail "Step 2.9: No .pyc files found under $CoreSrc -- aborting core package."
+        Write-Host "    Run a full build first (without -CorePackage) so PyInstaller populates _internal\." -ForegroundColor Yellow
+        Remove-Item -Recurse -Force $CoreStage -ErrorAction SilentlyContinue
+        exit 1
+    }
+    # Warn if suspiciously few (this codebase has 40+ modules; <20 suggests partial compilation)
+    if ($PycFiles.Count -lt 20) {
+        Write-Host "    WARNING: only $($PycFiles.Count) .pyc files found -- expected 40+. Core package may be incomplete." -ForegroundColor Yellow
+    }
+    Write-Host "    Staging $($PycFiles.Count) .pyc files..." -ForegroundColor Gray
+
     foreach ($pf in $PycFiles) {
         $rel = $pf.FullName.Substring($CoreSrc.Length).TrimStart('\','/')
         $dst = Join-Path $CoreStage $rel
@@ -777,10 +812,19 @@ if (-not (Test-Path $CoreSrc)) {
     Remove-Item -Recurse -Force $CoreStage
 
     if (Test-Path $CoreZip) {
-        $CoreZipSize = [math]::Round((Get-Item $CoreZip).Length / 1MB, 2)
-        Write-Ok "Core package: $CoreZip ($CoreZipSize MB)"
+        $CoreZipBytes = (Get-Item $CoreZip).Length
+        $CoreZipSize  = [math]::Round($CoreZipBytes / 1MB, 2)
+        # Floor check: a valid core zip should be at least 50 KB.
+        # A smaller file means staging was empty or compression went wrong.
+        if ($CoreZipBytes -lt 50KB) {
+            Write-Fail "Step 2.9: Core zip is only $([math]::Round($CoreZipBytes/1KB,1)) KB -- expected at least 50 KB."
+            Write-Host "    The zip may be empty. Check compileall output above for errors." -ForegroundColor Yellow
+            exit 1
+        }
+        Write-Ok "Core package: $CoreZip ($CoreZipSize MB, $($PycFiles.Count) modules)"
     } else {
-        Write-Host "    WARNING: core zip was not created." -ForegroundColor Yellow
+        Write-Fail "Step 2.9: Core zip was not created at $CoreZip."
+        exit 1
     }
 }
 
