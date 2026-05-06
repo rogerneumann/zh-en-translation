@@ -1574,14 +1574,35 @@ class PreferencesDialog(QDialog):
                 "(requires the Chinese language pack).</li>"
                 "<li>Falls back automatically to <b>Tesseract</b> if Windows OCR is unavailable.</li>"
             )
+            _platform_note = ""
+        elif _sys.platform == "darwin":
+            _screenshot_hint = "e.g. a screenshot with <code>Cmd+Shift+4</code>"
+            _ocr_engines = (
+                "<li><b>Tesseract</b> is bundled in the app &mdash; no installation required.</li>"
+                "<li>Chinese (Simplified + Traditional) and English traineddata are included.</li>"
+                "<li>PaddleOCR can be installed separately for higher accuracy.</li>"
+            )
+            _platform_note = (
+                "<h2>macOS Setup</h2>"
+                "<p><b>Accessibility permission (required for the hotkey):</b> "
+                "open <b>System Settings &rarr; Privacy &amp; Security &rarr; Accessibility</b> "
+                "and enable Zh-En Translator. A setup dialog guides you through this on first launch.</p>"
+                "<p><b>Login item:</b> enable <b>Launch at login</b> in "
+                "<a href=\"pref://general\">Preferences &rsaquo; General</a>. "
+                "This writes a LaunchAgent to <code>~/Library/LaunchAgents/</code>.</p>"
+                "<p><b>First launch (no code signing):</b> if macOS blocks the app, "
+                "right-click the .app and choose <b>Open</b>, then confirm in the dialog. "
+                "This is only needed once.</p>"
+            )
         else:
             _screenshot_hint = "e.g. a screenshot"
             _ocr_engines = (
-                "<li><b>Tesseract</b> is the primary OCR engine on Linux/macOS.</li>"
+                "<li><b>Tesseract</b> is the primary OCR engine on Linux.</li>"
                 "<li>Install: <code>sudo apt install tesseract-ocr tesseract-ocr-chi-sim</code> "
                 "(Debian/Ubuntu), or see Preferences &rsaquo; Lookup &amp; OCR for other distros.</li>"
                 "<li>PaddleOCR can be installed for higher accuracy.</li>"
             )
+            _platform_note = ""
 
         ocr_section = (
             f"<h2>OCR &mdash; Translating Text in Images</h2>"
@@ -1725,6 +1746,8 @@ and in the popup/sidebar headers.</p>
 To change it, open <a href="pref://general">Preferences &rsaquo; General</a>,
 click the hotkey button, and hold your desired key combination (e.g. Ctrl+Shift+T).
 Release all keys to confirm, or press Esc to cancel.</p>
+
+{_platform_note}
 
 <h2>Feedback</h2>
 <p>Have a suggestion or noticed something wrong?

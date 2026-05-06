@@ -1,0 +1,158 @@
+name: Build macOS (Apple Silicon)
+
+on:
+  push:
+    tags:
+      - 'v*.*.*.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build and upload to (e.g. v2026.05.05.5)'
+        required: true
+
+jobs:
+  build:
+    runs-on: macos-14   # Apple Silicon M1
+
+    env:
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install app and build deps
+        run: |
+          pip install --upgrade pip
+          pip install -e ".[ocr-tesseract,traditional]"
+          pip install pyinstaller
+
+      - name: Install Tesseract via Homebrew and stage bundle
+        run: |
+          brew install tesseract
+          BREW_PREFIX=$(brew --prefix)
+          mkdir -p installer/tesseract-bundle-macos/tessdata
+          cp "$BREW_PREFIX/bin/tesseract"                                    installer/tesseract-bundle-macos/tesseract
+          cp "$BREW_PREFIX/share/tessdata/chi_sim.traineddata"               installer/tesseract-bundle-macos/tessdata/
+          cp "$BREW_PREFIX/share/tessdata/chi_tra.traineddata"               installer/tesseract-bundle-macos/tessdata/
+          cp "$BREW_PREFIX/share/tessdata/eng.traineddata"                   installer/tesseract-bundle-macos/tessdata/
+          chmod +x installer/tesseract-bundle-macos/tesseract
+
+      - name: Download CC-CEDICT
+        run: |
+          mkdir -p installer/cedict-bundle
+          curl -L "https://www.mdbg.net/chinese/export/cedict/cedict_1_0_ts_utf-8_mdbg.zip" \
+               -o installer/cedict-bundle/cedict.zip
+          cd installer/cedict-bundle && unzip -o cedict.zip cedict_ts.u8
+
+      - name: Download and stage Argos translation models
+        run: |
+          python - <<'PYEOF'
+          import argostranslate.package as pkg
+          import shutil
+          import pathlib
+          import os
+          import glob
+
+          pkg.update_package_index()
+          available = pkg.get_available_packages()
+
+          for from_code, to_code, dest in [
+              ("zh", "en", "installer/argos-bundle"),
+              ("en", "zh", "installer/argos-en-zh-bundle"),
+          ]:
+              model = next(
+                  (p for p in available if p.from_code == from_code and p.to_code == to_code),
+                  None,
+              )
+              if model is None:
+                  raise RuntimeError(f"Argos model {from_code}->{to_code} not found in index")
+              print(f"Downloading Argos {from_code}->{to_code} model...")
+              model.install()
+
+          # Locate installed packages and copy to staging dirs
+          data_home = pathlib.Path(
+              os.environ.get("XDG_DATA_HOME",
+                             pathlib.Path.home() / ".local" / "share")
+          )
+          argos_pkgs = data_home / "argostranslate" / "packages"
+          # macOS: argostranslate may use ~/Library/Application Support instead
+          if not argos_pkgs.exists():
+              argos_pkgs = pathlib.Path.home() / "Library" / "Application Support" / "argostranslate" / "packages"
+
+          for from_code, to_code, dest in [
+              ("zh", "en", "installer/argos-bundle"),
+              ("en", "zh", "installer/argos-en-zh-bundle"),
+          ]:
+              pattern = str(argos_pkgs / f"translate-{from_code}_{to_code}-*")
+              matches = sorted(glob.glob(pattern))
+              if not matches:
+                  # fallback: search recursively
+                  matches = sorted(glob.glob(str(argos_pkgs / "**" / f"*{from_code}*{to_code}*"), recursive=True))
+              if not matches:
+                  raise RuntimeError(f"Staged Argos package not found: {pattern}")
+              src_dir = pathlib.Path(matches[-1])  # pick newest if multiple
+              print(f"Staging {src_dir} -> {dest}")
+              shutil.copytree(str(src_dir), dest, dirs_exist_ok=True)
+          PYEOF
+
+      - name: Generate .icns icon
+        run: |
+          mkdir -p installer/Zh-En.iconset
+          SOURCE="src/zh_en_translator/resources/icon_512.png"
+          for sz in 16 32 64 128 256 512; do
+            sips -z $sz $sz "$SOURCE" --out "installer/Zh-En.iconset/icon_${sz}x${sz}.png"
+            sips -z $((sz*2)) $((sz*2)) "$SOURCE" --out "installer/Zh-En.iconset/icon_${sz}x${sz}@2x.png"
+          done
+          iconutil -c icns installer/Zh-En.iconset -o installer/icon.icns
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller installer/zh-en-translator-macos.spec
+
+      - name: Determine version tag
+        id: tag
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "TAG=${{ github.event.inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "TAG=${GITHUB_REF_NAME}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Create DMG
+        run: |
+          TAG="${{ steps.tag.outputs.TAG }}"
+          DMG_NAME="zh-en-translator-${TAG}-macos-arm64.dmg"
+          echo "DMG_NAME=${DMG_NAME}" >> "$GITHUB_ENV"
+          mkdir -p dmg-staging
+          cp -r "dist/Zh-En Translator.app" "dmg-staging/"
+          ln -sf /Applications "dmg-staging/Applications"
+          hdiutil create \
+            -volname "Zh-En Translator" \
+            -srcfolder dmg-staging \
+            -ov \
+            -format UDZO \
+            "$DMG_NAME"
+
+      - name: Wait for GitHub Release and upload DMG
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ steps.tag.outputs.TAG }}"
+          # Wait up to 5 minutes for build.ps1 (running locally on Windows) to create the release
+          for i in $(seq 1 30); do
+            if gh release view "$TAG" --repo "${{ github.repository }}" > /dev/null 2>&1; then
+              echo "Release $TAG found."
+              break
+            fi
+            echo "Waiting for release $TAG to be created... attempt $i/30"
+            sleep 10
+          done
+          gh release upload "$TAG" "$DMG_NAME" \
+            --repo "${{ github.repository }}" \
+            --clobber

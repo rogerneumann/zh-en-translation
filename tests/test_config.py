@@ -199,3 +199,39 @@ def test_traditional_to_simplified_true_roundtrip(tmp_path):
     loaded = load_config(config_path=config_file)
 
     assert loaded.traditional_to_simplified is True
+
+
+# ---------------------------------------------------------------------------
+# test_macos_accessibility_prompted
+# ---------------------------------------------------------------------------
+
+def test_macos_accessibility_prompted_default():
+    """macos_accessibility_prompted defaults to False."""
+    cfg = Config()
+    assert cfg.macos_accessibility_prompted is False
+
+
+def test_macos_accessibility_prompted_roundtrip_true(tmp_path):
+    """macos_accessibility_prompted=True saves and reloads correctly."""
+    config_file = tmp_path / "config.toml"
+    original = Config(macos_accessibility_prompted=True)
+    save_config(original, config_path=config_file)
+    loaded = load_config(config_path=config_file)
+    assert loaded.macos_accessibility_prompted is True
+
+
+def test_macos_accessibility_prompted_roundtrip_false(tmp_path):
+    """macos_accessibility_prompted=False saves and reloads correctly."""
+    config_file = tmp_path / "config.toml"
+    original = Config(macos_accessibility_prompted=False)
+    save_config(original, config_path=config_file)
+    loaded = load_config(config_path=config_file)
+    assert loaded.macos_accessibility_prompted is False
+
+
+def test_macos_accessibility_prompted_missing_section(tmp_path):
+    """Legacy config without [macos] section loads with default False."""
+    config_file = tmp_path / "config.toml"
+    config_file.write_text("[general]\nhotkey = \"<ctrl>+<shift>+t\"\n", encoding="utf-8")
+    cfg = load_config(config_path=config_file)
+    assert cfg.macos_accessibility_prompted is False

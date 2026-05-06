@@ -1,9 +1,9 @@
 # zh-en-translator
 
 A lightweight, **offline-first** Chinese → English popup translator for
-Windows 11. Press a global hotkey on any selected Chinese text and a frameless
-popup appears at the cursor with the English translation, pinyin, a back-translation
-quality indicator, and an optional persistent sidebar.
+**Windows 11** and **macOS (Apple Silicon)**. Press a global hotkey on any selected
+Chinese text and a frameless popup appears at the cursor with the English translation,
+pinyin, a back-translation quality indicator, and an optional persistent sidebar.
 
 No text leaves the machine by default — translation runs locally via
 [Argos Translate](https://github.com/argosopentech/argostranslate) +
@@ -16,7 +16,7 @@ LibreTranslate — including free options that require no account
 
 ## Quick Start
 
-1. **Copy** Chinese text with **Ctrl+C**.
+1. **Copy** Chinese text with **Ctrl+C** (Windows) or **Cmd+C** (macOS).
    > **Tip:** copy rather than just highlight — some applications do not expose selected text to
    > other programs. Copying first ensures the text is available to the translator.
 2. Press **Ctrl+Shift+T** (default hotkey) from anywhere on your desktop.
@@ -56,7 +56,7 @@ LibreTranslate — including free options that require no account
 | Domain glossaries | Built-in: manufacturing (149), medical (504), legal (409), electronics (452) |
 | User glossary | Custom terms override all engines for exact phrase matches |
 | Replace in-place | Pastes translation back into the source field (Word, browsers, IDEs, etc.) |
-| OCR | Translate Chinese text in clipboard images via Windows OCR / Tesseract / PaddleOCR |
+| OCR | Translate Chinese text in clipboard images (Win+Shift+S / Cmd+Shift+4) |
 | Traditional Chinese | Auto-converts Traditional → Simplified via OpenCC before translation |
 | Themes | System / Light / Dark / Sepia |
 | Translation history | Last 20 entries in sidebar; export to CSV |
@@ -69,7 +69,7 @@ LibreTranslate — including free options that require no account
 
 ## Install
 
-### Windows installer (recommended)
+### Windows (recommended)
 
 Download the latest release from the [Releases page](../../releases):
 
@@ -77,8 +77,19 @@ Download the latest release from the [Releases page](../../releases):
 - **Lite installer** (~100 MB) — smaller download; AI translation models download automatically on first use.
 - **Portable ZIP** — no installer required; extract and run `zh-en-translator.exe`.
 
-### From source (Python 3.11 or 3.12)
+### macOS (Apple Silicon)
 
+Download **`zh-en-translator-vX.Y.Z-macos-arm64.dmg`** from the [Releases page](../../releases).
+
+1. Open the DMG and drag **Zh-En Translator** to Applications.
+2. **First launch:** right-click the app → **Open** → confirm in the dialog (Gatekeeper bypass — only needed once; the app is not yet code-signed).
+3. **Accessibility permission:** the app will prompt you to open System Settings → Privacy & Security → Accessibility and enable Zh-En Translator. This is required for the global hotkey to capture text from other apps.
+
+> **Apple Silicon only.** Intel Mac builds are not currently published. Run from source on Intel (see below).
+
+### From source (Python 3.11+)
+
+**Windows:**
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\Activate.ps1
@@ -86,9 +97,15 @@ python -m venv .venv
 ```
 
 To also install Windows OCR support (pre-built `winrt-*` wheels — no compiler needed):
-
 ```powershell
 .\scripts\install-windows.ps1 -OCR
+```
+
+**macOS / Linux:**
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -e ".[ocr-tesseract,traditional]"
 ```
 
 > **Python 3.14 note:** `argostranslate 1.9.x` pins `sentencepiece==0.2.0` which
@@ -96,25 +113,21 @@ To also install Windows OCR support (pre-built `winrt-*` wheels — no compiler 
 > installing `sentencepiece>=0.2.0 --only-binary :all:` first (picks up 0.2.1),
 > then argostranslate with `--no-deps`.
 
-### Linux / macOS
-
-```bash
-pip install -e ".[dev]"
-```
-
 ---
 
 ## OCR (optional)
 
-| Engine | Install | Notes |
-|---|---|---|
-| **Windows OCR** (recommended) | `.\scripts\install-windows.ps1 -OCR` | Offline, ships with Windows; needs Chinese language pack |
-| **Tesseract** | Bundled in full installer; or install [manually](https://github.com/UB-Mannheim/tesseract/wiki) | Offline |
-| **PaddleOCR** | `pip install "zh-en-translator[ocr-paddle]"` | Best quality; heavy download |
+| Engine | Platform | Install | Notes |
+|---|---|---|---|
+| **Windows OCR** | Windows only | `.\scripts\install-windows.ps1 -OCR` | Offline, ships with Windows; needs Chinese language pack |
+| **Tesseract** | Windows + macOS | Bundled in full installer (Windows) and DMG (macOS) | Offline; or install [manually](https://github.com/UB-Mannheim/tesseract/wiki) on Windows |
+| **PaddleOCR** | All | `pip install "zh-en-translator[ocr-paddle]"` | Best quality; heavy download |
 
 If Windows OCR is installed but the Chinese language pack is missing, the
 popup shows an "Open Language Settings" button that takes you directly to the
 Windows language settings to add **Chinese (Simplified, China)**.
+
+On macOS, Tesseract (with chi_sim + chi_tra traineddata) is bundled inside the DMG — no separate installation needed.
 
 ---
 
@@ -123,7 +136,7 @@ Windows language settings to add **Chinese (Simplified, China)**.
 Install the OpenCC converter to enable automatic Traditional → Simplified
 conversion before translation:
 
-```powershell
+```bash
 pip install "zh-en-translator[traditional]"
 ```
 
@@ -148,7 +161,7 @@ When a new version is available:
 | **Lite installer** | ~100 MB | Fresh install without bundled models |
 | **Full installer** | ~350 MB | Complete offline bundle |
 
-The quick update applies a small patch over your existing installation — no UAC prompt, no reinstall.
+The quick update applies a small patch over your existing installation — no UAC prompt, no reinstall. Works on both Windows and macOS.
 
 ---
 
@@ -211,20 +224,29 @@ for unlimited, fully private cloud-quality translation on your own machine or se
 
 ## Run
 
+**Windows:**
 ```powershell
 zh-en-translator
 ```
 
-The app appears as a system-tray icon (blue rounded square with "中"). Right-click
+**macOS (from source):**
+```bash
+zh-en-translator
+```
+
+The app appears as a system-tray / menu-bar icon (blue rounded square with "中"). Right-click
 the tray icon for the context menu.
 
 ---
 
 ## Configuration
 
-Settings are stored in `%APPDATA%\zh-en-translator\config.toml` (Windows) or
-`~/.config/zh-en-translator/config.toml` (Linux/macOS). Edit in the **Preferences** dialog
-(tray → Preferences…) or directly in the file:
+Settings are stored in:
+- **Windows:** `%APPDATA%\zh-en-translator\config.toml`
+- **macOS:** `~/Library/Application Support/zh-en-translator/config.toml`
+- **Linux:** `~/.config/zh-en-translator/config.toml`
+
+Edit in the **Preferences** dialog (tray → Preferences…) or directly in the file:
 
 ```toml
 [general]
@@ -276,14 +298,14 @@ libretranslate_api_key = ""
 ### Tests
 
 ```bash
-# Headless (Linux / CI)
+# Headless (Linux / CI / macOS)
 QT_QPA_PLATFORM=offscreen pytest -v
 
 # Windows (offscreen is set automatically by the test suite)
 pytest -v
 ```
 
-636 tests, 18 skipped (GPU fine-tuning tests — expected without CUDA hardware).
+736 tests, 18 skipped (GPU fine-tuning tests — expected without CUDA hardware).
 
 ### Lint
 
@@ -298,14 +320,14 @@ Activate the pre-commit secret scanner (requires [gitleaks](https://github.com/g
 ```bash
 git config core.hooksPath .githooks
 winget install gitleaks   # Windows
-# brew install gitleaks   # macOS
+brew install gitleaks     # macOS
 ```
 
 The hook runs `gitleaks protect --staged` on every commit and blocks anything that looks like a secret. It warns and skips gracefully if gitleaks is not installed.
 
-### Build (Windows)
+### Build
 
-Requires Python 3.11, PyInstaller, and Inno Setup 6:
+**Windows** — requires Python 3.11, PyInstaller, and Inno Setup 6:
 
 ```powershell
 # Full build — installer + portable ZIP + core update package:
@@ -321,13 +343,26 @@ Outputs in `installer/Output/`:
 - `zh-en-translator-v{ver}-lite-portable.zip`
 - `core-v{ver}.zip` (~5 MB — used by the in-app quick updater)
 
+**macOS** — triggered automatically by GitHub Actions on every `v*.*.*.*` tag push:
+
+```bash
+# Trigger: push a CalVer tag (build.ps1 does this automatically)
+git tag v2026.05.05.5 && git push origin v2026.05.05.5
+```
+
+The workflow (`.github/workflows/build-macos.yml`) runs on an Apple Silicon runner (`macos-14`),
+installs Tesseract via Homebrew, downloads the Argos models, builds the `.app` bundle via
+PyInstaller, packages a DMG, and uploads it to the same GitHub Release as the Windows files.
+
+Output: `zh-en-translator-v{ver}-macos-arm64.dmg`
+
 ### Architecture
 
 ```
 zh-en-translation/
 ├─ src/zh_en_translator/
 │  ├─ __main__.py             ← entry point; AppData overlay bootstrap + auto-rollback
-│  ├─ app.py                  ← tray app, hotkey, update checker
+│  ├─ app.py                  ← tray app, hotkey, update checker, macOS Accessibility prompt
 │  ├─ config.py               ← TOML config loader/writer
 │  ├─ install_state.py        ← install_state.toml; overlay version tracking
 │  ├─ engines/
@@ -345,18 +380,26 @@ zh-en-translation/
 │  │  ├─ glossary.py          ← TOML glossary loader
 │  │  ├─ glossary_db.py       ← SQLite multi-domain glossary backend
 │  │  ├─ history.py           ← last 20 translations, JSON + async enrichment
-│  │  └─ ocr/                 ← Windows / Tesseract / PaddleOCR engines
+│  │  └─ ocr/                 ← Windows OCR / Tesseract / PaddleOCR engines
 │  └─ ui/
 │     ├─ popup.py             ← frameless popup; collapsible Original/Details sections
 │     ├─ sidebar.py           ← peek-tab sidebar + history list
-│     ├─ preferences.py       ← tabbed preferences dialog
+│     ├─ preferences.py       ← tabbed preferences dialog (platform-aware Help tab)
 │     ├─ update_dialog.py     ← CoreUpdateDialog: download + apply + restart
 │     ├─ update_options_dialog.py ← update picker: quick / lite / full installer
 │     └─ feedback_dialog.py   ← in-app feedback form
 ├─ installer/
-│  ├─ build.ps1               ← CalVer bump, PyInstaller, Inno Setup, core ZIP
-│  └─ zh-en-translator.iss    ← Inno Setup script
-└─ tests/                     ← 636 tests (18 skipped without GPU)
+│  ├─ build.ps1               ← CalVer bump, PyInstaller, Inno Setup, core ZIP (Windows)
+│  ├─ zh-en-translator.iss    ← Inno Setup script (Windows full installer)
+│  ├─ zh-en-translator-lite.iss ← Inno Setup script (Windows lite installer)
+│  ├─ zh-en-translator.spec   ← PyInstaller spec (Windows)
+│  ├─ zh-en-translator-macos.spec ← PyInstaller spec (macOS arm64, .app bundle)
+│  └─ runtime_hooks/
+│     ├─ set_qt_path.py       ← Windows DLL search path hook
+│     └─ macos_paths.py       ← sets TESSDATA_PREFIX for bundled Tesseract (macOS)
+├─ .github/workflows/
+│  └─ build-macos.yml         ← macOS CI: macos-14 runner, DMG → GitHub Release
+└─ tests/                     ← 736 tests (18 skipped without GPU)
 ```
 
 ---

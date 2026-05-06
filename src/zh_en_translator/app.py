@@ -140,6 +140,45 @@ def _apply_startup_setting(enabled: bool, exe_path: str) -> None:
                         pass  # already absent — that's fine
         except Exception as e:
             logger.warning("Could not update startup registry entry: %s", e)
+    elif sys.platform == "darwin":
+        import shutil
+        from pathlib import Path
+        launch_agents = Path.home() / "Library" / "LaunchAgents"
+        plist_file = launch_agents / "com.rogerneumann.zh-en-translator.plist"
+        if enabled:
+            launch_exe = exe_path or shutil.which("zh-en-translator") or ""
+            if not launch_exe:
+                logger.debug("Startup: no executable found, skipping LaunchAgents")
+                return
+            plist_content = (
+                '<?xml version="1.0" encoding="UTF-8"?>\n'
+                '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN"\n'
+                '          "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n'
+                '<plist version="1.0">\n'
+                '<dict>\n'
+                '  <key>Label</key>\n'
+                '  <string>com.rogerneumann.zh-en-translator</string>\n'
+                '  <key>ProgramArguments</key>\n'
+                '  <array><string>' + launch_exe + '</string></array>\n'
+                '  <key>RunAtLoad</key>\n'
+                '  <true/>\n'
+                '  <key>KeepAlive</key>\n'
+                '  <false/>\n'
+                '</dict>\n'
+                '</plist>\n'
+            )
+            try:
+                launch_agents.mkdir(parents=True, exist_ok=True)
+                plist_file.write_text(plist_content, encoding="utf-8")
+                logger.info("LaunchAgents plist created: %s", plist_file)
+            except Exception as e:
+                logger.warning("Could not create LaunchAgents plist: %s", e)
+        else:
+            try:
+                plist_file.unlink(missing_ok=True)
+                logger.info("LaunchAgents plist removed: %s", plist_file)
+            except Exception as e:
+                logger.warning("Could not remove LaunchAgents plist: %s", e)
     else:
         import shutil
         from pathlib import Path
@@ -277,6 +316,58 @@ def _apply_update_badge(pixmap: "QPixmap", size: int) -> "QPixmap":
     return result
 
 
+def _check_macos_accessibility(cfg: "Config", config_path) -> None:
+    """On macOS, show a one-time prompt if Accessibility permission is not granted.
+
+    pynput's global hotkey listener silently fails without this permission.
+    Uses ctypes to call AXIsProcessTrusted() — no pyobjc dependency required.
+    """
+    if sys.platform != "darwin":
+        return
+    try:
+        import ctypes
+        import ctypes.util
+        lib_path = ctypes.util.find_library("ApplicationServices")
+        if not lib_path:
+            return
+        app_svc = ctypes.cdll.LoadLibrary(lib_path)
+        app_svc.AXIsProcessTrusted.restype = ctypes.c_bool
+        if app_svc.AXIsProcessTrusted():
+            return
+    except Exception:
+        return
+
+    if cfg.macos_accessibility_prompted:
+        return
+
+    # Show prompt (QApplication must already exist at this point)
+    from PyQt6.QtWidgets import QMessageBox, QPushButton
+    from PyQt6.QtCore import QUrl
+    from PyQt6.QtGui import QDesktopServices
+
+    msg = QMessageBox()
+    msg.setWindowTitle("Accessibility Permission Required")
+    msg.setIcon(QMessageBox.Icon.Information)
+    msg.setText(
+        "Zh-En Translator needs Accessibility access to capture selected text "
+        "with the global hotkey.\n\n"
+        "Open:  System Settings → Privacy & Security → Accessibility\n"
+        "then enable Zh-En Translator, and restart the app."
+    )
+    open_btn = msg.addButton("Open System Settings", QMessageBox.ButtonRole.AcceptRole)
+    msg.addButton("Later", QMessageBox.ButtonRole.RejectRole)
+    msg.exec()
+
+    if msg.clickedButton() is open_btn:
+        QDesktopServices.openUrl(
+            QUrl("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        )
+
+    cfg.macos_accessibility_prompted = True
+    from zh_en_translator.config import save_config
+    save_config(cfg, config_path)
+
+
 class TranslatorApp(QObject):
     """System tray application with global hotkey listener."""
 
@@ -291,6 +382,9 @@ class TranslatorApp(QObject):
         super().__init__()
 
         self.config: Config = load_config()
+
+        # macOS: prompt for Accessibility permission on first launch if not granted
+        _check_macos_accessibility(self.config, None)
 
         # Auto-migrate legacy installs to overlay architecture on first run
         _migrate_install_state()

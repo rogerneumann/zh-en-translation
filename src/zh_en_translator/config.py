@@ -86,6 +86,9 @@ class Config:
     # Recognised values: "manufacturing", "medical", "legal", "electronics"
     domains_enabled: list = None  # type: ignore[assignment]  # None -> auto-discover all
 
+    # [macos]
+    macos_accessibility_prompted: bool = False
+
     def __post_init__(self):
         # Initialise mutable default for domains_enabled
         if self.domains_enabled is None:
@@ -169,6 +172,9 @@ def load_config(config_path: Path | None = None) -> Config:
             "cloud", "libretranslate_api_key", defaults.libretranslate_api_key
         ),
         domains_enabled=_get("domains", "domains_enabled", defaults.domains_enabled),
+        macos_accessibility_prompted=_get(
+            "macos", "macos_accessibility_prompted", defaults.macos_accessibility_prompted
+        ),
     )
 
 
@@ -232,6 +238,9 @@ libretranslate_api_key = {_toml_str(cfg.libretranslate_api_key)}
 
 [domains]
 domains_enabled = {domains_list}
+
+[macos]
+macos_accessibility_prompted = {_toml_bool(cfg.macos_accessibility_prompted)}
 """
     config_path.write_text(toml_content, encoding="utf-8")
 
