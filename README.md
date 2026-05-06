@@ -1,9 +1,9 @@
 # zh-en-translator
 
 A lightweight, **offline-first** Chinese → English popup translator for
-Windows 11 (cross-platform intent). Press a global hotkey on any selected
-Chinese text and a frameless popup appears at the cursor with the full-sentence
-English translation, pinyin, action buttons, and an optional persistent sidebar.
+Windows 11. Press a global hotkey on any selected Chinese text and a frameless
+popup appears at the cursor with the English translation, pinyin, a back-translation
+quality indicator, and an optional persistent sidebar.
 
 No text leaves the machine by default — translation runs locally via
 [Argos Translate](https://github.com/argosopentech/argostranslate) +
@@ -20,18 +20,20 @@ LibreTranslate — including free options that require no account
    > **Tip:** copy rather than just highlight — some applications do not expose selected text to
    > other programs. Copying first ensures the text is available to the translator.
 2. Press **Ctrl+Shift+T** (default hotkey) from anywhere on your desktop.
-3. The translation popup appears at your cursor with the English translation, pinyin, and action buttons.
+3. The translation popup appears at your cursor with the English translation, a confidence
+   badge, and action buttons.
 
 ### Popup controls at a glance
 
 | Control | Action |
 |---|---|
-| ↺ button | Edit source text inline, then ↺ or **Ctrl+Enter** to retranslate |
 | **Copy** | Copy the English translation to clipboard |
 | **Replace** | Paste the translation back over the original text in the source app |
 | **Pin →** | Send translation to the persistent sidebar panel |
 | **Look up** | Open source text in MDBG dictionary |
-| **▼ Details** | Expand word-by-word dictionary breakdown |
+| **▶ Original text** | Expand to view source Chinese text and pinyin |
+| **▶ Details** | Expand word-by-word dictionary breakdown |
+| ● (header) | Back-translation quality badge — green/amber/red confidence indicator |
 | 📌 (header) | Keep popup open when clicking away |
 | **✕ / Esc** | Dismiss |
 
@@ -44,16 +46,22 @@ LibreTranslate — including free options that require no account
 | Feature | Notes |
 |---|---|
 | Global hotkey | Default `Ctrl+Shift+T`, fully configurable |
-| Popup mode | Frameless rounded popup at cursor, dismisses on Esc / click-outside / focus loss |
-| Sidebar mode | Persistent 6 px peek-tab at screen edge; slides out on click |
+| Popup mode | Frameless rounded popup at cursor, translation shown first |
+| Sidebar mode | Persistent 6 px peek-tab at screen edge; last 20 translations in history panel |
 | Sentence translation | Argos Translate + ctranslate2 — fully offline after one-time model download |
-| Pinyin | Shown above source text; auto-hidden for long inputs |
+| Back-translation quality badge | Translates back to Chinese and scores via CER + content-word coverage; green/amber/red ● in popup and sidebar |
+| Collapsible sections | Original text + pinyin collapsed by default; word-by-word Details on demand |
+| Pinyin | Shown in collapsible "Original text" section |
 | Dictionary lookup | CC-CEDICT (~120 k entries) downloaded on first run |
+| Domain glossaries | Built-in: manufacturing (149), medical (504), legal (409), electronics (452) |
+| User glossary | Custom terms override all engines for exact phrase matches |
 | Replace in-place | Pastes translation back into the source field (Word, browsers, IDEs, etc.) |
 | OCR | Translate Chinese text in clipboard images via Windows OCR / Tesseract / PaddleOCR |
 | Traditional Chinese | Auto-converts Traditional → Simplified via OpenCC before translation |
 | Themes | System / Light / Dark / Sepia |
-| Preferences | In-app dialog — hotkey, font, colours, OCR engine, cloud key, and more |
+| Translation history | Last 20 entries in sidebar; export to CSV |
+| Preferences | In-app dialog — hotkey, font, colours, OCR engine, cloud keys, and more |
+| In-app updates | Auto-checks on startup; one-click update from tray right-click menu |
 | Accessibility | Screen-reader names/descriptions, logical tab order |
 | Cloud (opt-in) | DeepL, Google Translate, Azure Translator, LibreTranslate — all opt-in with privacy warning; zero egress when disabled |
 
@@ -61,7 +69,15 @@ LibreTranslate — including free options that require no account
 
 ## Install
 
-### Windows (Python 3.11 or 3.12 recommended)
+### Windows installer (recommended)
+
+Download the latest release from the [Releases page](../../releases):
+
+- **Full installer** (~350–400 MB) — everything bundled, including Tesseract + CC-CEDICT + Argos models. Works fully offline from first launch.
+- **Lite installer** (~100 MB) — smaller download; AI translation models download automatically on first use.
+- **Portable ZIP** — no installer required; extract and run `zh-en-translator.exe`.
+
+### From source (Python 3.11 or 3.12)
 
 ```powershell
 python -m venv .venv
@@ -93,7 +109,7 @@ pip install -e ".[dev]"
 | Engine | Install | Notes |
 |---|---|---|
 | **Windows OCR** (recommended) | `.\scripts\install-windows.ps1 -OCR` | Offline, ships with Windows; needs Chinese language pack |
-| **Tesseract** | Install [Tesseract binary](https://github.com/UB-Mannheim/tesseract/wiki) + `chi_sim` pack, then `pip install pytesseract Pillow` | Offline |
+| **Tesseract** | Bundled in full installer; or install [manually](https://github.com/UB-Mannheim/tesseract/wiki) | Offline |
 | **PaddleOCR** | `pip install "zh-en-translator[ocr-paddle]"` | Best quality; heavy download |
 
 If Windows OCR is installed but the Chinese language pack is missing, the
@@ -112,6 +128,27 @@ pip install "zh-en-translator[traditional]"
 ```
 
 Toggle the setting in **Preferences → General → Traditional Chinese**.
+
+---
+
+## Updates
+
+The app checks for updates automatically on startup (at most once every 48 hours).
+When a new version is available:
+
+- An **orange dot ●** appears on the tray icon, in the popup header, and in the sidebar header.
+- Right-click the tray icon → **"Updates available ●"** to see options.
+- The update check covers both the app itself and installed AI translation models.
+
+**Update options:**
+
+| Option | Size | Notes |
+|---|---|---|
+| **Quick update** | ~5 MB | In-app download; restarts automatically. Recommended. |
+| **Lite installer** | ~100 MB | Fresh install without bundled models |
+| **Full installer** | ~350 MB | Complete offline bundle |
+
+The quick update applies a small patch over your existing installation — no UAC prompt, no reinstall.
 
 ---
 
@@ -246,6 +283,8 @@ QT_QPA_PLATFORM=offscreen pytest -v
 pytest -v
 ```
 
+636 tests, 18 skipped (GPU fine-tuning tests — expected without CUDA hardware).
+
 ### Lint
 
 ```bash
@@ -264,32 +303,60 @@ winget install gitleaks   # Windows
 
 The hook runs `gitleaks protect --staged` on every commit and blocks anything that looks like a secret. It warns and skips gracefully if gitleaks is not installed.
 
+### Build (Windows)
+
+Requires Python 3.11, PyInstaller, and Inno Setup 6:
+
+```powershell
+# Full build — installer + portable ZIP + core update package:
+.\installer\build.ps1
+
+# Hotfix only — core update package without rebuilding the installer:
+.\installer\build.ps1 -SkipVersionBump -CorePackage
+```
+
+Outputs in `installer/Output/`:
+- `zh-en-translator-v{ver}-setup.exe` (~350–400 MB)
+- `zh-en-translator-v{ver}-lite-setup.exe` (~100 MB)
+- `zh-en-translator-v{ver}-lite-portable.zip`
+- `core-v{ver}.zip` (~5 MB — used by the in-app quick updater)
+
 ### Architecture
 
 ```
 zh-en-translation/
 ├─ src/zh_en_translator/
-│  ├─ app.py                  ← tray app + hotkey entry point
-│  ├─ hotkey.py               ← pynput global hotkey wrapper
-│  ├─ capture.py              ← clipboard-based text capture + replace
+│  ├─ __main__.py             ← entry point; AppData overlay bootstrap + auto-rollback
+│  ├─ app.py                  ← tray app, hotkey, update checker
 │  ├─ config.py               ← TOML config loader/writer
+│  ├─ install_state.py        ← install_state.toml; overlay version tracking
 │  ├─ engines/
 │  │  ├─ argos.py             ← offline sentence MT (ctranslate2)
+│  │  ├─ back_translation.py  ← quality badge: CER + content-word coverage scoring
+│  │  ├─ translation_worker.py← pipeline: glossary -> dict -> cloud -> Argos
+│  │  ├─ updater.py           ← download_core(), apply_core(), check_argos_updates()
+│  │  ├─ updates.py           ← GitHub release check; find_core_asset()
 │  │  ├─ deepl.py             ← DeepL API (opt-in)
 │  │  ├─ google_translate.py  ← Google Cloud Translation API (opt-in)
 │  │  ├─ ms_cloud.py          ← Azure Translator (opt-in)
 │  │  ├─ libretranslate.py    ← LibreTranslate / self-hosted (opt-in, free)
 │  │  ├─ dictionary.py        ← CC-CEDICT + SQLite
-│  │  ├─ segmentation.py      ← jieba word segmenter
-│  │  ├─ converter.py         ← OpenCC Traditional→Simplified
-│  │  ├─ themes.py            ← theme palette definitions
-│  │  ├─ translation_worker.py← QThread: DeepL→Google→Azure→LibreTranslate→Argos
+│  │  ├─ segmentation.py      ← jieba / PKUSEG word segmenter
+│  │  ├─ glossary.py          ← TOML glossary loader
+│  │  ├─ glossary_db.py       ← SQLite multi-domain glossary backend
+│  │  ├─ history.py           ← last 20 translations, JSON + async enrichment
 │  │  └─ ocr/                 ← Windows / Tesseract / PaddleOCR engines
 │  └─ ui/
-│     ├─ popup.py             ← frameless translation popup
-│     ├─ sidebar.py           ← peek-tab sidebar
-│     └─ preferences.py       ← tabbed preferences dialog
-└─ tests/                     ← 152 tests
+│     ├─ popup.py             ← frameless popup; collapsible Original/Details sections
+│     ├─ sidebar.py           ← peek-tab sidebar + history list
+│     ├─ preferences.py       ← tabbed preferences dialog
+│     ├─ update_dialog.py     ← CoreUpdateDialog: download + apply + restart
+│     ├─ update_options_dialog.py ← update picker: quick / lite / full installer
+│     └─ feedback_dialog.py   ← in-app feedback form
+├─ installer/
+│  ├─ build.ps1               ← CalVer bump, PyInstaller, Inno Setup, core ZIP
+│  └─ zh-en-translator.iss    ← Inno Setup script
+└─ tests/                     ← 636 tests (18 skipped without GPU)
 ```
 
 ---
@@ -297,20 +364,3 @@ zh-en-translation/
 ## License
 
 Released under the [GNU General Public License v3 or later](LICENSE).
-
----
-
-## Milestones
-
-| # | Milestone | Status |
-|---|---|---|
-| M1 | Hello Popup — tray, hotkey, frameless popup | ✅ |
-| M2 | Dictionary Lookup — CC-CEDICT + jieba + pinyin | ✅ |
-| M3 | Replace + Copy + External Lookup | ✅ |
-| M4 | Sentence Translation — Argos / ctranslate2 (offline) | ✅ |
-| M5 | Sidebar Mode — peek-tab, animations, indicator colours | ✅ |
-| M6 | OCR — Windows / Tesseract / PaddleOCR waterfall | ✅ |
-| M7 | Preferences — TOML config + in-app dialog | ✅ |
-| M8 | Packaging (MSI) | ⏳ |
-| M9 | Accessibility + Traditional Chinese — OpenCC, Qt a11y tree | ✅ |
-| M10 | Cloud translation — DeepL, Google Translate, Azure, LibreTranslate (all opt-in) | ✅ |

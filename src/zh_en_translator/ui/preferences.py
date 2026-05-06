@@ -1627,14 +1627,15 @@ class PreferencesDialog(QDialog):
 <h2>Popup Controls</h2>
 <table>
   <tr><th>Control</th><th>Action</th></tr>
-  <tr><td><b>&#x21BA;</b> button</td>
-      <td>Edit the source text, then click &#x21BA; or press <code>Ctrl+Enter</code> to retranslate.</td></tr>
   <tr><td><b>Copy</b></td><td>Copies the English translation to the clipboard.</td></tr>
   <tr><td><b>Replace</b></td>
       <td>Pastes the English translation back over the original text in the source application.</td></tr>
   <tr><td><b>Pin &rarr;</b></td><td>Sends the translation to the persistent sidebar panel.</td></tr>
   <tr><td><b>Look up</b></td><td>Opens the source text in MDBG online dictionary.</td></tr>
-  <tr><td><b>&#x25BC; Details</b></td><td>Expands a word-by-word dictionary breakdown.</td></tr>
+  <tr><td><b>&#x25B6; Original text</b></td><td>Expand to view the source Chinese text and pinyin.</td></tr>
+  <tr><td><b>&#x25B6; Details</b></td><td>Expand for a word-by-word dictionary breakdown.</td></tr>
+  <tr><td><b>&#x25cf;</b> (header)</td>
+      <td>Back-translation quality badge &mdash; green/amber/red confidence indicator.</td></tr>
   <tr><td>&#x1F4CC; (header)</td>
       <td>Keeps the popup open when you click away, preventing auto-dismiss.</td></tr>
   <tr><td><b>&#x2715; / Esc</b></td><td>Dismiss the popup.</td></tr>
@@ -1694,6 +1695,30 @@ Four cloud engines can be enabled on an opt-in basis in
 that provider&rsquo;s servers. Only enable this if your organisation permits sending
 potentially sensitive data externally.</p>
 <p><a href="pref://cloud">Configure cloud engines &rarr; Preferences &rsaquo; Cloud</a></p>
+
+<h2>Translation Quality Badge</h2>
+<p>The coloured <b>&#x25cf;</b> dot in the popup and sidebar header shows how confident
+the translation is, based on an automatic back-translation check:</p>
+<table>
+  <tr><th>Badge</th><th>Meaning</th></tr>
+  <tr><td><span style="color:#16A34A;">&#x25cf; Green</span></td><td>High confidence &mdash; back-translation closely matches the original.</td></tr>
+  <tr><td><span style="color:#D97706;">&#x25cf; Amber</span></td><td>Medium confidence &mdash; translation is likely usable but may miss nuance.</td></tr>
+  <tr><td><span style="color:#DC2626;">&#x25cf; Red</span></td><td>Low confidence &mdash; review the translation before relying on it.</td></tr>
+  <tr><td><span style="color:#9CA3AF;">&#x25cf; Grey</span></td><td>Back-translation unavailable (back-translation disabled or model not installed).</td></tr>
+</table>
+<p>Toggle the quality check in <a href="pref://general">Preferences &rsaquo; General &rsaquo; Back-translation quality check</a>.</p>
+
+<h2>Updates</h2>
+<p>The app checks for updates automatically on startup (at most once every 48 hours).
+When a new version is available, an orange <b>&#x25cf;</b> dot appears on the tray icon
+and in the popup/sidebar headers.</p>
+<ul>
+  <li>Right-click the tray icon &rarr; <b>Updates available &#x25cf;</b> to see your options.</li>
+  <li>The <b>Quick update</b> (~5&thinsp;MB) downloads and applies a patch in-place &mdash; a restart activates it.</li>
+  <li>The <b>Lite</b> or <b>Full installer</b> options are also shown when available.</li>
+  <li>The update check covers both the app itself and installed AI translation models.</li>
+</ul>
+<p><a href="pref://general">Check for updates now &rarr; Preferences &rsaquo; General</a></p>
 
 <h2>Hotkey</h2>
 <p>The current hotkey is <code>{hotkey}</code>.
