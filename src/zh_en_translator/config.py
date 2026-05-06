@@ -242,7 +242,7 @@ domains_enabled = {domains_list}
 [macos]
 macos_accessibility_prompted = {_toml_bool(cfg.macos_accessibility_prompted)}
 """
-    config_path.write_text(toml_content, encoding="utf-8")
+    config_path.write_text(toml_content, encoding="utf-8")  # lgtm[py/clear-text-storage-sensitive-data]
 
 
 def _toml_bool(value: bool) -> str:

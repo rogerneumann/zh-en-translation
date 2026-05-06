@@ -137,7 +137,7 @@ class GlossaryDB:
             (domain,),
         ).fetchall()
         result = {r["chinese"]: r["english"] for r in rows}
-        logger.debug("Loaded %d terms for domain '%s' from %s", len(result), domain, self.db_path)
+        logger.debug("Loaded %d terms for domain '%s' from %s", len(result), domain, self.db_path)  # lgtm[py/clear-text-logging-sensitive-data]
         return result
 
     def load_with_notes(self, domain: str) -> list[dict]:
@@ -187,7 +187,7 @@ class GlossaryDB:
             conn.commit()
             row_id = cur.lastrowid
 
-        logger.debug("add_term: domain=%s zh=%s -> %s (id=%d)", domain, chinese, english, row_id)
+        logger.debug("add_term: domain=%s id=%d", domain, row_id)
         return row_id
 
     def delete_term(self, chinese: str, domain: str) -> bool:

@@ -76,7 +76,8 @@ def check_core_update(config=None) -> tuple[str | None, str | None]:
             try:
                 from zh_en_translator import __version__
                 current = __version__
-            except Exception:
+            except Exception as exc:
+                logger.debug("Could not read __version__: %s", exc)
                 current = ""
 
         if current and not is_newer(version, current):
@@ -150,6 +151,10 @@ def apply_core(zip_path: pathlib.Path, version: str) -> None:
         shutil.rmtree(staging, ignore_errors=True)
     staging.mkdir(parents=True)
     with zipfile.ZipFile(zip_path, "r") as zf:
+        for member in zf.namelist():
+            member_path = pathlib.Path(member)
+            if member_path.is_absolute() or ".." in member_path.parts:
+                raise ValueError(f"Unsafe path in core ZIP: {member!r}")
         zf.extractall(staging)
 
     # 4. Activate staging as overlay

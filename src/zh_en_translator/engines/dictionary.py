@@ -344,6 +344,12 @@ class Dictionary:
 
         return entries
 
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_):
+        self.close()
+
     def close(self) -> None:
         """Close the database connection."""
         self.conn.close()

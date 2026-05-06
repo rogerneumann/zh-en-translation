@@ -73,11 +73,11 @@ def load_domain_glossary(domain: str = "manufacturing") -> dict[str, str]:
         with open_default_db() as db:
             result = db.load(domain)
         if result:
-            logger.info(
+            logger.info(  # lgtm[py/clear-text-logging-sensitive-data]
                 "Loaded %d domain glossary entries for '%s' from SQLite", len(result), domain
             )
             return result
-        logger.debug("SQLite domain '%s' is empty, falling back to TOML", domain)
+        logger.debug("SQLite domain '%s' is empty, falling back to TOML", domain)  # lgtm[py/clear-text-logging-sensitive-data]
     except Exception as exc:
         logger.debug("SQLite backend unavailable (%s), falling back to TOML", exc)
 
@@ -88,7 +88,7 @@ def load_domain_glossary(domain: str = "manufacturing") -> dict[str, str]:
         glossary_file = resources_dir / f"glossary_{domain}.toml"
 
         if not glossary_file.exists():
-            logger.debug("Domain glossary not found: %s", glossary_file)
+            logger.debug("Domain glossary not found: %s", glossary_file)  # lgtm[py/clear-text-logging-sensitive-data]
             return {}
 
         with open(glossary_file, "rb") as f:
@@ -101,10 +101,10 @@ def load_domain_glossary(domain: str = "manufacturing") -> dict[str, str]:
                     if isinstance(english, str):
                         result[chinese] = english
 
-        logger.info("Loaded %d domain glossary entries from %s (TOML)", len(result), glossary_file)
+        logger.info("Loaded %d domain glossary entries from %s (TOML)", len(result), glossary_file)  # lgtm[py/clear-text-logging-sensitive-data]
         return result
     except Exception as e:
-        logger.warning("Failed to load domain glossary '%s': %s", domain, e)
+        logger.warning("Failed to load domain glossary '%s': %s", domain, e)  # lgtm[py/clear-text-logging-sensitive-data]
         return {}
 
 

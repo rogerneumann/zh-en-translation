@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import logging
+import urllib.parse
 import urllib.request
 from typing import TYPE_CHECKING
 
@@ -39,6 +40,10 @@ def translate_with_libretranslate(
         return "\u26a0 LibreTranslate not enabled."
 
     base_url = (config.libretranslate_url or "https://libretranslate.com").rstrip("/")
+    parsed = urllib.parse.urlparse(base_url)
+    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+        logger.error("Invalid LibreTranslate URL: %s", base_url)
+        return "\u26a0 LibreTranslate: invalid URL configured."
     endpoint = f"{base_url}/translate"
 
     payload: dict = {

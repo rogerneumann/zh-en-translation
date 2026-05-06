@@ -13,6 +13,8 @@ on:
 jobs:
   build:
     runs-on: macos-14   # Apple Silicon M1
+    permissions:
+      contents: write   # required for gh release upload
 
     env:
       PYTHONUNBUFFERED: "1"

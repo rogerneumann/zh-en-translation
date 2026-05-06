@@ -197,8 +197,7 @@ class ABTestRunner:
             hypothesis = self._translate_fn(chinese, glossary)
         except Exception as exc:
             error = str(exc)
-            logger.warning("Translation failed for config '%s', input '%s': %s",
-                           config_name, chinese, exc)
+            logger.warning("Translation failed for config '%s': %s", config_name, exc)
 
         elapsed_ms = (time.perf_counter() - t0) * 1000
 
