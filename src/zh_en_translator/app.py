@@ -244,12 +244,17 @@ class _OCRWorker(QThread):
 
 
 class _UpdateWorker(QThread):
-    result_ready = pyqtSignal(object)  # emits ReleaseInfo or None
+    result_ready = pyqtSignal(object, object)  # (ReleaseInfo|None, list[dict])
 
     def run(self):
         from zh_en_translator.engines.updates import get_latest_release
+        from zh_en_translator.engines.updater import check_argos_updates
         release = get_latest_release()
-        self.result_ready.emit(release)
+        try:
+            argos = check_argos_updates()
+        except Exception:
+            argos = []
+        self.result_ready.emit(release, argos)
 
 
 def _apply_update_badge(pixmap: "QPixmap", size: int) -> "QPixmap":
@@ -305,6 +310,8 @@ class TranslatorApp(QObject):
         self._update_worker = None
         self._has_update = False
         self._update_version = ""
+        self._last_release_info = None
+        self._argos_needs_update = False
 
         # Apply mode from config
         self.sidebar_mode: bool = self.config.mode == "sidebar"
@@ -390,6 +397,9 @@ class TranslatorApp(QObject):
         menu.addSeparator()
         self._action_prefs = menu.addAction("Preferences\u2026")
         self._action_prefs.triggered.connect(self._open_preferences)
+
+        self._action_updates = menu.addAction("Check for Updates\u2026")
+        self._action_updates.triggered.connect(self._on_check_updates_tray)
 
         menu.addSeparator()
         self.action_pause = menu.addAction("Pause")
@@ -671,6 +681,12 @@ class TranslatorApp(QObject):
         if hasattr(self, "_action_prefs"):
             label = "Preferences\u2026  \u25cf" if self._has_update else "Preferences\u2026"
             self._action_prefs.setText(label)
+        # Update the dedicated updates menu item
+        if hasattr(self, "_action_updates"):
+            if self._has_update:
+                self._action_updates.setText("Updates available \u25cf")
+            else:
+                self._action_updates.setText("Check for Updates\u2026")
 
     def _check_tesseract_warning(self) -> None:
         """Show a one-time tray warning if Tesseract is not found (Windows only)."""
@@ -718,40 +734,67 @@ class TranslatorApp(QObject):
             return
         self._update_worker = _UpdateWorker()
         self._update_worker.result_ready.connect(
-            lambda info: self._on_update_check_finished(info, manual)
+            lambda info, argos: self._on_update_check_finished(info, argos, manual)
         )
         self._update_worker.start()
 
-    def _on_update_check_finished(self, release_info, manual: bool) -> None:
-        # Save check timestamp regardless of outcome
+    def _on_update_check_finished(self, release_info, argos_updates, manual: bool) -> None:
         from datetime import datetime, timezone
         self.config.last_update_check = datetime.now(timezone.utc).isoformat()
         save_config(self.config)
 
-        if not release_info:
-            if manual:
-                from PyQt6.QtWidgets import QMessageBox
-                QMessageBox.information(
-                    None, "Update Check", "Could not check for updates. Please try again later."
-                )
+        self._last_release_info = release_info
+        self._argos_needs_update = any(u.get("needs_update") for u in (argos_updates or []))
+
+        core_available = False
+        core_version_str = ""
+
+        if release_info:
+            from zh_en_translator import __version__
+            from zh_en_translator.engines.updates import find_core_asset, is_newer
+            try:
+                from zh_en_translator.install_state import get_overlay_version
+                current = get_overlay_version() or __version__
+            except Exception:
+                current = __version__
+
+            assets = release_info.get("assets", [])
+            core_version, _core_url = find_core_asset(assets)
+            if core_version and is_newer(core_version, current):
+                core_available = True
+                core_version_str = core_version
+
+        self._set_update_available(core_available or self._argos_needs_update, core_version_str)
+
+        if not manual:
             return
 
-        from zh_en_translator import __version__
-        from zh_en_translator.engines.updates import is_newer
+        if not release_info:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                None, "Update Check", "Could not check for updates. Please try again later."
+            )
+            return
 
-        tag = release_info["tag_name"]
-        if is_newer(tag, __version__):
-            self._set_update_available(True, tag)
-            if manual:
-                self._offer_update_options(release_info)
-            # Auto-check: badge/indicator set by _set_update_available; no popup
+        if core_available:
+            self._offer_update_options(release_info)
+        elif self._argos_needs_update:
+            self._open_preferences(tab="general")
         else:
-            self._set_update_available(False)
-            if manual:
-                from PyQt6.QtWidgets import QMessageBox
-                QMessageBox.information(
-                    None, "Update Check", f"You are running the latest version ({__version__})."
-                )
+            from zh_en_translator import __version__
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.information(
+                None, "Update Check", f"You are running the latest version ({__version__})."
+            )
+
+    def _on_check_updates_tray(self) -> None:
+        """Handle tray 'Check for Updates' / 'Updates available' click."""
+        if self._has_update and self._last_release_info:
+            self._offer_update_options(self._last_release_info)
+        elif self._has_update and self._argos_needs_update:
+            self._open_preferences(tab="general")
+        else:
+            self._check_for_updates(manual=True)
 
     def _offer_update_options(self, release_info: dict) -> None:
         """Show the update options dialog (core / lite installer / full installer)."""
