@@ -7,6 +7,16 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 
+# Session-level cache: True once a successful version check has passed.
+# Avoids spawning a redundant get_tesseract_version() subprocess on every
+# is_available() call (engine.py calls it once in is_any_engine_available and
+# again inside ocr_image's waterfall check).
+_version_ok: bool = False
+
+# Session-level cache for the best available Chinese language string.
+# None = not yet determined; "" = no Chinese data found; else the lang arg.
+_zh_lang_cache: str | None = None
+
 
 def _get_tesseract_candidates() -> list[Path]:
     """Return candidate Tesseract paths, checking bundled/system paths for the current platform."""
@@ -18,6 +28,10 @@ def _get_tesseract_candidates() -> list[Path]:
         # Frozen (PyInstaller) bundled binary on Windows
         if getattr(sys, "frozen", False):
             candidates.append(Path(sys.executable).parent / "tesseract" / "tesseract.exe")
+        # System PATH first so user-chosen installs win over hardcoded dirs
+        system_tess = shutil.which("tesseract")
+        if system_tess:
+            candidates.append(Path(system_tess))
         candidates += [
             Path.home() / "AppData" / "Local" / "Programs" / "Tesseract-OCR" / "tesseract.exe",
             Path.home() / "AppData" / "Local" / "Tesseract-OCR" / "tesseract.exe",
@@ -58,6 +72,14 @@ def _configure_pytesseract_cmd() -> bool:
 
     import os
 
+    # Suppress the brief console-window flash that Windows shows when
+    # pytesseract spawns tesseract.exe as a subprocess.
+    if sys.platform == "win32":
+        import subprocess as _sp
+        pytesseract.pytesseract.subprocess_args = {
+            "creationflags": _sp.CREATE_NO_WINDOW
+        }
+
     # Check each candidate path
     for candidate in _get_tesseract_candidates():
         if candidate.exists() and candidate.is_file():
@@ -85,13 +107,14 @@ def get_found_path() -> str | None:
 
 def is_available() -> bool:
     """Return True if pytesseract and the tesseract binary are found."""
+    global _version_ok
+    if _version_ok:
+        return True
     try:
         import pytesseract
-
-        # Try to configure the path if not already configured
         _configure_pytesseract_cmd()
-
         pytesseract.get_tesseract_version()
+        _version_ok = True
         return True
     except Exception as e:
         logger.debug("Tesseract not available: %s", e)
@@ -103,7 +126,12 @@ def _available_zh_lang() -> str:
 
     Tries chi_sim+chi_tra first (both scripts), falls back to whichever single
     traineddata file is present. Returns empty string if neither is found.
+    Result is cached for the session to avoid a redundant subprocess spawn.
     """
+    global _zh_lang_cache
+    if _zh_lang_cache is not None:
+        return _zh_lang_cache
+
     import pytesseract
 
     try:
@@ -115,12 +143,19 @@ def _available_zh_lang() -> str:
     has_tra = "chi_tra" in available
 
     if has_sim and has_tra:
-        return "chi_sim+chi_tra"
-    if has_sim:
-        return "chi_sim"
-    if has_tra:
-        return "chi_tra"
-    return ""
+        _zh_lang_cache = "chi_sim+chi_tra"
+    elif has_sim:
+        _zh_lang_cache = "chi_sim"
+    elif has_tra:
+        _zh_lang_cache = "chi_tra"
+    else:
+        _zh_lang_cache = ""
+        logger.warning(
+            "Tesseract found but no Chinese traineddata (chi_sim/chi_tra). "
+            "Available languages: %s", available
+        )
+
+    return _zh_lang_cache
 
 
 def ocr_image(image_bytes: bytes, lang: str = "zh") -> str | None:
@@ -147,5 +182,6 @@ def ocr_image(image_bytes: bytes, lang: str = "zh") -> str | None:
         img = Image.open(io.BytesIO(image_bytes))
         text = pytesseract.image_to_string(img, lang=tess_lang)
         return text.strip() or None
-    except Exception:
+    except Exception as e:
+        logger.warning("Tesseract ocr_image failed: %s", e, exc_info=True)
         return None
