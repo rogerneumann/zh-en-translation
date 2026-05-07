@@ -23,6 +23,7 @@ param(
     [switch] $SkipVersionBump,
     [switch] $SkipRelease,
     [switch] $CorePackage,
+    [switch] $Force,
     [string] $DistPath  = "dist",
     [string] $WorkPath  = "build"
 )
@@ -146,9 +147,91 @@ function Find-TesseractInstallation {
 }
 
 # ---------------------------------------------------------------------------
+# Incremental build helpers
+# ---------------------------------------------------------------------------
+
+# Compute a 16-char hex fingerprint from the MD5 hashes of matching files.
+# $InputPaths  - list of files or directories to scan
+# $Patterns    - file patterns to include when scanning directories
+function Get-InputHash {
+    param([string[]]$InputPaths, [string[]]$Patterns = @("*.py"))
+    $hashes = [System.Collections.Generic.List[string]]::new()
+    foreach ($p in $InputPaths) {
+        if (Test-Path $p -PathType Container) {
+            foreach ($pat in $Patterns) {
+                Get-ChildItem $p -Recurse -Filter $pat -File | Sort-Object FullName |
+                    ForEach-Object { $hashes.Add((Get-FileHash $_.FullName -Algorithm MD5).Hash) }
+            }
+        } elseif (Test-Path $p -PathType Leaf) {
+            $hashes.Add((Get-FileHash $p -Algorithm MD5).Hash)
+        }
+    }
+    if ($hashes.Count -eq 0) { return "empty" }
+    $combined = $hashes -join "|"
+    $bytes    = [System.Text.Encoding]::ASCII.GetBytes($combined)
+    $sha      = [System.Security.Cryptography.SHA256]::Create()
+    return (($sha.ComputeHash($bytes) | ForEach-Object { $_.ToString("x2") }) -join "").Substring(0,16)
+}
+
+function Get-CachedHash([string]$CacheDir, [string]$Key) {
+    $f = Join-Path $CacheDir "${Key}.hash"
+    if (Test-Path $f) { return (Get-Content $f -Encoding ASCII -Raw).Trim() }
+    return ""
+}
+
+function Set-CachedHash([string]$CacheDir, [string]$Key, [string]$Hash) {
+    if (-not (Test-Path $CacheDir)) {
+        New-Item -ItemType Directory -Force -Path $CacheDir | Out-Null
+        # Keep the cache dir out of git
+        "*" | Set-Content (Join-Path $CacheDir ".gitignore") -Encoding ASCII
+    }
+    [System.IO.File]::WriteAllText((Join-Path $CacheDir "${Key}.hash"), $Hash,
+        [System.Text.Encoding]::ASCII)
+}
+
+# Read-HostTimed: like Read-Host but falls back to $Default after $TimeoutSec seconds.
+function Read-HostTimed([string]$Prompt, [string]$Default, [int]$TimeoutSec = 60) {
+    Write-Host ("    ${Prompt} [default: ${Default}, auto-select in ${TimeoutSec}s]: ") -NoNewline
+    $start = Get-Date
+    $buf   = ""
+    try {
+        while ($true) {
+            if (((Get-Date) - $start).TotalSeconds -ge $TimeoutSec) {
+                Write-Host ""
+                Write-Host "    No input after ${TimeoutSec}s -- using default: ${Default}" -ForegroundColor Yellow
+                return $Default
+            }
+            if ([Console]::KeyAvailable) {
+                $k = [Console]::ReadKey($true)
+                if ($k.Key -eq [ConsoleKey]::Enter) {
+                    Write-Host ""
+                    if ($buf -eq "") { return $Default }
+                    return $buf
+                }
+                if ($k.Key -eq [ConsoleKey]::Backspace) {
+                    if ($buf.Length -gt 0) {
+                        $buf = $buf.Substring(0, $buf.Length - 1)
+                        Write-Host "`b `b" -NoNewline
+                    }
+                } elseif ($k.KeyChar -ne [char]0) {
+                    $buf += $k.KeyChar.ToString()
+                    Write-Host $k.KeyChar.ToString() -NoNewline
+                }
+            }
+            Start-Sleep -Milliseconds 100
+        }
+    } catch {
+        Write-Host ""
+        Write-Host "    Console input unavailable -- using default: ${Default}" -ForegroundColor Yellow
+        return $Default
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Locate repo root (script lives in installer\, repo root is one level up)
 # ---------------------------------------------------------------------------
-$RepoRoot = Split-Path -Parent $PSScriptRoot
+$RepoRoot      = Split-Path -Parent $PSScriptRoot
+$BuildCacheDir = Join-Path $PSScriptRoot ".build-cache"
 Set-Location $RepoRoot
 # Resolve relative paths now so .NET ZipFile calls (which use the process CWD,
 # not PowerShell's Set-Location CWD) get absolute paths.
@@ -262,24 +345,31 @@ Write-Ok "PyInstaller found (via python -m PyInstaller)"
 Write-Step "Step 1.5: Installing package dependencies (pip install -e .[ocr-tesseract])"
 Write-Host "    This ensures PyQt6, ctranslate2, pytesseract, Pillow etc. are present for PyInstaller to bundle." -ForegroundColor Gray
 
-& python -m pip install -e ".[ocr-tesseract]" --quiet
-if ($LASTEXITCODE -ne 0) {
-    # WinError 2 on f2py.exe (or similar) means a package's script file is missing
-    # from Scripts\ but pip still tries to rename it. Force-reinstall numpy to repair
-    # the broken state, then retry.
-    Write-Host "    pip install failed -- attempting to repair broken package state..." -ForegroundColor Yellow
-    & python -m pip install --force-reinstall --quiet numpy
+$_PipHash       = Get-InputHash -InputPaths @((Join-Path $RepoRoot "pyproject.toml")) -Patterns @("*.toml")
+$_PipCachedHash = Get-CachedHash -CacheDir $BuildCacheDir -Key "pip_install"
+if (-not $Force -and ($_PipHash -eq $_PipCachedHash)) {
+    Write-Ok "pyproject.toml unchanged -- skipping pip install (use -Force to reinstall)"
+} else {
     & python -m pip install -e ".[ocr-tesseract]" --quiet
     if ($LASTEXITCODE -ne 0) {
-        Write-Fail "pip install -e .[ocr-tesseract] failed (exit code $LASTEXITCODE)"
-        Write-Host "    If you see a WinError 2 / .deleteme error for a .exe in Scripts\:" -ForegroundColor Yellow
-        Write-Host "        pip uninstall numpy -y" -ForegroundColor Cyan
-        Write-Host "        pip install numpy" -ForegroundColor Cyan
-        Write-Host "    then re-run this script. Run PowerShell as Administrator if the error persists." -ForegroundColor Yellow
-        exit $LASTEXITCODE
+        # WinError 2 on f2py.exe (or similar) means a package's script file is missing
+        # from Scripts\ but pip still tries to rename it. Force-reinstall numpy to repair
+        # the broken state, then retry.
+        Write-Host "    pip install failed -- attempting to repair broken package state..." -ForegroundColor Yellow
+        & python -m pip install --force-reinstall --quiet numpy
+        & python -m pip install -e ".[ocr-tesseract]" --quiet
+        if ($LASTEXITCODE -ne 0) {
+            Write-Fail "pip install -e .[ocr-tesseract] failed (exit code $LASTEXITCODE)"
+            Write-Host "    If you see a WinError 2 / .deleteme error for a .exe in Scripts\:" -ForegroundColor Yellow
+            Write-Host "        pip uninstall numpy -y" -ForegroundColor Cyan
+            Write-Host "        pip install numpy" -ForegroundColor Cyan
+            Write-Host "    then re-run this script. Run PowerShell as Administrator if the error persists." -ForegroundColor Yellow
+            exit $LASTEXITCODE
+        }
     }
+    Write-Ok "Dependencies installed"
+    Set-CachedHash -CacheDir $BuildCacheDir -Key "pip_install" -Hash $_PipHash
 }
-Write-Ok "Dependencies installed"
 
 # ---------------------------------------------------------------------------
 # Step 1.6 -- CalVer version bump + git commit/tag/push
@@ -392,7 +482,25 @@ Write-Ok "Version format OK: ${VersionString}"
 # ---------------------------------------------------------------------------
 # Step 2 -- Run PyInstaller
 # ---------------------------------------------------------------------------
-if (-not $SkipPyInstaller) {
+$PyInstallerRan = $false
+$BundleDir      = Join-Path $DistPath "zh-en-translator"
+$_PiHash        = Get-InputHash -InputPaths @(
+    (Join-Path $RepoRoot "src\zh_en_translator"),
+    (Join-Path $PSScriptRoot "zh-en-translator.spec")
+) -Patterns @("*.py","*.spec")
+
+if ($SkipPyInstaller) {
+    Write-Step "Step 2: Skipping PyInstaller (-SkipPyInstaller flag set)"
+    if (-not (Test-Path $BundleDir)) {
+        Write-Fail "Bundle directory not found: $BundleDir"
+        Write-Host "    Run without -SkipPyInstaller first." -ForegroundColor Yellow
+        exit 1
+    }
+    Write-Ok "Using existing bundle at: $BundleDir"
+} elseif (-not $Force -and ($_PiHash -eq (Get-CachedHash -CacheDir $BuildCacheDir -Key "pyinstaller")) -and (Test-Path $BundleDir)) {
+    Write-Step "Step 2: PyInstaller -- skipping (source unchanged, bundle exists)"
+    Write-Ok "Cache hit -- $BundleDir  (pass -Force to rebuild)"
+} else {
     Write-Step "Step 2: Running PyInstaller"
 
     $SpecFile = Join-Path $PSScriptRoot "zh-en-translator.spec"
@@ -402,10 +510,9 @@ if (-not $SkipPyInstaller) {
     }
 
     # Clean previous build to avoid stale DLLs/modules carrying over
-    $OldBundle = Join-Path $DistPath "zh-en-translator"
-    if (Test-Path $OldBundle) {
-        Write-Host "    Removing old bundle: $OldBundle" -ForegroundColor Gray
-        Remove-Item -Recurse -Force $OldBundle
+    if (Test-Path $BundleDir) {
+        Write-Host "    Removing old bundle: $BundleDir" -ForegroundColor Gray
+        Remove-Item -Recurse -Force $BundleDir
     }
     if (Test-Path $WorkPath) {
         Write-Host "    Removing old work dir: $WorkPath" -ForegroundColor Gray
@@ -426,21 +533,13 @@ if (-not $SkipPyInstaller) {
         exit $LASTEXITCODE
     }
 
-    $BundleDir = Join-Path $DistPath "zh-en-translator"
     if (-not (Test-Path $BundleDir)) {
         Write-Fail "Expected bundle directory not found: $BundleDir"
         exit 1
     }
     Write-Ok "Bundle produced at: $BundleDir"
-} else {
-    Write-Step "Step 2: Skipping PyInstaller (--SkipPyInstaller flag set)"
-    $BundleDir = Join-Path $DistPath "zh-en-translator"
-    if (-not (Test-Path $BundleDir)) {
-        Write-Fail "Bundle directory not found: $BundleDir"
-        Write-Host "    Run without -SkipPyInstaller first." -ForegroundColor Yellow
-        exit 1
-    }
-    Write-Ok "Using existing bundle at: $BundleDir"
+    $PyInstallerRan = $true
+    Set-CachedHash -CacheDir $BuildCacheDir -Key "pyinstaller" -Hash $_PiHash
 }
 
 # ---------------------------------------------------------------------------
@@ -932,8 +1031,7 @@ if (Test-Path $OutputDir) {
             $i++
         }
         Write-Host ""
-        $Answer = Read-Host "    Keep how many recent releases? (number, or 0 = keep all) [default: 1]"
-        if ($Answer -eq "" ) { $Answer = "1" }
+        $Answer = Read-HostTimed -Prompt "Keep how many recent releases? (number, or 0 = keep all)" -Default "2" -TimeoutSec 60
         $Keep = [int]$Answer
 
         if ($Keep -gt 0) {
@@ -966,33 +1064,51 @@ if (Test-Path $OutputDir) {
 # ---------------------------------------------------------------------------
 # Step 4 -- Run Inno Setup compiler (full + lite)
 # ---------------------------------------------------------------------------
-Write-Step "Step 4: Compiling installers with Inno Setup"
+# Cache key combines the .iss files hash with the last pyinstaller hash so
+# that a fresh PyInstaller run always forces a new installer build.
+$_IssPaths = @(
+    (Join-Path $PSScriptRoot "zh-en-translator.iss"),
+    (Join-Path $PSScriptRoot "zh-en-translator-lite.iss")
+) | Where-Object { Test-Path $_ }
+$_IssHash       = (Get-InputHash -InputPaths $_IssPaths -Patterns @("*.iss")) +
+                  (Get-CachedHash -CacheDir $BuildCacheDir -Key "pyinstaller")
+$_IssCachedHash = Get-CachedHash -CacheDir $BuildCacheDir -Key "innosetup"
+$_InstallerPath = Join-Path $PSScriptRoot "Output\zh-en-translator-v${VersionString}-setup.exe"
 
-$IssFile = Join-Path $PSScriptRoot "zh-en-translator.iss"
-if (-not (Test-Path $IssFile)) {
-    Write-Fail "Inno Setup script not found: $IssFile"
-    exit 1
-}
+if (-not $Force -and -not $PyInstallerRan -and ($_IssHash -eq $_IssCachedHash) -and (Test-Path $_InstallerPath)) {
+    Write-Step "Step 4: Inno Setup -- skipping (inputs unchanged, installer exists)"
+    Write-Ok "Cache hit -- $(Split-Path -Leaf $_InstallerPath)  (pass -Force to recompile)"
+} else {
+    Write-Step "Step 4: Compiling installers with Inno Setup"
 
-Write-Host "    [4a] Full installer: $IssFile" -ForegroundColor Gray
-& $Iscc $IssFile
-if ($LASTEXITCODE -ne 0) {
-    Write-Fail "Inno Setup compiler (full) exited with code $LASTEXITCODE"
-    exit $LASTEXITCODE
-}
-Write-Ok "Full installer compiled"
+    $IssFile = Join-Path $PSScriptRoot "zh-en-translator.iss"
+    if (-not (Test-Path $IssFile)) {
+        Write-Fail "Inno Setup script not found: $IssFile"
+        exit 1
+    }
 
-$LiteIssFile = Join-Path $PSScriptRoot "zh-en-translator-lite.iss"
-if (Test-Path $LiteIssFile) {
-    Write-Host "    [4b] Lite installer: $LiteIssFile" -ForegroundColor Gray
-    & $Iscc $LiteIssFile
+    Write-Host "    [4a] Full installer: $IssFile" -ForegroundColor Gray
+    & $Iscc $IssFile
     if ($LASTEXITCODE -ne 0) {
-        Write-Fail "Inno Setup compiler (lite) exited with code $LASTEXITCODE"
+        Write-Fail "Inno Setup compiler (full) exited with code $LASTEXITCODE"
         exit $LASTEXITCODE
     }
-    Write-Ok "Lite installer compiled"
-} else {
-    Write-Host "    WARNING: Lite .iss not found -- skipping lite installer." -ForegroundColor Yellow
+    Write-Ok "Full installer compiled"
+
+    $LiteIssFile = Join-Path $PSScriptRoot "zh-en-translator-lite.iss"
+    if (Test-Path $LiteIssFile) {
+        Write-Host "    [4b] Lite installer: $LiteIssFile" -ForegroundColor Gray
+        & $Iscc $LiteIssFile
+        if ($LASTEXITCODE -ne 0) {
+            Write-Fail "Inno Setup compiler (lite) exited with code $LASTEXITCODE"
+            exit $LASTEXITCODE
+        }
+        Write-Ok "Lite installer compiled"
+    } else {
+        Write-Host "    WARNING: Lite .iss not found -- skipping lite installer." -ForegroundColor Yellow
+    }
+
+    Set-CachedHash -CacheDir $BuildCacheDir -Key "innosetup" -Hash $_IssHash
 }
 
 # ---------------------------------------------------------------------------
